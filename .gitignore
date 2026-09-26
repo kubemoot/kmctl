@@ -1,0 +1,10 @@
+# Built binary
+/kmctl
+
+# Tool + release output
+/bin/
+/dist/
+
+# Test/coverage output
+cover.out
+*.out

@@ -1,0 +1,40 @@
+# Tier 2 drift detection - NOT per-push (keeps push CI fast). Runs against an
+# ephemeral apiserver (envtest) loaded with the CURRENT Kubemoot CRDs, so it
+# catches CRD/GVR/schema drift without the operator or the homelab cluster.
+name: Integration (drift)
+
+on:
+  schedule:
+    - cron: "0 7 * * *" # nightly
+  workflow_dispatch:
+
+jobs:
+  drift:
+    runs-on: homelab-runners
+    steps:
+      - name: Checkout kmctl
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.26"
+          cache-dependency-path: go.sum
+
+      - name: Fetch current Kubemoot CRDs
+        uses: actions/checkout@v5
+        with:
+          repository: javajon-homelab/kubemoot
+          token: ${{ secrets.KUBEMOOT_READ_TOKEN }}
+          path: _kubemoot
+          sparse-checkout: operator/config/crd/bases
+          sparse-checkout-cone-mode: false
+
+      - name: Drift tests (envtest + contract vs current CRDs)
+        env:
+          KMCTL_CRD_DIR: ${{ github.workspace }}/_kubemoot/operator/config/crd/bases
+        run: |
+          GOBIN="$PWD/bin" go install sigs.k8s.io/controller-runtime/tools/setup-envtest@release-0.21
+          KUBEBUILDER_ASSETS="$(./bin/setup-envtest use 1.33 --bin-dir "$PWD/bin" -p path)"
+          export KUBEBUILDER_ASSETS
+          go test -tags=integration ./internal/integration/...

@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# kmctl pre-commit gate: gofmt + golangci-lint (CC<=10, dupl) on staged Go files.
+# Enable with: make hooks   (sets core.hooksPath to .githooks)
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+staged_go="$(git diff --cached --name-only --diff-filter=ACM | grep '\.go$' || true)"
+[ -z "$staged_go" ] && exit 0
+
+# gofmt
+unformatted="$(gofmt -l $staged_go || true)"
+if [ -n "$unformatted" ]; then
+  echo "pre-commit: these files need gofmt:"
+  echo "$unformatted"
+  echo "run: make fmt"
+  exit 1
+fi
+
+# golangci-lint (prefer repo-local ./bin, then PATH)
+gcl="$repo_root/bin/golangci-lint"
+[ -x "$gcl" ] || gcl="$(command -v golangci-lint || true)"
+if [ -x "$gcl" ]; then
+  "$gcl" run || { echo "pre-commit: golangci-lint found issues"; exit 1; }
+else
+  echo "pre-commit: golangci-lint not installed (run: make golangci-lint); skipping lint"
+fi

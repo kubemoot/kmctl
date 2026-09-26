@@ -1,0 +1,27 @@
+# golangci-lint v2 config. The ecosystem quality gate: cyclomatic complexity must
+# not exceed 10, and divergent/duplicate code is flagged. The Claude edit-time hook
+# and the pre-commit hook both run `golangci-lint run` against this config.
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  enable:
+    - gocyclo
+    - dupl
+    - revive
+    - misspell
+    - unconvert
+    - unparam
+  settings:
+    gocyclo:
+      # Report (block) functions whose cyclomatic complexity exceeds 10.
+      min-complexity: 11
+    dupl:
+      threshold: 100
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
