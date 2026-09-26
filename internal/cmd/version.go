@@ -3,7 +3,7 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/javajon-homelab/kmctl/internal/version"
+	"github.com/kubemoot/kmctl/internal/version"
 	"github.com/spf13/cobra"
 )
 

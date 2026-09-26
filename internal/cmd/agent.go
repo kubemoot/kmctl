@@ -1,8 +1,8 @@
 package cmd
 
 import (
-	"github.com/javajon-homelab/kmctl/internal/client"
-	"github.com/javajon-homelab/kmctl/internal/resource"
+	"github.com/kubemoot/kmctl/internal/client"
+	"github.com/kubemoot/kmctl/internal/resource"
 	"github.com/spf13/cobra"
 )
 

@@ -1,5 +1,5 @@
 BINARY  := kmctl
-MODULE  := github.com/javajon-homelab/kmctl
+MODULE  := github.com/kubemoot/kmctl
 VERSION ?= dev
 LDFLAGS := -s -w -X $(MODULE)/internal/version.Version=$(VERSION)
 

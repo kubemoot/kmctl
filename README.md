@@ -38,7 +38,7 @@ While the repository is private, download the latest release with the GitHub CLI
 (it handles auth and resolves the latest version). Use `linux_arm64` on ARM:
 
 ```bash
-gh release download -R javajon-homelab/kmctl \
+gh release download -R kubemoot/kmctl \
   --pattern 'kmctl_*_linux_amd64.tar.gz' --clobber
 tar -xzf kmctl_*_linux_amd64.tar.gz kmctl
 sudo install -m 0755 kmctl /usr/local/bin/kmctl
@@ -49,9 +49,9 @@ kmctl version
 After the open-source release the same artifacts install without auth:
 
 ```bash
-VER="$(curl -fsSL https://api.github.com/repos/javajon-homelab/kmctl/releases/latest \
+VER="$(curl -fsSL https://api.github.com/repos/kubemoot/kmctl/releases/latest \
   | grep -oP '"tag_name":\s*"\K[^"]+')"
-curl -fsSL "https://github.com/javajon-homelab/kmctl/releases/download/${VER}/kmctl_${VER#v}_linux_amd64.tar.gz" \
+curl -fsSL "https://github.com/kubemoot/kmctl/releases/download/${VER}/kmctl_${VER#v}_linux_amd64.tar.gz" \
   | tar -xz kmctl
 sudo install -m 0755 kmctl /usr/local/bin/kmctl
 ```

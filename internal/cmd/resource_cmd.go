@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/javajon-homelab/kmctl/internal/client"
-	"github.com/javajon-homelab/kmctl/internal/output"
-	"github.com/javajon-homelab/kmctl/internal/resource"
+	"github.com/kubemoot/kmctl/internal/client"
+	"github.com/kubemoot/kmctl/internal/output"
+	"github.com/kubemoot/kmctl/internal/resource"
 	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )

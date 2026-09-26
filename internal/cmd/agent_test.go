@@ -3,7 +3,7 @@ package cmd
 import (
 	"testing"
 
-	"github.com/javajon-homelab/kmctl/internal/client"
+	"github.com/kubemoot/kmctl/internal/client"
 )
 
 func TestAgentCommand_Subcommands(t *testing.T) {

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/javajon-homelab/kmctl/internal/version"
+	"github.com/kubemoot/kmctl/internal/version"
 )
 
 func TestVersionCommand_Default(t *testing.T) {

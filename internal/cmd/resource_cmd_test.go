@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/javajon-homelab/kmctl/internal/client"
-	"github.com/javajon-homelab/kmctl/internal/resource"
+	"github.com/kubemoot/kmctl/internal/client"
+	"github.com/kubemoot/kmctl/internal/resource"
 )
 
 func TestListCommand_Flags(t *testing.T) {

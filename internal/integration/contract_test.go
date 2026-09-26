@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/javajon-homelab/kmctl/internal/resource"
+	"github.com/kubemoot/kmctl/internal/resource"
 	apiext "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"sigs.k8s.io/yaml"
 )

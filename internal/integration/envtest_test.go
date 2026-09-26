@@ -7,7 +7,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/javajon-homelab/kmctl/internal/resource"
+	"github.com/kubemoot/kmctl/internal/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/dynamic"

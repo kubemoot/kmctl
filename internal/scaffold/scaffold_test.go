@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/javajon-homelab/kmctl/internal/manifest"
+	"github.com/kubemoot/kmctl/internal/manifest"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 

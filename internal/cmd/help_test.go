@@ -3,8 +3,8 @@ package cmd
 import (
 	"testing"
 
-	"github.com/javajon-homelab/kmctl/internal/client"
-	"github.com/javajon-homelab/kmctl/internal/resource"
+	"github.com/kubemoot/kmctl/internal/client"
+	"github.com/kubemoot/kmctl/internal/resource"
 )
 
 // Every user-facing command should carry a runnable Example (help polish).

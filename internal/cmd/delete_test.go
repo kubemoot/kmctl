@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/javajon-homelab/kmctl/internal/client"
+	"github.com/kubemoot/kmctl/internal/client"
 )
 
 func TestDeleteCommand_ArgValidation(t *testing.T) {

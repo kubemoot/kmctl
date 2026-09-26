@@ -8,9 +8,9 @@ import (
 	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
-	"github.com/javajon-homelab/kmctl/internal/client"
-	"github.com/javajon-homelab/kmctl/internal/resource"
-	"github.com/javajon-homelab/kmctl/internal/scaffold"
+	"github.com/kubemoot/kmctl/internal/client"
+	"github.com/kubemoot/kmctl/internal/resource"
+	"github.com/kubemoot/kmctl/internal/scaffold"
 	"github.com/spf13/cobra"
 )
 

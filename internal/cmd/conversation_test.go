@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/javajon-homelab/kmctl/internal/client"
+	"github.com/kubemoot/kmctl/internal/client"
 	"github.com/spf13/cobra"
 )
 

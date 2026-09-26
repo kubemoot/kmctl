@@ -7,8 +7,8 @@ import (
 	"io"
 	"time"
 
-	"github.com/javajon-homelab/kmctl/internal/client"
-	"github.com/javajon-homelab/kmctl/internal/discussion"
+	"github.com/kubemoot/kmctl/internal/client"
+	"github.com/kubemoot/kmctl/internal/discussion"
 	"github.com/spf13/cobra"
 )
 

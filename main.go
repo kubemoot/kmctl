@@ -4,7 +4,7 @@ package main
 import (
 	"os"
 
-	"github.com/javajon-homelab/kmctl/internal/cmd"
+	"github.com/kubemoot/kmctl/internal/cmd"
 )
 
 func main() {

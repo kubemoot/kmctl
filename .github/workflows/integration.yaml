@@ -25,7 +25,7 @@ jobs:
         uses: actions/checkout@v5
         with:
           repository: javajon-homelab/kubemoot
-          token: ${{ secrets.KUBEMOOT_READ_TOKEN }}
+          token: ${{ secrets.KUBEMOOT_READ_TOKEN || github.token }}
           path: _kubemoot
           sparse-checkout: operator/config/crd/bases
           sparse-checkout-cone-mode: false

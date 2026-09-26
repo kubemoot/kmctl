@@ -1,4 +1,4 @@
-module github.com/javajon-homelab/kmctl
+module github.com/kubemoot/kmctl
 
 go 1.26.0
 
