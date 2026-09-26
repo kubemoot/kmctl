@@ -21,9 +21,9 @@ builds:
       - arm64
     ldflags:
       - -s -w
-      - -X github.com/javajon-homelab/kmctl/internal/version.Version={{ .Version }}
-      - -X github.com/javajon-homelab/kmctl/internal/version.Commit={{ .ShortCommit }}
-      - -X github.com/javajon-homelab/kmctl/internal/version.Date={{ .Date }}
+      - -X github.com/kubemoot/kmctl/internal/version.Version={{ .Version }}
+      - -X github.com/kubemoot/kmctl/internal/version.Commit={{ .ShortCommit }}
+      - -X github.com/kubemoot/kmctl/internal/version.Date={{ .Date }}
 
 archives:
   - id: kmctl
@@ -50,7 +50,7 @@ changelog:
 
 release:
   github:
-    owner: javajon-homelab
+    owner: kubemoot
     name: kmctl
   draft: false
   prerelease: auto

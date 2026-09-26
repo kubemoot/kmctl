@@ -24,7 +24,7 @@ jobs:
       - name: Fetch current Kubemoot CRDs
         uses: actions/checkout@v5
         with:
-          repository: javajon-homelab/kubemoot
+          repository: kubemoot/kubemoot
           token: ${{ secrets.KUBEMOOT_READ_TOKEN || github.token }}
           path: _kubemoot
           sparse-checkout: operator/config/crd/bases
