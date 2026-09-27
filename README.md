@@ -1,7 +1,8 @@
 # kmctl
 
 `kmctl` is the command-line tool for working with crews and Kubemoot. It is the
-scriptable, terminal-native counterpart to the CrewForge IDE: a convenience layer
+scriptable, terminal-native counterpart to
+[CrewForge for VS Code](https://github.com/kubemoot/vscode-crewforge): a convenience layer
 over the Kubernetes resources Kubemoot manages (crews, agents, prompt modules,
 models) plus its live discussions and fitness suites. The operator remains the
 single source of lifecycle truth; `kmctl` is a client.
