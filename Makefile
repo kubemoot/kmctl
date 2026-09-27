@@ -5,7 +5,7 @@ LDFLAGS := -s -w -X $(MODULE)/internal/version.Version=$(VERSION)
 
 LOCALBIN := $(shell pwd)/bin
 GOLANGCI_LINT := $(LOCALBIN)/golangci-lint
-GOLANGCI_LINT_VERSION ?= v2.12.2
+GOLANGCI_LINT_VERSION ?= v2.14.0
 
 .PHONY: build
 build: ## Build the kmctl binary
