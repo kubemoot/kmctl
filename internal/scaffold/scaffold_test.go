@@ -216,3 +216,68 @@ func TestModelCount(t *testing.T) {
 		t.Fatalf("unknown family: want 0 Models, got %d", n)
 	}
 }
+
+func flatAndChart(t *testing.T) (map[string]string, map[string]string) {
+	t.Helper()
+	o := Options{Name: "demo", Members: 2, ModelFamily: "qwen", Providers: []string{"ollama-gpu"}}
+	flat, err := Generate(o)
+	if err != nil {
+		t.Fatalf("Generate flat: %v", err)
+	}
+	o.Chart = true
+	chart, err := Generate(o)
+	if err != nil {
+		t.Fatalf("Generate chart: %v", err)
+	}
+	return flat, chart
+}
+
+func TestGenerate_ChartLayoutKeepsTheManifests(t *testing.T) {
+	flat, chart := flatAndChart(t)
+	for _, name := range []string{"crew.yaml", "agents.yaml", "promptmodules.yaml", "models.yaml"} {
+		got := chart["templates/"+name]
+		if got != flat[name] {
+			t.Errorf("templates/%s differs from the flat %s", name, name)
+		}
+		if strings.Contains(got, "{{") {
+			t.Errorf("templates/%s holds a template action Helm would try to render", name)
+		}
+	}
+	if chart["fitness/fitness.yaml"] != flat["fitness.yaml"] {
+		t.Error("fitness/fitness.yaml differs from the flat fitness.yaml")
+	}
+	if _, ok := chart["templates/fitness.yaml"]; ok {
+		t.Error("the fitness suite must stay out of templates/ so an install does not start a run")
+	}
+}
+
+func TestGenerate_ChartMetadataAndReadme(t *testing.T) {
+	flat, chart := flatAndChart(t)
+	for _, want := range []string{"name: demo", "apiVersion: v2", `kubemoot.ai/crew-chart: "true"`} {
+		if !strings.Contains(chart["Chart.yaml"], want) {
+			t.Errorf("Chart.yaml lacks %q:\n%s", want, chart["Chart.yaml"])
+		}
+	}
+	if _, ok := chart["values.yaml"]; !ok {
+		t.Error("the chart needs a values.yaml")
+	}
+	if !strings.Contains(chart["README.md"], "helm upgrade --install demo") || strings.Contains(flat["README.md"], "helm upgrade") {
+		t.Error("only the chart README gives the helm next step")
+	}
+}
+
+func TestWrite_ChartCreatesItsFolders(t *testing.T) {
+	dir := t.TempDir()
+	written, err := Write(Options{Name: "demo", Members: 1, OutputDir: dir, Chart: true})
+	if err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if len(written) != 8 {
+		t.Errorf("want 8 files, got %d: %v", len(written), written)
+	}
+	for _, rel := range []string{"Chart.yaml", "templates/agents.yaml", "fitness/fitness.yaml"} {
+		if _, err := os.Stat(filepath.Join(dir, "demo", filepath.FromSlash(rel))); err != nil {
+			t.Errorf("expected %s written: %v", rel, err)
+		}
+	}
+}

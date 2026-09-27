@@ -29,6 +29,7 @@ func newCreateCommand(f *client.Factory) *cobra.Command {
 		modelFamily string
 		noInput     bool
 		outputDir   string
+		chart       bool
 	)
 	cmd := &cobra.Command{
 		Use:   "create NAME",
@@ -41,7 +42,8 @@ Required inputs not given as flags are prompted for interactively. Use --no-inpu
 in scripts/CI; then the inputs must come from flags.`,
 		Example: `  kmctl create demo
   kmctl create demo --members 3 --model-family qwen --no-input
-  kmctl create demo -o ./crews`,
+  kmctl create demo -o ./crews
+  kmctl create demo --chart --members 2 --model-family qwen --no-input`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts := scaffold.Options{
@@ -50,6 +52,7 @@ in scripts/CI; then the inputs must come from flags.`,
 				Providers:   providers,
 				ModelFamily: modelFamily,
 				OutputDir:   outputDir,
+				Chart:       chart,
 			}
 			discovered := discoverProviders(cmd.Context(), f)
 			if err := gather(&opts, cmd.Flags().Changed, noInput, discovered, &surveyPrompter{}); err != nil {
@@ -73,7 +76,7 @@ in scripts/CI; then the inputs must come from flags.`,
 					return err
 				}
 			}
-			if _, err := fmt.Fprintf(out, "\nNext: kmctl apply -f %s/%s\n", opts.OutputDir, opts.Name); err != nil {
+			if _, err := fmt.Fprintf(out, "\nNext: %s\n", nextStep(opts)); err != nil {
 				return err
 			}
 			warnIfNoModels(cmd.ErrOrStderr(), opts)
@@ -85,7 +88,17 @@ in scripts/CI; then the inputs must come from flags.`,
 	cmd.Flags().StringVar(&modelFamily, "model-family", "", "Preferred model family, e.g. qwen (prompted if unset)")
 	cmd.Flags().BoolVar(&noInput, "no-input", false, "Never prompt; required inputs must come from flags")
 	cmd.Flags().StringVarP(&outputDir, "output", "o", ".", "Directory to write the scaffold into")
+	cmd.Flags().BoolVar(&chart, "chart", false, "Lay the crew out as a Helm chart (Chart.yaml, templates/, fitness/)")
 	return cmd
+}
+
+// nextStep is the command that deploys what was just scaffolded.
+func nextStep(opts scaffold.Options) string {
+	dir := opts.OutputDir + "/" + opts.Name
+	if opts.Chart {
+		return fmt.Sprintf("helm upgrade --install %s %s --namespace %s --create-namespace", opts.Name, dir, opts.Name)
+	}
+	return "kmctl apply -f " + dir
 }
 
 // gather fills any input not provided as a flag, prompting unless noInput.

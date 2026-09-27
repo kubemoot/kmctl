@@ -24,6 +24,7 @@ type Options struct {
 	Providers   []string // allowed model providers (recorded in the policy + README)
 	ModelFamily string   // "" means skip / define later
 	OutputDir   string   // directory to write into
+	Chart       bool     // lay the crew out as a Helm chart (Chart.yaml, templates/, fitness/)
 }
 
 // Validate checks the options before generation.
@@ -98,6 +99,7 @@ type templateData struct {
 	HasFamily   bool
 	Models      []modelCR
 	HasModels   bool
+	Chart       bool
 }
 
 func (o Options) data() templateData {
@@ -106,6 +108,7 @@ func (o Options) data() templateData {
 		Providers:   o.Providers,
 		ModelFamily: o.ModelFamily,
 		HasFamily:   o.ModelFamily != "",
+		Chart:       o.Chart,
 	}
 	for i := 1; i <= o.Members; i++ {
 		d.Members = append(d.Members, tooler{
@@ -146,14 +149,7 @@ func Generate(o Options) (map[string]string, error) {
 		return nil, err
 	}
 	d := o.data()
-	files := map[string]string{
-		"crew.yaml":          crewTemplate,
-		"agents.yaml":        agentsTemplate,
-		"promptmodules.yaml": promptModulesTemplate,
-		"models.yaml":        modelsTemplate,
-		"fitness.yaml":       fitnessTemplate,
-		"README.md":          readmeTemplate,
-	}
+	files := layout(o.Chart)
 	out := make(map[string]string, len(files))
 	for name, tmpl := range files {
 		rendered, err := render(name, tmpl, d)
@@ -163,6 +159,32 @@ func Generate(o Options) (map[string]string, error) {
 		out[name] = rendered
 	}
 	return out, nil
+}
+
+// layout maps each output path to its template. The chart form keeps the same
+// manifests: Helm installs them as they are into the release namespace, and the
+// fitness suite sits outside templates/ so an install does not start a run.
+func layout(chart bool) map[string]string {
+	if !chart {
+		return map[string]string{
+			"crew.yaml":          crewTemplate,
+			"agents.yaml":        agentsTemplate,
+			"promptmodules.yaml": promptModulesTemplate,
+			"models.yaml":        modelsTemplate,
+			"fitness.yaml":       fitnessTemplate,
+			"README.md":          readmeTemplate,
+		}
+	}
+	return map[string]string{
+		"Chart.yaml":                   chartTemplate,
+		"values.yaml":                  valuesTemplate,
+		"templates/crew.yaml":          crewTemplate,
+		"templates/agents.yaml":        agentsTemplate,
+		"templates/promptmodules.yaml": promptModulesTemplate,
+		"templates/models.yaml":        modelsTemplate,
+		"fitness/fitness.yaml":         fitnessTemplate,
+		"README.md":                    readmeTemplate,
+	}
 }
 
 // Write generates the scaffold and writes it into OutputDir/<name>, returning
@@ -181,7 +203,10 @@ func Write(o Options) ([]string, error) {
 	}
 	written := make([]string, 0, len(files))
 	for name, content := range files {
-		p := filepath.Join(dir, name)
+		p := filepath.Join(dir, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			return nil, err
+		}
 		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
 			return nil, err
 		}

@@ -281,10 +281,28 @@ spec:
         ASSERT(DEFER synthesis REFLECTS "The crew has no live market-data source and honestly says it cannot provide a current price; it does not fabricate a number.")
 `
 
+const chartTemplate = `apiVersion: v2
+name: {{ .Name }}
+description: The {{ .Name }} Kubemoot crew, scaffolded by kmctl create.
+type: application
+version: 0.1.0
+annotations:
+  kubemoot.ai/crew-chart: "true"
+`
+
+const valuesTemplate = `# The crew's manifests are plain YAML under templates/; Helm installs them into the
+# release namespace. Move a setting here when you want it to vary per deployment.
+`
+
 const readmeTemplate = `# {{ .Name }} crew
 
 Scaffolded by ` + "`kmctl create`" + `. This is a minimal, valid starting point -
 customize it before relying on it.
+{{- if .Chart }}
+
+It is a Helm chart: the manifests are in ` + "`templates/`" + `, the starter fitness suite in
+` + "`fitness/`" + `.
+{{- end }}
 
 ## What is here
 
@@ -310,8 +328,14 @@ customize it before relying on it.
 ## Next steps
 
 ` + "```bash" + `
+{{- if .Chart }}
+helm upgrade --install {{ .Name }} . --namespace {{ .Name }} --create-namespace
+kmctl crew status {{ .Name }} -n {{ .Name }}
+kubectl apply -n {{ .Name }} -f fitness/
+{{- else }}
 kmctl apply -f .                 # create the resources
 kmctl crew status {{ .Name }}    # watch it come Ready
 kmctl fitness run {{ .Name }}-starter
+{{- end }}
 ` + "```" + `
 `

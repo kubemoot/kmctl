@@ -132,3 +132,20 @@ func TestCreateCommand_ScaffoldsAndHints(t *testing.T) {
 		t.Fatalf("want the apply next-step hint, got %q", out.String())
 	}
 }
+
+func TestCreateCommand_ChartHintsHelm(t *testing.T) {
+	t.Setenv("KUBECONFIG", t.TempDir()+"/absent-kubeconfig")
+	dir := t.TempDir()
+	cmd := newCreateCommand(client.NewFactory())
+	var out, errBuf bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&errBuf)
+	cmd.SetArgs([]string{"demo", "--chart", "--no-input", "--members", "1", "--model-family", "qwen", "-o", dir})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	want := "Next: helm upgrade --install demo " + dir + "/demo --namespace demo --create-namespace"
+	if !strings.Contains(out.String(), want) {
+		t.Fatalf("want %q, got %q", want, out.String())
+	}
+}
