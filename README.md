@@ -7,54 +7,79 @@ over the Kubernetes resources Kubemoot manages (crews, agents, prompt modules,
 models) plus its live discussions and fitness suites. The operator remains the
 single source of lifecycle truth; `kmctl` is a client.
 
-> Status: **early**. The repository, release pipeline, and quality gates are in
-> place; commands are added as the tool grows. See the planned surface below.
+> Status: **early**. Commands are added as the tool grows. kmctl works against the
+> `kubemoot.ai/v1alpha1` API served by the Kubemoot operator.
 
-## Planned command surface
+Documentation:
+
+- [kmctl user guide](https://kubemoot.org/docs/user-guides/kmctl/)
+- [kmctl command reference](https://kubemoot.org/docs/reference/kmctl/)
+
+## Commands
 
 ```
 kmctl
-  create <name>        scaffold a working crew + starter fitness tests (interactive)
-  crew                 list | get | status
-  agent                list | get
-  conversation (conv)  ask <crew> "..." | list | get | watch   (live stream over HTTP/SSE)
-  fitness              run | list | get | download
-  prompt               list | get        (PromptModules)
-  model                list              (providers + live footprint)
-  apply -f / delete                      (CRD-only, server-side apply)
-  status | info | version | completion | config | help
+  status                       check cluster connectivity and whether Kubemoot is installed
+  info                         show the resolved context, namespace, and cluster connection
+  create <name>                scaffold a working crew with starter fitness tests (--chart for a Helm chart)
+  apply -f <path>              apply Kubemoot resource manifests (server-side apply)
+  delete (KIND NAME | -f ...)  delete Kubemoot resources (kubemoot.ai CRs only)
+  crew                         list | get
+  agent                        list | get
+  conversation (conv)          ask | watch        (stream a live discussion)
+  fitness                      run | list | get | scenarios | download
+  prompt                       list | get         (PromptModules)
+  model                        list | get | footprint   (providers + live GPU footprint)
+  version                      print the kmctl version (--short for just the number)
+  completion                   generate shell completion (bash, zsh, fish, powershell)
+  help                         help about any command
 ```
 
-The UX mirrors `kubectl` / `istioctl` / `helm`: standard kubeconfig/context/namespace
-flags, `-o {table|yaml|json|name|wide}` output, full `--help`, and generated shell
-completion.
+The UX mirrors `kubectl` / `helm`: the standard kubeconfig, `--context`, and
+`-n/--namespace` flags, `-o yaml|json` output (a table by default), full `--help`,
+and generated shell completion.
+
+Planned, not yet implemented: `crew status`, `conversation list | get`, and a
+`config` command.
 
 ## Install
 
-`kmctl` ships as a single static binary. No runtime dependencies.
+`kmctl` ships as a single static binary with no runtime dependencies. Each
+[GitHub Release](https://github.com/kubemoot/kmctl/releases) publishes six archives,
+`kmctl_<version>_<os>_<arch>`, for `linux`, `darwin`, and `windows` on `amd64` and
+`arm64` (`.tar.gz`, or `.zip` for Windows), plus `checksums.txt`.
 
-### Linux (x86_64 / arm64)
-
-While the repository is private, download the latest release with the GitHub CLI
-(it handles auth and resolves the latest version). Use `linux_arm64` on ARM:
+### Linux and macOS
 
 ```bash
-gh release download -R kubemoot/kmctl \
-  --pattern 'kmctl_*_linux_amd64.tar.gz' --clobber
-tar -xzf kmctl_*_linux_amd64.tar.gz kmctl
+OS="$(uname -s | tr '[:upper:]' '[:lower:]')"          # linux | darwin
+ARCH="$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')"
+TAG="$(basename "$(curl -fsSLI -o /dev/null -w '%{url_effective}' \
+  https://github.com/kubemoot/kmctl/releases/latest)")"
+curl -fsSL "https://github.com/kubemoot/kmctl/releases/download/${TAG}/kmctl_${TAG#v}_${OS}_${ARCH}.tar.gz" \
+  | tar -xz kmctl
 sudo install -m 0755 kmctl /usr/local/bin/kmctl
-rm -f kmctl_*_linux_amd64.tar.gz
 kmctl version
 ```
 
-After the open-source release the same artifacts install without auth:
+With the GitHub CLI instead:
 
 ```bash
-VER="$(curl -fsSL https://api.github.com/repos/kubemoot/kmctl/releases/latest \
-  | grep -oP '"tag_name":\s*"\K[^"]+')"
-curl -fsSL "https://github.com/kubemoot/kmctl/releases/download/${VER}/kmctl_${VER#v}_linux_amd64.tar.gz" \
-  | tar -xz kmctl
+gh release download -R kubemoot/kmctl --pattern 'kmctl_*_linux_amd64.tar.gz'
+tar -xzf kmctl_*_linux_amd64.tar.gz kmctl
 sudo install -m 0755 kmctl /usr/local/bin/kmctl
+```
+
+### Windows
+
+Download `kmctl_<version>_windows_amd64.zip` (or `_arm64`) from the
+[latest release](https://github.com/kubemoot/kmctl/releases/latest), extract
+`kmctl.exe`, and put it on your `PATH`.
+
+### With Go
+
+```bash
+go install github.com/kubemoot/kmctl@latest
 ```
 
 ### Shell autocomplete
@@ -82,7 +107,7 @@ per-shell details.
 
 ## Build and test
 
-Requires Go 1.26+.
+Requires Go 1.27+.
 
 ```bash
 make build      # build the ./kmctl binary

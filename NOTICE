@@ -1,4 +1,7 @@
 kmctl
-Copyright 2026 Jonathan Johnson
+Copyright 2026 The Kubemoot Authors
 
-This product includes software developed as part of the Kubemoot ecosystem.
+This product is part of the Kubemoot project
+(https://github.com/kubemoot/kubemoot).
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
