@@ -1,0 +1,89 @@
+# Promote Release: publish a tested kmctl release candidate as the public release.
+#
+# Every push to main tags a release candidate vX.Y.Z-rc.N and builds it without
+# publishing. A maintainer runs this workflow (Actions tab, Run workflow; dispatch
+# needs write access) to tag the candidate's commit vX.Y.Z and run goreleaser on it:
+# binaries, checksums, and the GitHub Release with notes from the conventional commits
+# since the previous release. The default is a dry run: goreleaser builds a snapshot
+# and the run summary shows the notes; nothing is tagged or published.
+name: Promote Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      rc_tag:
+        description: '"latest", or a vX.Y.Z-rc.N tag on main'
+        required: true
+        default: latest
+        type: string
+      dry_run:
+        description: 'Dry run: build a snapshot and show the notes, publish nothing'
+        required: true
+        default: true
+        type: boolean
+
+concurrency:
+  group: promote-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  promote:
+    # The same runners as every release in the ecosystem, and only from main.
+    if: github.ref == 'refs/heads/main'
+    runs-on: homelab-runners
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Test the release helpers
+        run: bash .github/scripts/test-release-lib.sh
+
+      - name: Tag the final version
+        id: promote
+        env:
+          RC_TAG: ${{ inputs.rc_tag }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          OUT_DIR: ${{ runner.temp }}/promotion
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          source .github/scripts/release-lib.sh
+          rl_promote_single v kmctl "${OUT_DIR}" >> "$GITHUB_OUTPUT"
+          cat "${OUT_DIR}/notes.md" >> "$GITHUB_STEP_SUMMARY"
+
+      # goreleaser builds from the checkout, so it moves to the promoted commit; the
+      # notes live outside the checkout so the tree stays clean.
+      - name: Check out the promoted commit
+        env:
+          COMMIT: ${{ steps.promote.outputs.commit }}
+        run: git checkout --quiet "${COMMIT}"
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.27'
+
+      - name: Build a snapshot (dry run)
+        if: inputs.dry_run
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: latest
+          args: release --clean --snapshot
+
+      - name: Publish the release with goreleaser
+        if: ${{ !inputs.dry_run }}
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: latest
+          args: release --clean --release-notes ${{ runner.temp }}/promotion/notes.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_CURRENT_TAG: ${{ steps.promote.outputs.final_tag }}
+          GORELEASER_PREVIOUS_TAG: ${{ steps.promote.outputs.previous_tag }}
