@@ -1,14 +1,9 @@
 # Security Policy
 
-## Reporting a vulnerability
+Report vulnerabilities privately to security@kubemoot.org. Do not open a public issue,
+Discussion, or pull request for a security report.
 
-Please report security vulnerabilities **privately** to security@kubemoot.org. Do not open a
-public issue for a security report.
-
-We will acknowledge your report within a reasonable period and coordinate disclosure
-with you before any public announcement.
-
-## Supported versions
-
-kmctl is under active development; security fixes target the latest `main` and ship in
-the next GitHub Release.
+The full policy, including supported versions and coordinated disclosure, is in the
+[Security page of kubemoot.org](https://kubemoot.org/docs/community/security/). The
+platform's security model and known limitations are in the
+[`kubemoot` repository's SECURITY.md](https://github.com/kubemoot/kubemoot/blob/main/SECURITY.md).

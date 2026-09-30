@@ -139,9 +139,13 @@ make hooks      # install the pre-commit gate (gofmt + lint)
 
 ## Releases
 
-Conventional commits drive the version. A push to `main` computes the next SemVer
-(`paulhatch/semantic-version`), tags it, and `goreleaser` publishes cross-platform
-binaries (linux/darwin/windows x amd64/arm64) to a GitHub Release.
+Every merge to `main` releases kmctl: the version comes from conventional commits and
+`goreleaser` publishes cross-platform binaries to a GitHub Release. See
+[Releases and Versioning](https://kubemoot.org/docs/community/releases/).
+
+## Community and contributing
+
+Kubemoot is an independent open-source project under the Apache License 2.0. Contributing, support, governance, the code of conduct, security reporting, and releases are documented in one place: the [Community section of kubemoot.org](https://kubemoot.org/docs/community/). Ask questions and share ideas in [GitHub Discussions](https://github.com/orgs/kubemoot/discussions). For anything else write to moot@kubemoot.org, and report vulnerabilities privately to security@kubemoot.org.
 
 ## License
 
