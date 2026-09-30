@@ -51,13 +51,24 @@ Planned, not yet implemented: `crew status`, `conversation list | get`, and a
 
 ### Linux and macOS
 
+Releases are built for `amd64` and `arm64` only.
+
 ```bash
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"          # linux | darwin
-ARCH="$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')"
+case "$(uname -m)" in
+  x86_64|amd64) ARCH=amd64 ;;
+  aarch64|arm64) ARCH=arm64 ;;
+  *) echo "kmctl releases are built for amd64 and arm64 only" >&2; exit 1 ;;
+esac
 TAG="$(basename "$(curl -fsSLI -o /dev/null -w '%{url_effective}' \
   https://github.com/kubemoot/kmctl/releases/latest)")"
-curl -fsSL "https://github.com/kubemoot/kmctl/releases/download/${TAG}/kmctl_${TAG#v}_${OS}_${ARCH}.tar.gz" \
-  | tar -xz kmctl
+case "$TAG" in v*) ;; *) echo "no kmctl release found" >&2; exit 1 ;; esac
+ARCHIVE="kmctl_${TAG#v}_${OS}_${ARCH}.tar.gz"
+BASE="https://github.com/kubemoot/kmctl/releases/download/${TAG}"
+curl -fsSLO "${BASE}/${ARCHIVE}"
+curl -fsSLO "${BASE}/checksums.txt"
+grep " ${ARCHIVE}\$" checksums.txt | sha256sum -c -     # macOS: shasum -a 256 -c -
+tar -xzf "${ARCHIVE}" kmctl
 sudo install -m 0755 kmctl /usr/local/bin/kmctl
 kmctl version
 ```
@@ -65,7 +76,8 @@ kmctl version
 With the GitHub CLI instead:
 
 ```bash
-gh release download -R kubemoot/kmctl --pattern 'kmctl_*_linux_amd64.tar.gz'
+gh release download -R kubemoot/kmctl --pattern 'kmctl_*_linux_amd64.tar.gz' --pattern checksums.txt
+sha256sum -c --ignore-missing checksums.txt
 tar -xzf kmctl_*_linux_amd64.tar.gz kmctl
 sudo install -m 0755 kmctl /usr/local/bin/kmctl
 ```
