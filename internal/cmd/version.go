@@ -17,12 +17,13 @@ func newVersionCommand() *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			out := cmd.OutOrStdout()
+			info := version.Get()
 			if short {
-				_, err := fmt.Fprintln(out, version.Version)
+				_, err := fmt.Fprintln(out, info.Version)
 				return err
 			}
 			_, err := fmt.Fprintf(out, "kmctl version %s (commit %s, built %s)\n",
-				version.Version, version.Commit, version.Date)
+				info.Version, info.Commit, info.Date)
 			return err
 		},
 	}

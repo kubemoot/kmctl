@@ -17,8 +17,8 @@ func TestVersionCommand_Default(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatalf("version returned error: %v", err)
 	}
-	if !strings.Contains(buf.String(), version.Version) {
-		t.Errorf("version output %q missing version %q", buf.String(), version.Version)
+	if !strings.Contains(buf.String(), version.Get().Version) {
+		t.Errorf("version output %q missing version %q", buf.String(), version.Get().Version)
 	}
 }
 
@@ -31,8 +31,8 @@ func TestVersionCommand_Short(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatalf("version --short returned error: %v", err)
 	}
-	if got := strings.TrimSpace(buf.String()); got != version.Version {
-		t.Errorf("version --short = %q, want %q", got, version.Version)
+	if got := strings.TrimSpace(buf.String()); got != version.Get().Version {
+		t.Errorf("version --short = %q, want %q", got, version.Get().Version)
 	}
 }
 
