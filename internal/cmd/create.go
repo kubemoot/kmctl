@@ -33,17 +33,24 @@ func newCreateCommand(f *client.Factory) *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "create NAME",
-		Short: "Scaffold a working crew with starter fitness tests",
-		Long: `Create scaffolds a minimal, valid, ready-to-apply crew (the helm-create
-analog): a Crew + scheduling policy, a coordinator and tooler agents (loose
-model coupling), prompt modules, and a starter fitness suite.
+		Short: "Scaffold the starter crew: small, complete, and working",
+		Long: `Create scaffolds the starter crew (the helm-create analog): a read-only guide
+to its own Kubernetes namespace that works on any cluster with no configuration.
+It has a coordinator, one to five specialists, one Kubernetes MCP server in
+read-only mode with a read-only Role, ADL prompt modules, Models for the chosen
+family, and a fitness suite that uses the crew's own pods as ground truth.
 
-Required inputs not given as flags are prompted for interactively. Use --no-input
-in scripts/CI; then the inputs must come from flags.`,
+Specialists, in the order --members adds them:
+` + specialistHelp() + `
+Agents declare capabilities, never a model; the scheduling policy binds Models.
+
+Inputs not given as flags are prompted for interactively. With --no-input nothing
+is prompted, and --members defaults to 1. A bundle (no --chart) is applied to the
+namespace given by -n, or crew-NAME.`,
 		Example: `  kmctl create demo
-  kmctl create demo --members 3 --model-family qwen --no-input
+  kmctl create demo --chart --members 5 --model-family qwen --no-input
   kmctl create demo -o ./crews
-  kmctl create demo --chart --members 2 --model-family qwen --no-input`,
+  kmctl create demo --members 2 --model-family qwen --no-input -n team-a`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts := scaffold.Options{
@@ -53,6 +60,7 @@ in scripts/CI; then the inputs must come from flags.`,
 				ModelFamily: modelFamily,
 				OutputDir:   outputDir,
 				Chart:       chart,
+				Namespace:   explicitNamespace(f),
 			}
 			discovered := discoverProviders(cmd.Context(), f)
 			if err := gather(&opts, cmd.Flags().Changed, noInput, discovered, &surveyPrompter{}); err != nil {
@@ -68,7 +76,7 @@ in scripts/CI; then the inputs must come from flags.`,
 				return err
 			}
 			out := cmd.OutOrStdout()
-			if _, err := fmt.Fprintf(out, "Scaffolded crew %q (%d tooler(s)) in %s/%s:\n", opts.Name, opts.Members, opts.OutputDir, opts.Name); err != nil {
+			if _, err := fmt.Fprintf(out, "Scaffolded crew %q (%d specialist(s) beside the coordinator) in %s/%s:\n", opts.Name, opts.Members, opts.OutputDir, opts.Name); err != nil {
 				return err
 			}
 			for _, p := range written {
@@ -83,10 +91,10 @@ in scripts/CI; then the inputs must come from flags.`,
 			return nil
 		},
 	}
-	cmd.Flags().IntVar(&members, "members", 0, "Number of tooler agents (prompted if unset)")
+	cmd.Flags().IntVar(&members, "members", 1, fmt.Sprintf("Specialists beside the coordinator, 1 to %d (prompted if unset)", scaffold.MaxMembers))
 	cmd.Flags().StringSliceVar(&providers, "providers", nil, "Model providers the crew may use (prompted if unset)")
 	cmd.Flags().StringVar(&modelFamily, "model-family", "", "Preferred model family, e.g. qwen (prompted if unset)")
-	cmd.Flags().BoolVar(&noInput, "no-input", false, "Never prompt; required inputs must come from flags")
+	cmd.Flags().BoolVar(&noInput, "no-input", false, "Never prompt; unset inputs take their defaults")
 	cmd.Flags().StringVarP(&outputDir, "output", "o", ".", "Directory to write the scaffold into")
 	cmd.Flags().BoolVar(&chart, "chart", false, "Lay the crew out as a Helm chart (Chart.yaml, templates/, fitness/)")
 	return cmd
@@ -95,40 +103,81 @@ in scripts/CI; then the inputs must come from flags.`,
 // nextStep is the command that deploys what was just scaffolded.
 func nextStep(opts scaffold.Options) string {
 	dir := opts.OutputDir + "/" + opts.Name
+	ns := opts.TargetNamespace()
 	if opts.Chart {
-		return fmt.Sprintf("helm upgrade --install %s %s --namespace %s --create-namespace", opts.Name, dir, opts.Name)
+		return fmt.Sprintf("helm upgrade --install %s %s --namespace %s --create-namespace", opts.Name, dir, ns)
 	}
-	return "kmctl apply -f " + dir
+	return fmt.Sprintf("kubectl create namespace %[1]s && kubectl apply -n %[1]s -f %[2]s/access && kmctl apply -n %[1]s -f %[2]s", ns, dir)
+}
+
+// explicitNamespace is the -n flag when given, else "": the bundle then targets crew-NAME.
+func explicitNamespace(f *client.Factory) string {
+	if f.ConfigFlags.Namespace == nil {
+		return ""
+	}
+	return *f.ConfigFlags.Namespace
+}
+
+// specialistHelp lists the specialists for the command's long help.
+func specialistHelp() string {
+	var b strings.Builder
+	for i, line := range scaffold.SizeSummary(scaffold.MaxMembers) {
+		fmt.Fprintf(&b, "  %d. %s\n", i+1, line)
+	}
+	return b.String()
 }
 
 // gather fills any input not provided as a flag, prompting unless noInput.
 func gather(opts *scaffold.Options, changed func(string) bool, noInput bool, discovered []string, p prompter) error {
-	if !changed("members") {
-		if noInput {
-			return fmt.Errorf("--members is required with --no-input")
-		}
-		n, err := p.Int("Starting number of members in this crew?", 3)
-		if err != nil {
-			return err
-		}
-		opts.Members = n
+	if noInput {
+		return nil
 	}
-	if !changed("providers") && !noInput && len(discovered) > 0 {
-		label := fmt.Sprintf("%d LLM providers (ollama) discovered - select those this crew may use:", len(discovered))
-		sel, err := p.MultiSelect(label, discovered)
-		if err != nil {
-			return err
-		}
-		opts.Providers = sel
+	steps := []struct {
+		flag string
+		ask  func(*scaffold.Options, []string, prompter) error
+	}{
+		{"members", askMembers},
+		{"providers", askProviders},
+		{"model-family", askFamily},
 	}
-	if !changed("model-family") && !noInput {
-		fam, err := p.SelectOrOther("Which LLM model family to start with?", scaffold.KnownModelFamilies)
-		if err != nil {
+	for _, s := range steps {
+		if changed(s.flag) {
+			continue
+		}
+		if err := s.ask(opts, discovered, p); err != nil {
 			return err
 		}
-		opts.ModelFamily = fam
 	}
 	return nil
+}
+
+func askMembers(opts *scaffold.Options, _ []string, p prompter) error {
+	n, err := p.Int(fmt.Sprintf("How many specialists beside the coordinator (1-%d)?", scaffold.MaxMembers), 1)
+	if err == nil {
+		opts.Members = n
+	}
+	return err
+}
+
+// askProviders offers the discovered providers; with none discovered there is nothing to pick.
+func askProviders(opts *scaffold.Options, discovered []string, p prompter) error {
+	if len(discovered) == 0 {
+		return nil
+	}
+	label := fmt.Sprintf("%d LLM providers (ollama) discovered - select those this crew may use:", len(discovered))
+	sel, err := p.MultiSelect(label, discovered)
+	if err == nil {
+		opts.Providers = sel
+	}
+	return err
+}
+
+func askFamily(opts *scaffold.Options, _ []string, p prompter) error {
+	fam, err := p.SelectOrOther("Which LLM model family to start with?", scaffold.KnownModelFamilies)
+	if err == nil {
+		opts.ModelFamily = fam
+	}
+	return err
 }
 
 // warnIfNoModels prints a warning when the scaffold generated no Model CRs, so the

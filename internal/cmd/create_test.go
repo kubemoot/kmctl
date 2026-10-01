@@ -2,6 +2,9 @@ package cmd
 
 import (
 	"bytes"
+	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -45,22 +48,23 @@ func TestWarnIfNoModels(t *testing.T) {
 	}
 }
 
-// fakePrompter records calls and returns canned answers.
+// fakePrompter records calls and returns canned answers, or err from every prompt.
 type fakePrompter struct {
 	intVal   int
 	multiVal []string
 	selVal   string
+	err      error
 	called   bool
 }
 
-func (f *fakePrompter) Int(string, int) (int, error) { f.called = true; return f.intVal, nil }
+func (f *fakePrompter) Int(string, int) (int, error) { f.called = true; return f.intVal, f.err }
 func (f *fakePrompter) MultiSelect(string, []string) ([]string, error) {
 	f.called = true
-	return f.multiVal, nil
+	return f.multiVal, f.err
 }
 func (f *fakePrompter) SelectOrOther(string, []string) (string, error) {
 	f.called = true
-	return f.selVal, nil
+	return f.selVal, f.err
 }
 
 func changedSet(names ...string) func(string) bool {
@@ -71,11 +75,17 @@ func changedSet(names ...string) func(string) bool {
 	return func(s string) bool { return set[s] }
 }
 
-func TestGather_NoInputRequiresMembers(t *testing.T) {
-	opts := scaffold.Options{Name: "demo"}
-	err := gather(&opts, changedSet(), true, nil, &fakePrompter{})
-	if err == nil {
-		t.Fatal("expected error: --members required with --no-input")
+func TestGather_NoInputKeepsTheMembersDefault(t *testing.T) {
+	opts := scaffold.Options{Name: "demo", Members: 1}
+	fp := &fakePrompter{intVal: 4}
+	if err := gather(&opts, changedSet(), true, []string{"ollama-gpu"}, fp); err != nil {
+		t.Fatalf("gather: %v", err)
+	}
+	if fp.called {
+		t.Error("--no-input must never prompt")
+	}
+	if opts.Members != 1 {
+		t.Errorf("members = %d, want the default 1", opts.Members)
 	}
 }
 
@@ -128,8 +138,91 @@ func TestCreateCommand_ScaffoldsAndHints(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if !strings.Contains(out.String(), "Next: kmctl apply -f") {
-		t.Fatalf("want the apply next-step hint, got %q", out.String())
+	want := "Next: kubectl create namespace crew-demo && kubectl apply -n crew-demo -f " + dir + "/demo/access && kmctl apply -n crew-demo -f " + dir + "/demo"
+	if !strings.Contains(out.String(), want) {
+		t.Fatalf("want %q, got %q", want, out.String())
+	}
+	if _, err := os.Stat(filepath.Join(dir, "demo", "access", "rbac.yaml")); err != nil {
+		t.Errorf("the bundle needs its RBAC in access/: %v", err)
+	}
+}
+
+// The bundle binds its RBAC and names its namespace in the prompts, so -n
+// decides both, and the hint applies to the same namespace.
+func TestCreateCommand_BundleFollowsTheNamespaceFlag(t *testing.T) {
+	t.Setenv("KUBECONFIG", t.TempDir()+"/absent-kubeconfig")
+	dir := t.TempDir()
+	f := client.NewFactory()
+	team := "team-a"
+	f.ConfigFlags.Namespace = &team
+	cmd := newCreateCommand(f)
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"demo", "--no-input", "-o", dir})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if !strings.Contains(out.String(), "kmctl apply -n team-a") {
+		t.Errorf("want the hint to apply to team-a, got %q", out.String())
+	}
+	rbac, err := os.ReadFile(filepath.Join(dir, "demo", "access", "rbac.yaml"))
+	if err != nil || !strings.Contains(string(rbac), "namespace: team-a") {
+		t.Errorf("the RoleBinding must name team-a (err %v):\n%s", err, rbac)
+	}
+}
+
+func TestExplicitNamespace(t *testing.T) {
+	f := client.NewFactory()
+	f.ConfigFlags.Namespace = nil
+	if got := explicitNamespace(f); got != "" {
+		t.Errorf("no namespace flag: got %q, want empty", got)
+	}
+	empty, set := "", "team-a"
+	f.ConfigFlags.Namespace = &empty
+	if got := explicitNamespace(f); got != "" {
+		t.Errorf("empty -n: got %q, want empty", got)
+	}
+	f.ConfigFlags.Namespace = &set
+	if got := explicitNamespace(f); got != "team-a" {
+		t.Errorf("-n team-a: got %q", got)
+	}
+}
+
+// Interactive gathering asks only for what no flag set, and stops at a prompt error.
+func TestGather_AsksOnlyForUnsetInputs(t *testing.T) {
+	opts := scaffold.Options{Name: "demo", Members: 2}
+	fp := &fakePrompter{intVal: 4, selVal: "llama"}
+	if err := gather(&opts, changedSet("members"), false, nil, fp); err != nil {
+		t.Fatalf("gather: %v", err)
+	}
+	if opts.Members != 2 || opts.ModelFamily != "llama" || opts.Providers != nil {
+		t.Errorf("want members kept, family asked, providers skipped with none discovered: %+v", opts)
+	}
+	failing := &fakePrompter{err: errors.New("interrupted")}
+	if err := gather(&opts, changedSet(), false, []string{"p"}, failing); err == nil || err.Error() != "interrupted" {
+		t.Errorf("want the prompt error, got %v", err)
+	}
+}
+
+func TestCreateCommand_RejectsTooManyMembers(t *testing.T) {
+	t.Setenv("KUBECONFIG", t.TempDir()+"/absent-kubeconfig")
+	cmd := newCreateCommand(client.NewFactory())
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"demo", "--no-input", "--members", "6", "-o", t.TempDir()})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "1 to 5") {
+		t.Fatalf("want a 1 to 5 members error, got %v", err)
+	}
+}
+
+func TestCreateCommand_HelpListsTheSpecialists(t *testing.T) {
+	long := newCreateCommand(client.NewFactory()).Long
+	for _, key := range []string{"1. workloads", "2. events", "3. networking", "4. config", "5. reviewer"} {
+		if !strings.Contains(long, key) {
+			t.Errorf("help lacks %q:\n%s", key, long)
+		}
 	}
 }
 
@@ -144,7 +237,7 @@ func TestCreateCommand_ChartHintsHelm(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	want := "Next: helm upgrade --install demo " + dir + "/demo --namespace demo --create-namespace"
+	want := "Next: helm upgrade --install demo " + dir + "/demo --namespace crew-demo --create-namespace"
 	if !strings.Contains(out.String(), want) {
 		t.Fatalf("want %q, got %q", want, out.String())
 	}
