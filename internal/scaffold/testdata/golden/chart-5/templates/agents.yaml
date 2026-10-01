@@ -1,0 +1,145 @@
+apiVersion: kubemoot.ai/v1alpha1
+kind: Agent
+metadata:
+  name: hello-coordinator
+  labels:
+    kubemoot.ai/crew: hello
+    kubemoot.ai/role: coordinator
+spec:
+  type: chat
+  description: "Coordinator for the hello crew: picks the specialists for each question and writes the answer."
+  discussRole: coordinator
+  capabilities: [tool-calling, reasoning]
+  discussChannels: [kubernetes, general]
+  promptRefs: [advisory-prompt, coordinator-decision-logic, synthesis-prompt]
+  temperature: "0.1"
+  maxTokens: 4096
+  deployment:
+    replicas: 1
+    port: 8080
+    env:
+      # The coordinator calls no tools: the specialists gather, it writes the answer.
+      - name: KUBEMOOT_GATEWAY_ENABLED
+        value: "false"
+---
+apiVersion: kubemoot.ai/v1alpha1
+kind: Agent
+metadata:
+  name: hello-workloads
+  labels:
+    kubemoot.ai/crew: hello
+    kubemoot.ai/role: tooler
+spec:
+  type: chat
+  description: "Pods, Deployments, ReplicaSets, StatefulSets, and Jobs in the crew's namespace."
+  triageSummary: "Lists and inspects Pods, Deployments, ReplicaSets, StatefulSets, and Jobs in this namespace: phase, readiness, replicas, conditions, and logs."
+  discussRole: tooler
+  capabilities: [tool-calling, kubernetes]
+  discussChannels: [kubernetes]
+  discussKeywords: [pod, pods, deployment, deployments, replicaset, statefulset, job, jobs, replicas, workload, logs, running]
+  promptRefs: [discussion-protocol, response-style, hello-workloads-system]
+  # Only this specialist's tools from the crew's Kubernetes MCP server (tools.yaml).
+  enabledTools: [pods_list_in_namespace, pods_get, pods_log, resources_list, resources_get]
+  temperature: "0.3"
+  maxTokens: 4096
+  deployment:
+    replicas: 1
+    port: 8080
+---
+apiVersion: kubemoot.ai/v1alpha1
+kind: Agent
+metadata:
+  name: hello-events
+  labels:
+    kubemoot.ai/crew: hello
+    kubemoot.ai/role: tooler
+spec:
+  type: chat
+  description: "Warning events, container restarts, and recent failures in the crew's namespace."
+  triageSummary: "Reads Warning events, container restart counts, and the reasons for recent failures (crashes, failed probes, failed pulls) in this namespace."
+  discussRole: tooler
+  capabilities: [tool-calling, kubernetes]
+  discussChannels: [kubernetes]
+  discussKeywords: [event, events, warning, warnings, restart, restarts, crash, failing, failed, error, unhealthy, problem]
+  promptRefs: [discussion-protocol, response-style, hello-events-system]
+  # Only this specialist's tools from the crew's Kubernetes MCP server (tools.yaml).
+  enabledTools: [events_list, pods_list_in_namespace, pods_get, pods_log]
+  temperature: "0.3"
+  maxTokens: 4096
+  deployment:
+    replicas: 1
+    port: 8080
+---
+apiVersion: kubemoot.ai/v1alpha1
+kind: Agent
+metadata:
+  name: hello-networking
+  labels:
+    kubemoot.ai/crew: hello
+    kubemoot.ai/role: tooler
+spec:
+  type: chat
+  description: "Services, endpoints, Ingresses or HTTPRoutes, and NetworkPolicies in the crew's namespace."
+  triageSummary: "Lists Services and whether they have ready endpoints, Ingresses, HTTPRoutes, and NetworkPolicies in this namespace."
+  discussRole: tooler
+  capabilities: [tool-calling, kubernetes]
+  discussChannels: [kubernetes]
+  discussKeywords: [service, services, endpoint, endpoints, port, ports, ingress, httproute, route, networkpolicy, network, traffic, dns]
+  promptRefs: [discussion-protocol, response-style, hello-networking-system]
+  # Only this specialist's tools from the crew's Kubernetes MCP server (tools.yaml).
+  enabledTools: [resources_list, resources_get]
+  temperature: "0.3"
+  maxTokens: 4096
+  deployment:
+    replicas: 1
+    port: 8080
+---
+apiVersion: kubemoot.ai/v1alpha1
+kind: Agent
+metadata:
+  name: hello-config
+  labels:
+    kubemoot.ai/crew: hello
+    kubemoot.ai/role: tooler
+spec:
+  type: chat
+  description: "ConfigMaps, ServiceAccounts, and the Secrets workloads reference in the crew's namespace."
+  triageSummary: "Lists ConfigMaps and their keys, ServiceAccounts and the pods that use them, and the names of the Secrets workloads reference in this namespace."
+  discussRole: tooler
+  capabilities: [tool-calling, kubernetes]
+  discussChannels: [kubernetes]
+  discussKeywords: [configmap, configmaps, config, configuration, secret, secrets, serviceaccount, serviceaccounts, account, env, volume]
+  promptRefs: [discussion-protocol, response-style, hello-config-system]
+  # Only this specialist's tools from the crew's Kubernetes MCP server (tools.yaml).
+  enabledTools: [resources_list, resources_get]
+  temperature: "0.3"
+  maxTokens: 4096
+  deployment:
+    replicas: 1
+    port: 8080
+---
+apiVersion: kubemoot.ai/v1alpha1
+kind: Agent
+metadata:
+  name: hello-reviewer
+  labels:
+    kubemoot.ai/crew: hello
+    kubemoot.ai/role: analyst
+spec:
+  type: chat
+  description: "Checks the answer against the data the other specialists gathered and flags unsupported claims."
+  triageSummary: "Reviews the findings the other specialists gathered: checks that each claim is supported by tool output, reconciles contradictions, and draws the conclusion (healthy or not, and why)."
+  discussRole: analyst
+  capabilities: [reasoning]
+  discussChannels: [kubernetes]
+  discussKeywords: [healthy, unhealthy, why, check, review, summary, overall]
+  promptRefs: [discussion-protocol, response-style, hello-reviewer-system]
+  temperature: "0.2"
+  maxTokens: 4096
+  deployment:
+    replicas: 1
+    port: 8080
+    env:
+      # An analyst calls no tools: it reasons over what the toolers gathered.
+      - name: KUBEMOOT_GATEWAY_ENABLED
+        value: "false"

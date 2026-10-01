@@ -1,8 +1,9 @@
-// Package scaffold generates a minimal, valid, ready-to-apply Kubemoot crew -
-// the `helm create` analog. The output is a starting point to customize: it
-// applies cleanly and wires the resources together with loose model coupling
-// (agents declare capabilities; a CrewSchedulingPolicy picks models), but the
-// ADL is intentionally minimal.
+// Package scaffold generates the Kubemoot starter crew, the `helm create`
+// analog: a small, complete, working crew that is a read-only guide to its own
+// namespace. It reads that namespace through one Kubernetes MCP server with a
+// read-only Role, so it answers on any cluster with no configuration, and its
+// fitness suite uses the crew's own pods as ground truth. Agents declare
+// capabilities, never a model; a CrewSchedulingPolicy binds Models by them.
 package scaffold
 
 import (
@@ -20,7 +21,8 @@ var KnownModelFamilies = []string{"qwen", "gemma", "llama", "mistral"}
 // Options is the resolved input to the generator (from flags or prompts).
 type Options struct {
 	Name        string   // crew name (DNS-1123)
-	Members     int      // number of tooler agents (>= 1)
+	Members     int      // specialists beside the coordinator, 1 to MaxMembers
+	Namespace   string   // bundle only: the namespace the RBAC binds and the prompts name; default crew-<Name>
 	Providers   []string // allowed model providers (recorded in the policy + README)
 	ModelFamily string   // "" means skip / define later
 	OutputDir   string   // directory to write into
@@ -35,16 +37,27 @@ func (o Options) Validate() error {
 	if strings.ToLower(o.Name) != o.Name || strings.ContainsAny(o.Name, " _.") {
 		return fmt.Errorf("crew name %q must be lowercase DNS-1123 (letters, digits, -)", o.Name)
 	}
-	if o.Members < 1 {
-		return fmt.Errorf("a crew needs at least 1 tooler member (got %d)", o.Members)
+	if o.Members < 1 || o.Members > MaxMembers {
+		return fmt.Errorf("the starter crew has 1 to %d specialists (got %d); add more agents by hand once it runs", MaxMembers, o.Members)
 	}
 	return nil
 }
 
-type tooler struct {
-	Name    string
-	Channel string
+// TargetNamespace is where a bundle is applied: Namespace, or crew-<Name>.
+func (o Options) TargetNamespace() string {
+	if o.Namespace != "" {
+		return o.Namespace
+	}
+	return "crew-" + o.Name
 }
+
+// helmNamespace is what the chart's templates write wherever they need the
+// crew's namespace; Helm fills it in at install.
+const helmNamespace = "{{ .Release.Namespace }}"
+
+// kubernetesMCPImage is the Kubernetes MCP server the starter crew reads its
+// namespace with, the release the reference crews run. Bump it here.
+const kubernetesMCPImage = "quay.io/containers/kubernetes_mcp_server:v0.0.63"
 
 // modelSize is a built-in default for a model family. A crew needs Model CRs in
 // its namespace (the scheduler binds agents to them just-in-time); without them a
@@ -92,38 +105,68 @@ type modelCR struct {
 }
 
 type templateData struct {
-	Name        string
-	Members     []tooler
-	Providers   []string
-	ModelFamily string
-	HasFamily   bool
-	Models      []modelCR
-	HasModels   bool
-	Chart       bool
+	Name               string
+	Agents             []agent
+	HasReviewer        bool
+	Has                map[string]bool // specialist key -> in this crew
+	NS                 string          // the crew's namespace as the manifests write it
+	TargetNS           string          // the namespace the README installs into
+	Rules              string          // the read-only RBAC rules
+	KubernetesMCPImage string          // the tool server image
+	Providers          []string
+	ModelFamily        string
+	HasFamily          bool
+	Models             []modelCR
+	HasModels          bool
+	Chart              bool
 }
 
 func (o Options) data() templateData {
 	d := templateData{
-		Name:        o.Name,
-		Providers:   o.Providers,
-		ModelFamily: o.ModelFamily,
-		HasFamily:   o.ModelFamily != "",
-		Chart:       o.Chart,
+		Name:               o.Name,
+		Providers:          o.Providers,
+		ModelFamily:        o.ModelFamily,
+		HasFamily:          o.ModelFamily != "",
+		Chart:              o.Chart,
+		TargetNS:           o.TargetNamespace(),
+		Rules:              rbacRules,
+		KubernetesMCPImage: kubernetesMCPImage,
+		Models:             o.models(),
+		Agents:             o.agents(),
 	}
-	for i := 1; i <= o.Members; i++ {
-		d.Members = append(d.Members, tooler{
-			Name:    fmt.Sprintf("%s-tooler-%d", o.Name, i),
-			Channel: fmt.Sprintf("topic-%d", i),
-		})
+	d.NS = d.TargetNS
+	if o.Chart {
+		d.NS = helmNamespace
 	}
-	// A Model per (family-size x provider), so the scheduler has something to bind.
-	for _, size := range modelFamilies[strings.ToLower(o.ModelFamily)] {
+	d.Has = map[string]bool{}
+	for _, a := range d.Agents {
+		d.Has[a.Key] = true
+	}
+	d.HasReviewer = d.Has[reviewer.Key]
+	d.HasModels = len(d.Models) > 0
+	return d
+}
+
+// agents is the crew's specialists, or none when Members is out of range
+// (Generate validates first; ModelCount does not need them).
+func (o Options) agents() []agent {
+	if o.Members < 1 || o.Members > MaxMembers {
+		return nil
+	}
+	return crewAgents(o.Name, o.Members)
+}
+
+// models is a Model per (family size x provider), so the scheduler has something to bind.
+func (o Options) models() []modelCR {
+	family := strings.ToLower(o.ModelFamily)
+	var out []modelCR
+	for _, size := range modelFamilies[family] {
 		for _, p := range o.Providers {
-			d.Models = append(d.Models, modelCR{
-				Name:          fmt.Sprintf("%s-%s-%s", strings.ToLower(o.ModelFamily), size.Params, p),
+			out = append(out, modelCR{
+				Name:          fmt.Sprintf("%s-%s-%s", family, size.Params, p),
 				Model:         size.Model,
 				ProviderRef:   p,
-				Family:        strings.ToLower(o.ModelFamily),
+				Family:        family,
 				Params:        size.Params,
 				LatencyClass:  size.LatencyClass,
 				ContextWindow: size.ContextWindow,
@@ -131,8 +174,7 @@ func (o Options) data() templateData {
 			})
 		}
 	}
-	d.HasModels = len(d.Models) > 0
-	return d
+	return out
 }
 
 // ModelCount reports how many Model CRs the scaffold will generate for these
@@ -140,7 +182,7 @@ func (o Options) data() templateData {
 // but be Unschedulable - no Models for the scheduler to bind agents to - until
 // Models are added to models.yaml. Callers (kmctl create) should warn on zero.
 func (o Options) ModelCount() int {
-	return len(o.data().Models)
+	return len(o.models())
 }
 
 // Generate returns a map of relative filename -> rendered content.
@@ -161,30 +203,36 @@ func Generate(o Options) (map[string]string, error) {
 	return out, nil
 }
 
-// layout maps each output path to its template. The chart form keeps the same
-// manifests: Helm installs them as they are into the release namespace, and the
-// fitness suite sits outside templates/ so an install does not start a run.
+// layout maps each output path to its template. Both forms keep the fitness
+// suite in fitness/, so installing the crew does not start a run. The bundle puts
+// its RBAC in access/: kmctl apply manages only kubemoot.ai kinds, and reads one
+// directory without descending, so kubectl applies access/ and kmctl the rest.
+// The chart's RBAC is a Helm template, so values.yaml can widen it.
 func layout(chart bool) map[string]string {
-	if !chart {
-		return map[string]string{
-			"crew.yaml":          crewTemplate,
-			"agents.yaml":        agentsTemplate,
-			"promptmodules.yaml": promptModulesTemplate,
-			"models.yaml":        modelsTemplate,
-			"fitness.yaml":       fitnessTemplate,
-			"README.md":          readmeTemplate,
-		}
+	files := map[string]string{
+		"crew.yaml":          crewTemplate,
+		"agents.yaml":        agentsTemplate,
+		"promptmodules.yaml": promptModulesTemplate,
+		"models.yaml":        modelsTemplate,
+		"tools.yaml":         toolsTemplate,
 	}
-	return map[string]string{
-		"Chart.yaml":                   chartTemplate,
-		"values.yaml":                  valuesTemplate,
-		"templates/crew.yaml":          crewTemplate,
-		"templates/agents.yaml":        agentsTemplate,
-		"templates/promptmodules.yaml": promptModulesTemplate,
-		"templates/models.yaml":        modelsTemplate,
-		"fitness/fitness.yaml":         fitnessTemplate,
-		"README.md":                    readmeTemplate,
+	out := map[string]string{
+		"fitness/fitness.yaml": fitnessTemplate,
+		"README.md":            readmeTemplate,
 	}
+	prefix := ""
+	if chart {
+		prefix = "templates/"
+		files["rbac.yaml"] = chartRBACTemplate
+		out["Chart.yaml"] = chartTemplate
+		out["values.yaml"] = valuesTemplate
+	} else {
+		out["access/rbac.yaml"] = bundleRBACTemplate
+	}
+	for name, tmpl := range files {
+		out[prefix+name] = tmpl
+	}
+	return out
 }
 
 // Write generates the scaffold and writes it into OutputDir/<name>, returning
@@ -215,8 +263,10 @@ func Write(o Options) ([]string, error) {
 	return written, nil
 }
 
+// render executes a template with [[ ]] delimiters, so the Helm actions the chart
+// carries ({{ .Release.Namespace }}, {{ .Values... }}) pass through untouched.
 func render(name, tmpl string, d templateData) (string, error) {
-	t, err := template.New(name).Parse(tmpl)
+	t, err := template.New(name).Delims("[[", "]]").Funcs(template.FuncMap{"indent": indent}).Parse(tmpl)
 	if err != nil {
 		return "", err
 	}
@@ -225,4 +275,16 @@ func render(name, tmpl string, d templateData) (string, error) {
 		return "", err
 	}
 	return buf.String(), nil
+}
+
+// indent prefixes every non-empty line of s with n spaces, for block scalars.
+func indent(n int, s string) string {
+	pad := strings.Repeat(" ", n)
+	lines := strings.Split(s, "\n")
+	for i, l := range lines {
+		if l != "" {
+			lines[i] = pad + l
+		}
+	}
+	return strings.Join(lines, "\n")
 }
