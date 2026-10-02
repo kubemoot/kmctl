@@ -140,8 +140,9 @@ make hooks      # install the pre-commit gate (gofmt + lint)
 
 ## Releases
 
-Every merge to `main` releases kmctl: the version comes from conventional commits and
-`goreleaser` publishes cross-platform binaries to a GitHub Release. See
+Every merge to `main` tags a release candidate; the version comes from conventional commits.
+A maintainer runs Promote Release to tag the final version, and `goreleaser` publishes
+cross-platform binaries to a GitHub Release. See
 [Releases and Versioning](https://kubemoot.org/docs/community/releases/).
 
 ## Community and contributing
