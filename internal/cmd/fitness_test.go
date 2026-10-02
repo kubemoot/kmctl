@@ -105,3 +105,15 @@ func TestDownloadCommand_Flags(t *testing.T) {
 		}
 	}
 }
+
+// The dashboard Service is found by label unless --dashboard-service names it,
+// so the flag has no fixed default name to go stale.
+func TestDownloadCommand_DashboardFlagDefaults(t *testing.T) {
+	cmd := newDownloadCommand(client.NewFactory())
+	if got := cmd.Flags().Lookup("dashboard-service").DefValue; got != "" {
+		t.Errorf("--dashboard-service default = %q, want empty (found by label)", got)
+	}
+	if got := cmd.Flags().Lookup("dashboard-namespace").DefValue; got != "kubemoot" {
+		t.Errorf("--dashboard-namespace default = %q, want kubemoot", got)
+	}
+}

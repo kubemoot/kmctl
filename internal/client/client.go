@@ -52,19 +52,31 @@ func (f *Factory) RESTMapper() (meta.RESTMapper, error) {
 	return f.ConfigFlags.ToRESTMapper()
 }
 
-// CoreRESTClient builds a core/v1 REST client, used to reach in-cluster services
-// (e.g. the per-crew discussion gateway) through the API server's service proxy,
-// authenticated by the active kubeconfig context.
-func (f *Factory) CoreRESTClient() (rest.Interface, error) {
+// Clientset builds a typed Kubernetes clientset for core resources (Services,
+// the service proxy) authenticated by the active kubeconfig context.
+func (f *Factory) Clientset() (kubernetes.Interface, error) {
 	cfg, err := f.RESTConfig()
 	if err != nil {
 		return nil, err
 	}
-	cs, err := kubernetes.NewForConfig(cfg)
+	return kubernetes.NewForConfig(cfg)
+}
+
+// CoreRESTClient builds a core/v1 REST client, used to reach in-cluster services
+// (e.g. the per-crew discussion gateway) through the API server's service proxy,
+// authenticated by the active kubeconfig context.
+func (f *Factory) CoreRESTClient() (rest.Interface, error) {
+	cs, err := f.Clientset()
 	if err != nil {
 		return nil, err
 	}
 	return cs.CoreV1().RESTClient(), nil
+}
+
+// ServiceProxy points a request at a Service through the API server's service
+// proxy (services/<name>:<port>/proxy); the caller adds the path with Suffix.
+func ServiceProxy(req *rest.Request, namespace, service, port string) *rest.Request {
+	return req.Namespace(namespace).Resource("services").Name(service + ":" + port).SubResource("proxy")
 }
 
 // Namespace resolves the effective namespace from the --namespace flag, the

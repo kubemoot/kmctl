@@ -2,9 +2,12 @@ package client
 
 import (
 	"errors"
+	"os"
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 )
 
 type fakeGroups struct {
@@ -77,5 +80,47 @@ func TestFactory_CurrentContextOverride(t *testing.T) {
 	f.ConfigFlags.Context = &override
 	if got := f.CurrentContext(); got != override {
 		t.Errorf("CurrentContext() = %q, want %q", got, override)
+	}
+}
+
+func TestFactory_ClientsetAndCoreRESTClient(t *testing.T) {
+	f := NewFactory()
+	server := "https://127.0.0.1:6443"
+	empty := t.TempDir() + "/kubeconfig"
+	if err := os.WriteFile(empty, []byte("apiVersion: v1\nkind: Config\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f.ConfigFlags.KubeConfig = &empty
+	f.ConfigFlags.APIServer = &server
+	cs, err := f.Clientset()
+	if err != nil || cs == nil {
+		t.Fatalf("Clientset = %v, %v", cs, err)
+	}
+	rc, err := f.CoreRESTClient()
+	if err != nil || rc == nil {
+		t.Fatalf("CoreRESTClient = %v, %v", rc, err)
+	}
+}
+
+func TestFactory_ClientsetConfigError(t *testing.T) {
+	f := NewFactory()
+	missing := t.TempDir() + "/no-such-kubeconfig"
+	f.ConfigFlags.KubeConfig = &missing
+	if _, err := f.Clientset(); err == nil {
+		t.Error("a missing kubeconfig must surface as an error")
+	}
+	if _, err := f.CoreRESTClient(); err == nil {
+		t.Error("a missing kubeconfig must surface as an error")
+	}
+}
+
+func TestServiceProxy_Path(t *testing.T) {
+	cs, err := kubernetes.NewForConfig(&rest.Config{Host: "http://127.0.0.1:1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := ServiceProxy(cs.CoreV1().RESTClient().Get(), "ns", "svc", "http").Suffix("a", "b").URL().Path
+	if want := "/api/v1/namespaces/ns/services/svc:http/proxy/a/b"; got != want {
+		t.Errorf("path = %q, want %q", got, want)
 	}
 }
