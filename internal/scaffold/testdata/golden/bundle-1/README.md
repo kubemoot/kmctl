@@ -73,6 +73,13 @@ same question: the answer now ends with that line.
 Model family: `qwen`.
 Model providers: `ollama`.
 
+## What it can read
+
+This bundle reads only the namespace `crew-hello`: its Role binds there, and its prompts say so.
+Every answer names `crew-hello`, and a question about other namespaces or the whole cluster
+gets a plain "this crew reads only `crew-hello`". For read-only access to the whole cluster,
+scaffold the crew as a Helm chart (`kmctl create hello --chart`) and set `access.clusterWide: true`.
+
 ## Read-only by design
 
 The tool server runs with `--read-only`, so it offers no tool that changes the cluster, and its

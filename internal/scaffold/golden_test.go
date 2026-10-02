@@ -82,6 +82,48 @@ func assertNoExtraGolden(t *testing.T, root string, files map[string]string) {
 	}
 }
 
+// helmGolden are the chart-1 scaffold as helm renders it into namespace team-a, for
+// each value of access.clusterWide, kept byte for byte so the switch's effect on the
+// prompts and the RBAC shows as a reviewable diff.
+var helmGolden = map[string][]string{
+	"namespaced.yaml":   nil,
+	"cluster-wide.yaml": {"--set", "access.clusterWide=true"},
+}
+
+func TestChart_HelmRenderedGolden(t *testing.T) {
+	helm, err := exec.LookPath("helm")
+	if err != nil {
+		t.Skip("helm is not on PATH")
+	}
+	dir := t.TempDir()
+	o := goldenCases["chart-1"]
+	o.OutputDir = dir
+	if _, err := Write(o); err != nil {
+		t.Fatal(err)
+	}
+	for file, extra := range helmGolden {
+		t.Run(file, func(t *testing.T) {
+			got := helmTemplate(t, helm, filepath.Join(dir, o.Name), extra)
+			golden := filepath.Join("testdata", "golden", "helm", file)
+			if *update {
+				if err := os.MkdirAll(filepath.Dir(golden), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(golden, []byte(got), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			want, err := os.ReadFile(golden)
+			if err != nil {
+				t.Fatalf("missing golden %s (run go test ./internal/scaffold -update): %v", golden, err)
+			}
+			if string(want) != got {
+				t.Errorf("helm template %v differs from %s; run go test ./internal/scaffold -update and review the diff", extra, golden)
+			}
+		})
+	}
+}
+
 // The chart renders with the real helm when it is installed: a Role by default,
 // a ClusterRole with access.clusterWide, and the release namespace in the prompts.
 func TestChart_HelmRenders(t *testing.T) {

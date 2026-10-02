@@ -46,7 +46,7 @@ func TestCheckDisplayName(t *testing.T) {
 			t.Errorf("%q rejected: %v", ok, err)
 		}
 	}
-	for _, bad := range []string{"two\nlines", "cr\rlf", "tab\there", "nul\x00", "bad \xff utf-8", strings.Repeat("x", MaxDisplayNameLength+1)} {
+	for _, bad := range []string{"two\nlines", "cr\rlf", "tab\there", "nul\x00", "bad \xff utf-8", "line\u2028sep", "para\u2029sep", strings.Repeat("x", MaxDisplayNameLength+1)} {
 		if err := checkDisplayName(bad); err == nil {
 			t.Errorf("%q accepted", bad)
 		}

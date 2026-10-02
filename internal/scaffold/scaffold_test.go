@@ -418,6 +418,49 @@ func flatAndChart(t *testing.T, members int) (map[string]string, map[string]stri
 	return flat, chart
 }
 
+// namespacedBranch is chart text as Helm renders it with access.clusterWide false,
+// for the access switch only: its cluster-wide branch and its own lines go, and any
+// other Helm action stays as it is.
+func namespacedBranch(text string) string {
+	var out []string
+	inSwitch, skipping := false, false
+	for _, line := range strings.Split(text, "\n") {
+		switch {
+		case line == "{{- if .Values.access.clusterWide }}":
+			inSwitch, skipping = true, true
+		case line == "{{- if not .Values.access.clusterWide }}":
+			inSwitch = true
+		case inSwitch && line == "{{- else }}":
+			skipping = false
+		case inSwitch && line == "{{- end }}":
+			inSwitch, skipping = false, false
+		case !skipping:
+			out = append(out, line)
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+// The chart's prompts switch on access.clusterWide without helm: the cluster-wide
+// scope rule and the namespaced out-of-scope rule each sit in their branch.
+func TestGenerate_ChartPromptsSwitchOnClusterWide(t *testing.T) {
+	_, chart := flatAndChart(t, 1)
+	prompts := chart["templates/promptmodules.yaml"]
+	wide := strings.Index(prompts, "{{- if .Values.access.clusterWide }}\n    ASSERT this crew reads the whole cluster")
+	if wide < 0 || !strings.Contains(prompts[wide:], "{{- else }}\n    ASSERT this crew reads only the namespace {{ .Release.Namespace }}") {
+		t.Error("synthesis-prompt must hold the cluster-wide and the namespaced scope rules in the access switch")
+	}
+	if !strings.Contains(prompts, "{{- if not .Values.access.clusterWide }}\n    WHEN the question asks about other namespaces") {
+		t.Error("the out-of-scope rule must render only when clusterWide is false")
+	}
+	if strings.Count(prompts, "{{- end }}") != 2 {
+		t.Errorf("want the two access switches closed, got %d ends", strings.Count(prompts, "{{- end }}"))
+	}
+}
+
+func chartData() templateData  { o := bundle(1); o.Chart = true; return o.data() }
+func bundleData() templateData { return bundle(1).data() }
+
 // The chart holds the same manifests as the bundle. Only the namespace in the
 // prompts and the RBAC differ: Helm supplies both.
 func TestGenerate_ChartLayoutKeepsTheManifests(t *testing.T) {
@@ -427,8 +470,10 @@ func TestGenerate_ChartLayoutKeepsTheManifests(t *testing.T) {
 			t.Errorf("templates/%s differs from the bundle's %s", name, name)
 		}
 	}
-	if strings.ReplaceAll(chart["templates/promptmodules.yaml"], helmNamespace, "crew-demo") != flat["promptmodules.yaml"] {
-		t.Error("the chart's prompt modules may differ from the bundle's only in the namespace")
+	chartPrompts := strings.ReplaceAll(namespacedBranch(chart["templates/promptmodules.yaml"]), helmNamespace, "crew-demo")
+	chartPrompts = strings.ReplaceAll(chartPrompts, chartData().Widen, bundleData().Widen)
+	if chartPrompts != flat["promptmodules.yaml"] {
+		t.Error("the chart's namespaced prompt modules may differ from the bundle's only in the namespace and how to widen access")
 	}
 	if chart["fitness/fitness.yaml"] != flat["fitness/fitness.yaml"] {
 		t.Error("the fitness suite differs between the forms")

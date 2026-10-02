@@ -201,6 +201,14 @@ spec:
     DESCRIPTION How the coordinator settles a discussion and decides how to answer; the FIRST matching rule wins
 
     WHEN the request asks to delete, restart, scale, patch, edit, create, or otherwise change the cluster THEN decline on principle: this crew is read-only; report the current state the specialists read, NEVER claim the change was made, and NEVER give a command that changes the cluster as the answer
+[[- if .Chart ]]
+{{- if not .Values.access.clusterWide }}
+[[- end ]]
+    WHEN the question asks about other namespaces or the whole cluster AND this crew reads only [[ .NS ]] THEN say plainly that access is limited to [[ .NS ]], that [[ .Widen ]] widens it to read-only cluster-wide access, and answer only what [[ .NS ]] shows
+    NEVER suggest naming another namespace as a way to read it
+[[- if .Chart ]]
+{{- end }}
+[[- end ]]
     WHEN a specialist could not retrieve data (a tool error, access denied) THEN that part of the answer is unknown; NEVER turn a failed lookup into "none" or "does not exist"
     WHEN no specialist contributed AND the question is answerable from stable general knowledge (facts, concepts, definitions) THEN answer it directly from your own knowledge
     WHEN no specialist contributed AND the question needs live data this crew has no source for (prices, weather, news, other clusters) THEN say so plainly and NEVER fabricate a value
@@ -223,6 +231,22 @@ spec:
     ALWAYS lead with a one-sentence direct answer, then the specifics
     ALWAYS list EVERY item the specialists found, sorted by name, one line each
     ALWAYS use only the names, counts, and states the specialists reported
+
+    DEFINE COMPONENT scope
+[[- if .Chart ]]
+{{- if .Values.access.clusterWide }}
+    ASSERT this crew reads the whole cluster, read-only and without Secrets; it is installed in the namespace {{ .Release.Namespace }}
+    ALWAYS name the namespace of each resource the answer reports
+    NEVER present resources from several namespaces as the state of one namespace
+{{- else }}
+[[- end ]]
+    ASSERT this crew reads only the namespace [[ .NS ]]; it cannot see the rest of the cluster
+    ALWAYS name that scope when the answer describes state, for example "in namespace [[ .NS ]]"
+    NEVER describe the answer as the state of "your cluster" or imply a cluster-wide view
+    NEVER suggest naming another namespace as a way to read it
+[[- if .Chart ]]
+{{- end }}
+[[- end ]]
 
     DEFINE COMPONENT health
     ASSERT a resource is unhealthy NOW only when its current state says so: a pod not Running, a container not ready (READY 0/1), a Deployment short of replicas, a Service with no ready endpoints
@@ -700,6 +724,21 @@ Model family: ` + "`[[ .ModelFamily ]]`" + `.
 Model providers:[[ range .Providers ]] ` + "`[[ . ]]`" + `[[ end ]].
 [[- end ]]
 
+## What it can read
+[[ if .Chart ]]
+By default the crew reads only the namespace it is installed into: its Role covers that
+namespace, and its prompts say so. Every answer names the namespace, and a question about
+other namespaces or the whole cluster gets a plain "this crew reads only ..." with the way
+to widen it. Set ` + "`access.clusterWide: true`" + ` in ` + "`values.yaml`" + ` and redeploy (the ` + "`helm upgrade`" + ` above) to
+widen both: a ClusterRole lets the tool server read every namespace, still read-only and
+without Secrets, and the prompts tell the crew to name the namespace of each resource it
+reports.
+[[ else ]]
+This bundle reads only the namespace ` + "`[[ .TargetNS ]]`" + `: its Role binds there, and its prompts say so.
+Every answer names ` + "`[[ .TargetNS ]]`" + `, and a question about other namespaces or the whole cluster
+gets a plain "this crew reads only ` + "`[[ .TargetNS ]]`" + `". For read-only access to the whole cluster,
+scaffold the crew as a Helm chart (` + "`kmctl create [[ .Name ]] --chart`" + `) and set ` + "`access.clusterWide: true`" + `.
+[[ end ]]
 ## Read-only by design
 
 The tool server runs with ` + "`--read-only`" + `, so it offers no tool that changes the cluster, and its

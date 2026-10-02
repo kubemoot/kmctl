@@ -69,6 +69,16 @@ same question: the answer now ends with that line.
 Model family: `qwen`.
 Model providers: `ollama`.
 
+## What it can read
+
+By default the crew reads only the namespace it is installed into: its Role covers that
+namespace, and its prompts say so. Every answer names the namespace, and a question about
+other namespaces or the whole cluster gets a plain "this crew reads only ..." with the way
+to widen it. Set `access.clusterWide: true` in `values.yaml` and redeploy (the `helm upgrade` above) to
+widen both: a ClusterRole lets the tool server read every namespace, still read-only and
+without Secrets, and the prompts tell the crew to name the namespace of each resource it
+reports.
+
 ## Read-only by design
 
 The tool server runs with `--read-only`, so it offers no tool that changes the cluster, and its

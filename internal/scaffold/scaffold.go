@@ -133,6 +133,7 @@ type templateData struct {
 	Models             []modelCR
 	HasModels          bool
 	Chart              bool
+	Widen              string // how a namespaced crew gets read-only cluster-wide access, for its prompts
 }
 
 func (o Options) data() templateData {
@@ -154,8 +155,10 @@ func (o Options) data() templateData {
 		Agents:             o.agents(),
 	}
 	d.NS = d.TargetNS
+	d.Widen = "scaffolding the crew again as a Helm chart (kmctl create --chart) with access.clusterWide: true"
 	if o.Chart {
 		d.NS = helmNamespace
+		d.Widen = "setting access.clusterWide: true in the crew's values.yaml and redeploying"
 	}
 	if d.Renamed {
 		d.Title = shown

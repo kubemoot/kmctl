@@ -52,13 +52,18 @@ func checkDisplayName(s string) error {
 	if !utf8.ValidString(s) {
 		return fmt.Errorf("display name %q is not valid UTF-8 text", s)
 	}
-	if strings.IndexFunc(s, unicode.IsControl) >= 0 {
+	if strings.IndexFunc(s, breaksLine) >= 0 {
 		return fmt.Errorf("display name %q must be one line, without tabs or other control characters", s)
 	}
 	if n := utf8.RuneCountInString(s); n > MaxDisplayNameLength {
 		return fmt.Errorf("display name is %d characters; keep it to %d", n, MaxDisplayNameLength)
 	}
 	return nil
+}
+
+// breaksLine is true for a control character or a line or paragraph separator.
+func breaksLine(r rune) bool {
+	return unicode.IsControl(r) || unicode.In(r, unicode.Zl, unicode.Zp)
 }
 
 // quoted is s as a YAML double-quoted scalar. Go's quoting escapes only what
