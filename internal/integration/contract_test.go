@@ -100,6 +100,22 @@ func TestContract_Columns(t *testing.T) {
 	}
 }
 
+// TestContract_SuiteResults asserts every CrewFitnessSuite status field
+// `kmctl fitness get` reads for its results section exists in the CRD schema.
+func TestContract_SuiteResults(t *testing.T) {
+	dir := crdDir(t)
+	crd := loadCRD(t, dir, "kubemoot.ai_crewfitnesssuites.yaml")
+	schema := versionSchema(crd, resource.CrewFitnessSuite.GVR().Version)
+	if schema == nil {
+		t.Fatal("crewfitnesssuite: no openAPI schema for version")
+	}
+	for _, path := range resource.SuiteResultPaths {
+		if !schemaHasPath(schema, strings.Split(path, ".")) {
+			t.Errorf("crewfitnesssuite: results path %q not found in CRD schema - drift?", path)
+		}
+	}
+}
+
 func servesVersion(crd apiext.CustomResourceDefinition, version string) bool {
 	for _, v := range crd.Spec.Versions {
 		if v.Name == version && v.Served {
@@ -121,6 +137,9 @@ func versionSchema(crd apiext.CustomResourceDefinition, version string) *apiext.
 func schemaHasPath(schema *apiext.JSONSchemaProps, parts []string) bool {
 	cur := schema
 	for _, p := range parts {
+		if cur != nil && cur.Type == "array" && cur.Items != nil {
+			cur = cur.Items.Schema // a path through a list continues in its items
+		}
 		if cur == nil {
 			return false
 		}

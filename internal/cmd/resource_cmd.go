@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/kubemoot/kmctl/internal/client"
@@ -101,14 +102,26 @@ func newGetCommand(f *client.Factory, noun string, k resource.Kind) *cobra.Comma
 			if err != nil {
 				return err
 			}
-			if outFmt != "" {
-				return output.Print(cmd.OutOrStdout(), output.Format(outFmt), obj)
-			}
-			return resource.RenderTable(cmd.OutOrStdout(), k, []unstructured.Unstructured{*obj}, false)
+			return printObject(cmd.OutOrStdout(), k, obj, outFmt)
 		},
 	}
 	cmd.Flags().StringVarP(&outFmt, "output", "o", "", "Output format: yaml or json (default: table)")
 	return cmd
+}
+
+// printObject writes one object: the full object for -o yaml|json, otherwise
+// its table row followed by the kind's details, if it has any.
+func printObject(w io.Writer, k resource.Kind, obj *unstructured.Unstructured, outFmt string) error {
+	if outFmt != "" {
+		return output.Print(w, output.Format(outFmt), obj)
+	}
+	if err := resource.RenderTable(w, k, []unstructured.Unstructured{*obj}, false); err != nil {
+		return err
+	}
+	if k.Details == nil {
+		return nil
+	}
+	return k.Details(w, obj.Object)
 }
 
 // withArticle prefixes a singular noun with "a", or "an" before a vowel.
