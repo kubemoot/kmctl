@@ -14,7 +14,6 @@ func newAgentCommand(f *client.Factory) *cobra.Command {
 		Aliases: []string{"agents"},
 		Args:    cobra.NoArgs,
 	}
-	cmd.AddCommand(newListCommand(f, resource.Agent))
-	cmd.AddCommand(newGetCommand(f, resource.Agent))
+	addResourceCommands(cmd, f, resource.Agent)
 	return cmd
 }

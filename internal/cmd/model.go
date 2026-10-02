@@ -16,13 +16,13 @@ func newModelCommand(f *client.Factory) *cobra.Command {
 		Aliases: []string{"models", "modelprovider", "modelproviders"},
 		Args:    cobra.NoArgs,
 	}
-	cmd.AddCommand(newListCommand(f, resource.ModelProvider))
-	cmd.AddCommand(newGetCommand(f, resource.ModelProvider))
+	addResourceCommands(cmd, f, resource.ModelProvider)
 
-	footprint := newListCommand(f, resource.Model)
+	footprint := newListCommand(f, cmd.Name(), resource.Model)
 	footprint.Use = "footprint"
 	footprint.Aliases = []string{"resident"}
 	footprint.Short = "List models resident on providers (the live GPU footprint)"
+	footprint.Example = "  kmctl model footprint\n  kmctl model footprint -A -o yaml"
 	cmd.AddCommand(footprint)
 	return cmd
 }

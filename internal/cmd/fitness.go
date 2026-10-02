@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/kubemoot/kmctl/internal/client"
+	"github.com/kubemoot/kmctl/internal/dashboard"
 	"github.com/kubemoot/kmctl/internal/manifest"
 	"github.com/kubemoot/kmctl/internal/output"
 	"github.com/kubemoot/kmctl/internal/resource"
@@ -25,8 +26,7 @@ func newFitnessCommand(f *client.Factory) *cobra.Command {
 		Aliases: []string{"fit"},
 		Args:    cobra.NoArgs,
 	}
-	cmd.AddCommand(newListCommand(f, resource.CrewFitnessSuite))
-	cmd.AddCommand(newGetCommand(f, resource.CrewFitnessSuite))
+	addResourceCommands(cmd, f, resource.CrewFitnessSuite)
 	cmd.AddCommand(newScenariosCommand(f))
 	cmd.AddCommand(newRunCommand(f))
 	cmd.AddCommand(newDownloadCommand(f))
@@ -35,27 +35,29 @@ func newFitnessCommand(f *client.Factory) *cobra.Command {
 
 // newDownloadCommand fetches a suite's XLSX artifact from the dashboard's
 // artifact endpoint through the API server service proxy (kubeconfig creds, no
-// direct NATS object-store access).
+// direct NATS object-store access). The dashboard Service is found by label.
 func newDownloadCommand(f *client.Factory) *cobra.Command {
 	var outFile, dashNS, dashSvc string
 	cmd := &cobra.Command{
-		Use:     "download SUITE",
-		Short:   "Download a fitness suite's XLSX artifact",
-		Example: "  kmctl fitness download demo-starter\n  kmctl fitness download demo-starter -o results.xlsx",
-		Args:    cobra.ExactArgs(1),
+		Use:   "download SUITE",
+		Short: "Download a fitness suite's XLSX artifact",
+		Long: `Download fetches a fitness suite's XLSX artifact from the Kubemoot dashboard
+through the API server's service proxy. The dashboard Service is found in
+--dashboard-namespace by its labels (` + dashboard.Selector + `);
+--dashboard-service names it instead.`,
+		Example: `  kmctl fitness download demo-starter
+  kmctl fitness download demo-starter -o results.xlsx
+  kmctl fitness download demo-starter --dashboard-namespace ops --dashboard-service my-dashboard`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			suite := args[0]
-			rc, err := f.CoreRESTClient()
+			cs, err := f.Clientset()
 			if err != nil {
 				return err
 			}
-			data, err := rc.Get().
-				Namespace(dashNS).Resource("services").
-				Name(dashSvc+":80").SubResource("proxy").
-				Suffix("dashboard", "api", "kubemoot", "crewfitnesssuites", f.Namespace(), suite, "artifact").
-				DoRaw(cmd.Context())
+			data, err := dashboard.DownloadArtifact(cmd.Context(), cs, dashNS, dashSvc, f.Namespace(), suite)
 			if err != nil {
-				return fmt.Errorf("download artifact for suite %q: %w", suite, err)
+				return err
 			}
 			if outFile == "" {
 				outFile = suite + ".xlsx"
@@ -68,8 +70,8 @@ func newDownloadCommand(f *client.Factory) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVarP(&outFile, "output", "o", "", "Output file (default <suite>.xlsx)")
-	cmd.Flags().StringVar(&dashNS, "dashboard-namespace", "kubemoot", "Namespace of the kubemoot-dashboard service")
-	cmd.Flags().StringVar(&dashSvc, "dashboard-service", "kubemoot-dashboard", "Name of the dashboard service")
+	cmd.Flags().StringVar(&dashNS, "dashboard-namespace", "kubemoot", "Namespace of the Kubemoot dashboard Service")
+	cmd.Flags().StringVar(&dashSvc, "dashboard-service", "", "Name of the dashboard Service (default: found by label)")
 	return cmd
 }
 

@@ -22,7 +22,7 @@ it reads is in the namespace you install it into, starting with its own pods.
 
 ```bash
 helm upgrade --install hello . --namespace crew-hello --create-namespace
-kmctl crew status hello -n crew-hello   # wait for Ready
+kmctl crew get hello -n crew-hello   # wait for Ready
 ```
 
 **2. Ask it something.**

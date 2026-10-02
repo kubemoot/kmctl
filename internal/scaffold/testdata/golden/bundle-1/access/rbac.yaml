@@ -2,7 +2,7 @@
 # namespace's resources and nothing else. Secrets are left out: Kubernetes cannot
 # grant their names without their data, so the crew names Secrets from the
 # references in pod specs instead.
-# kmctl applies only kubemoot.ai kinds, so apply this file with kubectl:
+# kmctl apply takes only kubemoot.ai kinds, so apply this file with kubectl:
 #
 #   kubectl apply -n crew-hello -f access/
 apiVersion: v1

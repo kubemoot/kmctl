@@ -15,7 +15,6 @@ func newPromptCommand(f *client.Factory) *cobra.Command {
 		Aliases: []string{"prompts", "promptmodule", "promptmodules"},
 		Args:    cobra.NoArgs,
 	}
-	cmd.AddCommand(newListCommand(f, resource.PromptModule))
-	cmd.AddCommand(newGetCommand(f, resource.PromptModule))
+	addResourceCommands(cmd, f, resource.PromptModule)
 	return cmd
 }

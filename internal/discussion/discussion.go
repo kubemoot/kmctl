@@ -11,6 +11,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/kubemoot/kmctl/internal/client"
 	"k8s.io/client-go/rest"
 )
 
@@ -41,9 +42,7 @@ func Ask(ctx context.Context, rc rest.Interface, namespace, crew, message, conve
 	if err != nil {
 		return "", err
 	}
-	raw, err := rc.Post().
-		Namespace(namespace).Resource("services").
-		Name(serviceName(crew)+":"+gatewayPort).SubResource("proxy").
+	raw, err := client.ServiceProxy(rc.Post(), namespace, serviceName(crew), gatewayPort).
 		Suffix("api", "v1", "discussions", crew).
 		Body(body).SetHeader("Content-Type", "application/json").
 		DoRaw(ctx)
@@ -64,9 +63,7 @@ func Ask(ctx context.Context, rc rest.Interface, namespace, crew, message, conve
 
 // Stream opens the SSE stream for a conversation.
 func Stream(ctx context.Context, rc rest.Interface, namespace, crew, conversationID string) (io.ReadCloser, error) {
-	return rc.Get().
-		Namespace(namespace).Resource("services").
-		Name(serviceName(crew)+":"+gatewayPort).SubResource("proxy").
+	return client.ServiceProxy(rc.Get(), namespace, serviceName(crew), gatewayPort).
 		Suffix("api", "v1", "discussions", crew, conversationID, "stream").
 		Stream(ctx)
 }

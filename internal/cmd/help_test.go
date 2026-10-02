@@ -14,8 +14,8 @@ func TestCommandsHaveExamples(t *testing.T) {
 		"root":        NewRootCommand().Example,
 		"create":      newCreateCommand(f).Example,
 		"apply":       newApplyCommand(f).Example,
-		"list":        newListCommand(f, resource.Crew).Example,
-		"get":         newGetCommand(f, resource.Crew).Example,
+		"list":        newListCommand(f, "crew", resource.Crew).Example,
+		"get":         newGetCommand(f, "crew", resource.Crew).Example,
 		"fitness run": newRunCommand(f).Example,
 	}
 	for name, example := range cmds {
@@ -27,7 +27,7 @@ func TestCommandsHaveExamples(t *testing.T) {
 
 // get should offer dynamic name completion so `kmctl crew get <TAB>` works.
 func TestGetCommand_HasCompletion(t *testing.T) {
-	if newGetCommand(client.NewFactory(), resource.Crew).ValidArgsFunction == nil {
+	if newGetCommand(client.NewFactory(), "crew", resource.Crew).ValidArgsFunction == nil {
 		t.Error("get command has no ValidArgsFunction for name completion")
 	}
 }
