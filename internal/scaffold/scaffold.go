@@ -134,6 +134,7 @@ type templateData struct {
 	HasModels          bool
 	Chart              bool
 	Widen              string // how a namespaced crew gets read-only cluster-wide access, for its prompts
+	Fitness            string // the rendered fitness suite, which a bundle's scenarios ConfigMap holds
 }
 
 func (o Options) data() templateData {
@@ -216,6 +217,11 @@ func Generate(o Options) (map[string]string, error) {
 		return nil, err
 	}
 	d := o.data()
+	fitness, err := render("fitness/fitness.yaml", fitnessTemplate, d)
+	if err != nil {
+		return nil, fmt.Errorf("render fitness/fitness.yaml: %w", err)
+	}
+	d.Fitness = fitness
 	files := layout(o.Chart)
 	out := make(map[string]string, len(files))
 	for name, tmpl := range files {
@@ -249,10 +255,12 @@ func layout(chart bool) map[string]string {
 	if chart {
 		prefix = "templates/"
 		files["rbac.yaml"] = chartRBACTemplate
+		files["fitness-scenarios.yaml"] = chartFitnessScenariosTemplate
 		out["Chart.yaml"] = chartTemplate
 		out["values.yaml"] = valuesTemplate
 	} else {
 		out["access/rbac.yaml"] = bundleRBACTemplate
+		out["access/fitness-scenarios.yaml"] = bundleFitnessScenariosTemplate
 	}
 	for name, tmpl := range files {
 		out[prefix+name] = tmpl

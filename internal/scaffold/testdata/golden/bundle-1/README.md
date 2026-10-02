@@ -67,6 +67,8 @@ same question: the answer now ends with that line.
 - `promptmodules.yaml`: every prompt, in ADL.
 - `tools.yaml`: the Kubernetes MCP server, read-only, and the MCP gateway the agents reach it through.
 - `access/rbac.yaml`: the read-only Role the tool server runs with (apply it with kubectl).
+- `access/fitness-scenarios.yaml`: the fitness scenarios as a ConfigMap, so the deployed crew carries
+  its tests (apply it with kubectl).
 - `models.yaml`: the Models the scheduler binds agents to.
 - `fitness/fitness.yaml`: the fitness suite.
 

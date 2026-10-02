@@ -65,6 +65,8 @@ same question: the answer now ends with that line.
   `values.yaml` to let it read every namespace.
 - `templates/models.yaml`: the Models the scheduler binds agents to.
 - `fitness/fitness.yaml`: the fitness suite, outside `templates/` so installing does not start a run.
+- `templates/fitness-scenarios.yaml`: a ConfigMap built from `fitness/`, so the deployed crew carries
+  its tests; CrewForge runs them from the live crew.
 
 Model family: `qwen`.
 Model providers: `ollama`.

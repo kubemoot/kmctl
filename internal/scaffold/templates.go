@@ -500,6 +500,34 @@ spec:
 [[- end ]]
 `
 
+// fitnessScenariosHeader opens the ConfigMap that deploys the crew's fitness scenarios
+// with it, so a live crew carries its tests. CrewForge lists and runs the scenarios from
+// it, by the kubemoot.ai/crew and kubemoot.ai/fitness-kind=scenarios labels. A ConfigMap
+// starts nothing on its own.
+const fitnessScenariosHeader = `# The crew's fitness scenarios, deployed with it so the live crew carries its tests.
+# CrewForge lists and runs them from here; nothing runs until someone starts a run.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: [[ .Name ]]-fitness
+  labels:
+    kubemoot.ai/crew: [[ .Name ]]
+    kubemoot.ai/fitness-kind: scenarios
+data:
+`
+
+// chartFitnessScenariosTemplate builds the ConfigMap from the chart's fitness/ files.
+const chartFitnessScenariosTemplate = fitnessScenariosHeader + `{{- range $path, $bytes := .Files.Glob "fitness/*" }}
+  {{ base $path | quote }}: {{ toString $bytes | quote }}
+{{- end }}
+`
+
+// bundleFitnessScenariosTemplate holds fitness/fitness.yaml as the chart's ConfigMap would.
+// The scaffold writes only that file under fitness/, so both forms hold the same data; a
+// new file there must be added here too.
+const bundleFitnessScenariosTemplate = fitnessScenariosHeader + `  fitness.yaml: |
+[[ indent 4 .Fitness ]]`
+
 const fitnessTemplate = `# The crew's fitness suite. Each scenario asks the crew a question about its own
 # namespace, whose truth is known on a fresh install: the crew's own pods. Apply it
 # once the crew is Ready; the run starts when it is created.
@@ -705,6 +733,8 @@ same question: the answer now ends with that line.
   ` + "`values.yaml`" + ` to let it read every namespace.
 - ` + "`templates/models.yaml`" + `: the Models the scheduler binds agents to.
 - ` + "`fitness/fitness.yaml`" + `: the fitness suite, outside ` + "`templates/`" + ` so installing does not start a run.
+- ` + "`templates/fitness-scenarios.yaml`" + `: a ConfigMap built from ` + "`fitness/`" + `, so the deployed crew carries
+  its tests; CrewForge runs them from the live crew.
 [[- else ]]
 
 - ` + "`crew.yaml`" + `: the Crew and its CrewSchedulingPolicy.
@@ -713,6 +743,8 @@ same question: the answer now ends with that line.
 - ` + "`promptmodules.yaml`" + `: every prompt, in ADL.
 - ` + "`tools.yaml`" + `: the Kubernetes MCP server, read-only, and the MCP gateway the agents reach it through.
 - ` + "`access/rbac.yaml`" + `: the read-only Role the tool server runs with (apply it with kubectl).
+- ` + "`access/fitness-scenarios.yaml`" + `: the fitness scenarios as a ConfigMap, so the deployed crew carries
+  its tests (apply it with kubectl).
 - ` + "`models.yaml`" + `: the Models the scheduler binds agents to.
 - ` + "`fitness/fitness.yaml`" + `: the fitness suite.
 [[- end ]]

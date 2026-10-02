@@ -148,6 +148,26 @@ func TestChart_HelmRenders(t *testing.T) {
 	}
 }
 
+// The chart deploys its fitness files as a ConfigMap, built by Helm from fitness/.
+func TestChart_HelmDeploysItsScenarios(t *testing.T) {
+	helm, err := exec.LookPath("helm")
+	if err != nil {
+		t.Skip("helm is not on PATH")
+	}
+	dir := t.TempDir()
+	if _, err := Write(Options{Name: "hello", Members: 2, OutputDir: dir, Chart: true}); err != nil {
+		t.Fatal(err)
+	}
+	fitness, err := os.ReadFile(filepath.Join(dir, "hello", "fitness", "fitness.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := helmTemplate(t, helm, filepath.Join(dir, "hello"), []string{"--show-only", "templates/fitness-scenarios.yaml"})
+	if cm := scenariosConfigMap(t, out, "hello"); cm.data["fitness.yaml"] != string(fitness) || len(cm.data) != 1 {
+		t.Errorf("the ConfigMap must hold exactly fitness/fitness.yaml, got keys %d", len(cm.data))
+	}
+}
+
 // helmTemplate renders the chart into namespace team-a.
 func helmTemplate(t *testing.T, helm, chart string, extra []string) string {
 	t.Helper()
