@@ -19,6 +19,9 @@ var goldenCases = map[string]Options{
 	"chart-1":  {Name: "hello", Members: 1, ModelFamily: "qwen", Providers: []string{"ollama"}, Chart: true},
 	"chart-5":  {Name: "hello", Members: 5, ModelFamily: "qwen", Providers: []string{"ollama"}, Chart: true},
 	"bundle-1": {Name: "hello", Members: 1, ModelFamily: "qwen", Providers: []string{"ollama"}},
+	// With a display name: the Crew's annotation, the chart's annotation, and the README title.
+	"chart-display":  {Name: "homelab-health-guide", DisplayName: "Homelab Health Guide", Members: 1, ModelFamily: "qwen", Providers: []string{"ollama"}, Chart: true},
+	"bundle-display": {Name: "lab-ops-crew-2", DisplayName: `Lab-Ops "Crew" #2`, Members: 1, ModelFamily: "qwen", Providers: []string{"ollama"}},
 }
 
 func TestGenerate_Golden(t *testing.T) {
@@ -79,6 +82,48 @@ func assertNoExtraGolden(t *testing.T, root string, files map[string]string) {
 	}
 }
 
+// helmGolden are the chart-1 scaffold as helm renders it into namespace team-a, for
+// each value of access.clusterWide, kept byte for byte so the switch's effect on the
+// prompts and the RBAC shows as a reviewable diff.
+var helmGolden = map[string][]string{
+	"namespaced.yaml":   nil,
+	"cluster-wide.yaml": {"--set", "access.clusterWide=true"},
+}
+
+func TestChart_HelmRenderedGolden(t *testing.T) {
+	helm, err := exec.LookPath("helm")
+	if err != nil {
+		t.Skip("helm is not on PATH")
+	}
+	dir := t.TempDir()
+	o := goldenCases["chart-1"]
+	o.OutputDir = dir
+	if _, err := Write(o); err != nil {
+		t.Fatal(err)
+	}
+	for file, extra := range helmGolden {
+		t.Run(file, func(t *testing.T) {
+			got := helmTemplate(t, helm, filepath.Join(dir, o.Name), extra)
+			golden := filepath.Join("testdata", "golden", "helm", file)
+			if *update {
+				if err := os.MkdirAll(filepath.Dir(golden), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(golden, []byte(got), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			want, err := os.ReadFile(golden)
+			if err != nil {
+				t.Fatalf("missing golden %s (run go test ./internal/scaffold -update): %v", golden, err)
+			}
+			if string(want) != got {
+				t.Errorf("helm template %v differs from %s; run go test ./internal/scaffold -update and review the diff", extra, golden)
+			}
+		})
+	}
+}
+
 // The chart renders with the real helm when it is installed: a Role by default,
 // a ClusterRole with access.clusterWide, and the release namespace in the prompts.
 func TestChart_HelmRenders(t *testing.T) {
@@ -100,6 +145,26 @@ func TestChart_HelmRenders(t *testing.T) {
 		if !strings.Contains(out, `pass namespace "team-a"`) || !strings.Contains(out, "namespace: team-a") {
 			t.Errorf("%v: the release namespace must reach the prompts and the binding", extra)
 		}
+	}
+}
+
+// The chart deploys its fitness files as a ConfigMap, built by Helm from fitness/.
+func TestChart_HelmDeploysItsScenarios(t *testing.T) {
+	helm, err := exec.LookPath("helm")
+	if err != nil {
+		t.Skip("helm is not on PATH")
+	}
+	dir := t.TempDir()
+	if _, err := Write(Options{Name: "hello", Members: 2, OutputDir: dir, Chart: true}); err != nil {
+		t.Fatal(err)
+	}
+	fitness, err := os.ReadFile(filepath.Join(dir, "hello", "fitness", "fitness.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := helmTemplate(t, helm, filepath.Join(dir, "hello"), []string{"--show-only", "templates/fitness-scenarios.yaml"})
+	if cm := scenariosConfigMap(t, out, "hello"); cm.data["fitness.yaml"] != string(fitness) || len(cm.data) != 1 {
+		t.Errorf("the ConfigMap must hold exactly fitness/fitness.yaml, got keys %d", len(cm.data))
 	}
 }
 

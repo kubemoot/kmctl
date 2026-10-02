@@ -12,6 +12,7 @@ metadata:
     kubemoot.ai/crew: [[ .Name ]]
   annotations:
     kubemoot.ai/manage-namespace: "true"
+    kubemoot.ai/display-name: [[ .CrewDisplayName ]]
 spec:
   description: "A read-only guide to its own Kubernetes namespace, scaffolded by kmctl create."
   discussion:
@@ -200,6 +201,14 @@ spec:
     DESCRIPTION How the coordinator settles a discussion and decides how to answer; the FIRST matching rule wins
 
     WHEN the request asks to delete, restart, scale, patch, edit, create, or otherwise change the cluster THEN decline on principle: this crew is read-only; report the current state the specialists read, NEVER claim the change was made, and NEVER give a command that changes the cluster as the answer
+[[- if .Chart ]]
+{{- if not .Values.access.clusterWide }}
+[[- end ]]
+    WHEN the question asks about other namespaces or the whole cluster AND this crew reads only [[ .NS ]] THEN say plainly that access is limited to [[ .NS ]], that [[ .Widen ]] widens it to read-only cluster-wide access, and answer only what [[ .NS ]] shows
+    NEVER suggest naming another namespace as a way to read it
+[[- if .Chart ]]
+{{- end }}
+[[- end ]]
     WHEN a specialist could not retrieve data (a tool error, access denied) THEN that part of the answer is unknown; NEVER turn a failed lookup into "none" or "does not exist"
     WHEN no specialist contributed AND the question is answerable from stable general knowledge (facts, concepts, definitions) THEN answer it directly from your own knowledge
     WHEN no specialist contributed AND the question needs live data this crew has no source for (prices, weather, news, other clusters) THEN say so plainly and NEVER fabricate a value
@@ -222,6 +231,22 @@ spec:
     ALWAYS lead with a one-sentence direct answer, then the specifics
     ALWAYS list EVERY item the specialists found, sorted by name, one line each
     ALWAYS use only the names, counts, and states the specialists reported
+
+    DEFINE COMPONENT scope
+[[- if .Chart ]]
+{{- if .Values.access.clusterWide }}
+    ASSERT this crew reads the whole cluster, read-only and without Secrets; it is installed in the namespace {{ .Release.Namespace }}
+    ALWAYS name the namespace of each resource the answer reports
+    NEVER present resources from several namespaces as the state of one namespace
+{{- else }}
+[[- end ]]
+    ASSERT this crew reads only the namespace [[ .NS ]]; it cannot see the rest of the cluster
+    ALWAYS name that scope when the answer describes state, for example "in namespace [[ .NS ]]"
+    NEVER describe the answer as the state of "your cluster" or imply a cluster-wide view
+    NEVER suggest naming another namespace as a way to read it
+[[- if .Chart ]]
+{{- end }}
+[[- end ]]
 
     DEFINE COMPONENT health
     ASSERT a resource is unhealthy NOW only when its current state says so: a pod not Running, a container not ready (READY 0/1), a Deployment short of replicas, a Service with no ready endpoints
@@ -475,6 +500,34 @@ spec:
 [[- end ]]
 `
 
+// fitnessScenariosHeader opens the ConfigMap that deploys the crew's fitness scenarios
+// with it, so a live crew carries its tests. CrewForge lists and runs the scenarios from
+// it, by the kubemoot.ai/crew and kubemoot.ai/fitness-kind=scenarios labels. A ConfigMap
+// starts nothing on its own.
+const fitnessScenariosHeader = `# The crew's fitness scenarios, deployed with it so the live crew carries its tests.
+# CrewForge lists and runs them from here; nothing runs until someone starts a run.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: [[ .Name ]]-fitness
+  labels:
+    kubemoot.ai/crew: [[ .Name ]]
+    kubemoot.ai/fitness-kind: scenarios
+data:
+`
+
+// chartFitnessScenariosTemplate builds the ConfigMap from the chart's fitness/ files.
+const chartFitnessScenariosTemplate = fitnessScenariosHeader + `{{- range $path, $bytes := .Files.Glob "fitness/*" }}
+  {{ base $path | quote }}: {{ toString $bytes | quote }}
+{{- end }}
+`
+
+// bundleFitnessScenariosTemplate holds fitness/fitness.yaml as the chart's ConfigMap would.
+// The scaffold writes only that file under fitness/, so both forms hold the same data; a
+// new file there must be added here too.
+const bundleFitnessScenariosTemplate = fitnessScenariosHeader + `  fitness.yaml: |
+[[ indent 4 .Fitness ]]`
+
 const fitnessTemplate = `# The crew's fitness suite. Each scenario asks the crew a question about its own
 # namespace, whose truth is known on a fresh install: the crew's own pods. Apply it
 # once the crew is Ready; the run starts when it is created.
@@ -578,6 +631,7 @@ type: application
 version: 0.1.0
 annotations:
   kubemoot.ai/crew-chart: "true"
+  kubemoot.ai/display-name: [[ .DisplayName ]]
 `
 
 const valuesTemplate = `# Values for the [[ .Name ]] crew. The crew's manifests are under templates/; move a
@@ -591,8 +645,12 @@ access:
   clusterWide: false
 `
 
-const readmeTemplate = `# [[ .Name ]] crew
+const readmeTemplate = `# [[ .Title ]]
 
+[[ if .Renamed -]]
+Its Kubernetes name is ` + "`[[ .Name ]]`" + `: the crew's objects are named after it.
+
+[[ end -]]
 A small, complete Kubemoot crew scaffolded by ` + "`kmctl create`" + `: a read-only guide to its own
 Kubernetes namespace. Ask it what is running, what is wrong, and why; it reads the
 namespace with real tools and answers from what it found. It never changes anything.
@@ -675,6 +733,8 @@ same question: the answer now ends with that line.
   ` + "`values.yaml`" + ` to let it read every namespace.
 - ` + "`templates/models.yaml`" + `: the Models the scheduler binds agents to.
 - ` + "`fitness/fitness.yaml`" + `: the fitness suite, outside ` + "`templates/`" + ` so installing does not start a run.
+- ` + "`templates/fitness-scenarios.yaml`" + `: a ConfigMap built from ` + "`fitness/`" + `, so the deployed crew carries
+  its tests; CrewForge runs them from the live crew.
 [[- else ]]
 
 - ` + "`crew.yaml`" + `: the Crew and its CrewSchedulingPolicy.
@@ -683,6 +743,8 @@ same question: the answer now ends with that line.
 - ` + "`promptmodules.yaml`" + `: every prompt, in ADL.
 - ` + "`tools.yaml`" + `: the Kubernetes MCP server, read-only, and the MCP gateway the agents reach it through.
 - ` + "`access/rbac.yaml`" + `: the read-only Role the tool server runs with (apply it with kubectl).
+- ` + "`access/fitness-scenarios.yaml`" + `: the fitness scenarios as a ConfigMap, so the deployed crew carries
+  its tests (apply it with kubectl).
 - ` + "`models.yaml`" + `: the Models the scheduler binds agents to.
 - ` + "`fitness/fitness.yaml`" + `: the fitness suite.
 [[- end ]]
@@ -694,6 +756,21 @@ Model family: ` + "`[[ .ModelFamily ]]`" + `.
 Model providers:[[ range .Providers ]] ` + "`[[ . ]]`" + `[[ end ]].
 [[- end ]]
 
+## What it can read
+[[ if .Chart ]]
+By default the crew reads only the namespace it is installed into: its Role covers that
+namespace, and its prompts say so. Every answer names the namespace, and a question about
+other namespaces or the whole cluster gets a plain "this crew reads only ..." with the way
+to widen it. Set ` + "`access.clusterWide: true`" + ` in ` + "`values.yaml`" + ` and redeploy (the ` + "`helm upgrade`" + ` above) to
+widen both: a ClusterRole lets the tool server read every namespace, still read-only and
+without Secrets, and the prompts tell the crew to name the namespace of each resource it
+reports.
+[[ else ]]
+This bundle reads only the namespace ` + "`[[ .TargetNS ]]`" + `: its Role binds there, and its prompts say so.
+Every answer names ` + "`[[ .TargetNS ]]`" + `, and a question about other namespaces or the whole cluster
+gets a plain "this crew reads only ` + "`[[ .TargetNS ]]`" + `". For read-only access to the whole cluster,
+scaffold the crew as a Helm chart (` + "`kmctl create [[ .Name ]] --chart`" + `) and set ` + "`access.clusterWide: true`" + `.
+[[ end ]]
 ## Read-only by design
 
 The tool server runs with ` + "`--read-only`" + `, so it offers no tool that changes the cluster, and its

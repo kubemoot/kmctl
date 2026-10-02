@@ -418,6 +418,49 @@ func flatAndChart(t *testing.T, members int) (map[string]string, map[string]stri
 	return flat, chart
 }
 
+// namespacedBranch is chart text as Helm renders it with access.clusterWide false,
+// for the access switch only: its cluster-wide branch and its own lines go, and any
+// other Helm action stays as it is.
+func namespacedBranch(text string) string {
+	var out []string
+	inSwitch, skipping := false, false
+	for _, line := range strings.Split(text, "\n") {
+		switch {
+		case line == "{{- if .Values.access.clusterWide }}":
+			inSwitch, skipping = true, true
+		case line == "{{- if not .Values.access.clusterWide }}":
+			inSwitch = true
+		case inSwitch && line == "{{- else }}":
+			skipping = false
+		case inSwitch && line == "{{- end }}":
+			inSwitch, skipping = false, false
+		case !skipping:
+			out = append(out, line)
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+// The chart's prompts switch on access.clusterWide without helm: the cluster-wide
+// scope rule and the namespaced out-of-scope rule each sit in their branch.
+func TestGenerate_ChartPromptsSwitchOnClusterWide(t *testing.T) {
+	_, chart := flatAndChart(t, 1)
+	prompts := chart["templates/promptmodules.yaml"]
+	wide := strings.Index(prompts, "{{- if .Values.access.clusterWide }}\n    ASSERT this crew reads the whole cluster")
+	if wide < 0 || !strings.Contains(prompts[wide:], "{{- else }}\n    ASSERT this crew reads only the namespace {{ .Release.Namespace }}") {
+		t.Error("synthesis-prompt must hold the cluster-wide and the namespaced scope rules in the access switch")
+	}
+	if !strings.Contains(prompts, "{{- if not .Values.access.clusterWide }}\n    WHEN the question asks about other namespaces") {
+		t.Error("the out-of-scope rule must render only when clusterWide is false")
+	}
+	if strings.Count(prompts, "{{- end }}") != 2 {
+		t.Errorf("want the two access switches closed, got %d ends", strings.Count(prompts, "{{- end }}"))
+	}
+}
+
+func chartData() templateData  { o := bundle(1); o.Chart = true; return o.data() }
+func bundleData() templateData { return bundle(1).data() }
+
 // The chart holds the same manifests as the bundle. Only the namespace in the
 // prompts and the RBAC differ: Helm supplies both.
 func TestGenerate_ChartLayoutKeepsTheManifests(t *testing.T) {
@@ -427,8 +470,10 @@ func TestGenerate_ChartLayoutKeepsTheManifests(t *testing.T) {
 			t.Errorf("templates/%s differs from the bundle's %s", name, name)
 		}
 	}
-	if strings.ReplaceAll(chart["templates/promptmodules.yaml"], helmNamespace, "crew-demo") != flat["promptmodules.yaml"] {
-		t.Error("the chart's prompt modules may differ from the bundle's only in the namespace")
+	chartPrompts := strings.ReplaceAll(namespacedBranch(chart["templates/promptmodules.yaml"]), helmNamespace, "crew-demo")
+	chartPrompts = strings.ReplaceAll(chartPrompts, chartData().Widen, bundleData().Widen)
+	if chartPrompts != flat["promptmodules.yaml"] {
+		t.Error("the chart's namespaced prompt modules may differ from the bundle's only in the namespace and how to widen access")
 	}
 	if chart["fitness/fitness.yaml"] != flat["fitness/fitness.yaml"] {
 		t.Error("the fitness suite differs between the forms")
@@ -441,7 +486,7 @@ func TestGenerate_ChartLayoutKeepsTheManifests(t *testing.T) {
 // Helm actions appear only where Helm renders them: the chart's prompts and RBAC.
 func TestGenerate_HelmActionsOnlyWhereHelmRenders(t *testing.T) {
 	flat, chart := flatAndChart(t, MaxMembers)
-	helmFiles := map[string]bool{"templates/promptmodules.yaml": true, "templates/rbac.yaml": true}
+	helmFiles := map[string]bool{"templates/promptmodules.yaml": true, "templates/rbac.yaml": true, "templates/fitness-scenarios.yaml": true}
 	for name, content := range chart {
 		if strings.Contains(content, "{{") != helmFiles[name] {
 			t.Errorf("chart file %s: holds a Helm action = %v, want %v", name, !helmFiles[name], helmFiles[name])
@@ -507,10 +552,10 @@ func TestWrite_ChartCreatesItsFolders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Write: %v", err)
 	}
-	if len(written) != 10 {
-		t.Errorf("want 10 files, got %d: %v", len(written), written)
+	if len(written) != 11 {
+		t.Errorf("want 11 files, got %d: %v", len(written), written)
 	}
-	for _, rel := range []string{"Chart.yaml", "templates/agents.yaml", "templates/rbac.yaml", "fitness/fitness.yaml"} {
+	for _, rel := range []string{"Chart.yaml", "templates/agents.yaml", "templates/rbac.yaml", "templates/fitness-scenarios.yaml", "fitness/fitness.yaml"} {
 		if _, err := os.Stat(filepath.Join(dir, "demo", filepath.FromSlash(rel))); err != nil {
 			t.Errorf("expected %s written: %v", rel, err)
 		}
@@ -533,4 +578,37 @@ func TestIndent(t *testing.T) {
 	if got := indent(2, "a\n\nb"); got != "  a\n\n  b" {
 		t.Errorf("indent = %q", got)
 	}
+}
+
+// The bundle deploys its fitness suite as a ConfigMap labeled for the crew, holding
+// fitness/fitness.yaml exactly, which a person applies with kubectl from access/.
+func TestGenerate_BundleDeploysItsScenarios(t *testing.T) {
+	files, err := Generate(bundle(2))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cm := scenariosConfigMap(t, files["access/fitness-scenarios.yaml"], "demo")
+	if got := cm.data["fitness.yaml"]; got != files["fitness/fitness.yaml"] {
+		t.Errorf("the ConfigMap must hold fitness/fitness.yaml as it is:\n%s", got)
+	}
+}
+
+type configMap struct {
+	labels map[string]string
+	data   map[string]string
+}
+
+// scenariosConfigMap reads the scenarios ConfigMap and checks its name and labels for crew.
+func scenariosConfigMap(t *testing.T, text, crew string) configMap {
+	t.Helper()
+	objs, err := manifest.Decode(strings.NewReader(text))
+	if err != nil || len(objs) != 1 || objs[0].GetKind() != "ConfigMap" {
+		t.Fatalf("want one ConfigMap (err %v):\n%s", err, text)
+	}
+	data, _, _ := unstructured.NestedStringMap(objs[0].Object, "data")
+	cm := configMap{labels: objs[0].GetLabels(), data: data}
+	if objs[0].GetName() != crew+"-fitness" || cm.labels["kubemoot.ai/fitness-kind"] != "scenarios" || cm.labels["kubemoot.ai/crew"] != crew {
+		t.Errorf("ConfigMap %s labels %v: want <crew>-fitness, kubemoot.ai/crew, and kubemoot.ai/fitness-kind=scenarios", objs[0].GetName(), cm.labels)
+	}
+	return cm
 }

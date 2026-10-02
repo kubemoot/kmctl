@@ -20,7 +20,8 @@ var KnownModelFamilies = []string{"qwen", "gemma", "llama", "mistral"}
 
 // Options is the resolved input to the generator (from flags or prompts).
 type Options struct {
-	Name        string   // crew name (DNS-1123)
+	Name        string   // technical crew name, a DNS-1123 label: the Kubernetes name of the crew's objects
+	DisplayName string   // the name people read, any one line of text; "" means Name
 	Members     int      // specialists beside the coordinator, 1 to MaxMembers
 	Namespace   string   // bundle only: the namespace the RBAC binds and the prompts name; default crew-<Name>
 	Providers   []string // allowed model providers (recorded in the policy + README)
@@ -31,16 +32,25 @@ type Options struct {
 
 // Validate checks the options before generation.
 func (o Options) Validate() error {
-	if o.Name == "" {
-		return fmt.Errorf("crew name is required")
+	if err := checkName(o.Name); err != nil {
+		return err
 	}
-	if strings.ToLower(o.Name) != o.Name || strings.ContainsAny(o.Name, " _.") {
-		return fmt.Errorf("crew name %q must be lowercase DNS-1123 (letters, digits, -)", o.Name)
+	if err := checkDisplayName(o.DisplayName); err != nil {
+		return err
 	}
 	if o.Members < 1 || o.Members > MaxMembers {
 		return fmt.Errorf("the starter crew has 1 to %d specialists (got %d); add more agents by hand once it runs", MaxMembers, o.Members)
 	}
 	return nil
+}
+
+// Display is the crew's display name: DisplayName without surrounding spaces,
+// or Name when it has none.
+func (o Options) Display() string {
+	if shown := strings.TrimSpace(o.DisplayName); shown != "" {
+		return shown
+	}
+	return o.Name
 }
 
 // TargetNamespace is where a bundle is applied: Namespace, or crew-<Name>.
@@ -106,6 +116,10 @@ type modelCR struct {
 
 type templateData struct {
 	Name               string
+	DisplayName        string // the display name as a YAML scalar, for Chart.yaml
+	CrewDisplayName    string // the display name as the Crew's manifest writes it (Helm-safe in a chart)
+	Title              string // the README's title
+	Renamed            bool   // the display name differs from the technical name
 	Agents             []agent
 	HasReviewer        bool
 	Has                map[string]bool // specialist key -> in this crew
@@ -119,11 +133,18 @@ type templateData struct {
 	Models             []modelCR
 	HasModels          bool
 	Chart              bool
+	Widen              string // how a namespaced crew gets read-only cluster-wide access, for its prompts
+	Fitness            string // the rendered fitness suite, which a bundle's scenarios ConfigMap holds
 }
 
 func (o Options) data() templateData {
+	shown := o.Display()
 	d := templateData{
 		Name:               o.Name,
+		DisplayName:        quoted(shown, false),
+		CrewDisplayName:    quoted(shown, o.Chart),
+		Title:              o.Name + " crew",
+		Renamed:            shown != o.Name,
 		Providers:          o.Providers,
 		ModelFamily:        o.ModelFamily,
 		HasFamily:          o.ModelFamily != "",
@@ -135,8 +156,13 @@ func (o Options) data() templateData {
 		Agents:             o.agents(),
 	}
 	d.NS = d.TargetNS
+	d.Widen = "scaffolding the crew again as a Helm chart (kmctl create --chart) with access.clusterWide: true"
 	if o.Chart {
 		d.NS = helmNamespace
+		d.Widen = "setting access.clusterWide: true in the crew's values.yaml and redeploying"
+	}
+	if d.Renamed {
+		d.Title = shown
 	}
 	d.Has = map[string]bool{}
 	for _, a := range d.Agents {
@@ -191,6 +217,11 @@ func Generate(o Options) (map[string]string, error) {
 		return nil, err
 	}
 	d := o.data()
+	fitness, err := render("fitness/fitness.yaml", fitnessTemplate, d)
+	if err != nil {
+		return nil, fmt.Errorf("render fitness/fitness.yaml: %w", err)
+	}
+	d.Fitness = fitness
 	files := layout(o.Chart)
 	out := make(map[string]string, len(files))
 	for name, tmpl := range files {
@@ -224,10 +255,12 @@ func layout(chart bool) map[string]string {
 	if chart {
 		prefix = "templates/"
 		files["rbac.yaml"] = chartRBACTemplate
+		files["fitness-scenarios.yaml"] = chartFitnessScenariosTemplate
 		out["Chart.yaml"] = chartTemplate
 		out["values.yaml"] = valuesTemplate
 	} else {
 		out["access/rbac.yaml"] = bundleRBACTemplate
+		out["access/fitness-scenarios.yaml"] = bundleFitnessScenariosTemplate
 	}
 	for name, tmpl := range files {
 		out[prefix+name] = tmpl

@@ -21,7 +21,8 @@ Documentation:
 kmctl
   status                       check cluster connectivity and whether Kubemoot is installed
   info                         show the resolved context, namespace, and cluster connection
-  create <name>                scaffold the starter crew: 1 to 5 specialists that read their own namespace (--chart for a Helm chart)
+  create <name>                scaffold the starter crew: 1 to 5 specialists that read their own namespace
+                               (--chart for a Helm chart, --display-name for the name people read)
   apply -f <path>              apply Kubemoot resource manifests (server-side apply)
   delete (KIND NAME | -f ...)  delete Kubemoot resources (kubemoot.ai CRs only)
   crew                         list | get

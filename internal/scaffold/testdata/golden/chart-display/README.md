@@ -1,4 +1,6 @@
-# hello crew
+# Homelab Health Guide
+
+Its Kubernetes name is `homelab-health-guide`: the crew's objects are named after it.
 
 A small, complete Kubemoot crew scaffolded by `kmctl create`: a read-only guide to its own
 Kubernetes namespace. Ask it what is running, what is wrong, and why; it reads the
@@ -9,8 +11,8 @@ it reads is in the namespace you install it into, starting with its own pods.
 
 ## The crew
 
-- **coordinator** (`hello-coordinator`) picks the specialists for each question and writes the answer.
-- **workloads** (`hello-workloads`, tooler): Pods, Deployments, ReplicaSets, StatefulSets, and Jobs in the crew's namespace.
+- **coordinator** (`homelab-health-guide-coordinator`) picks the specialists for each question and writes the answer.
+- **workloads** (`homelab-health-guide-workloads`, tooler): Pods, Deployments, ReplicaSets, StatefulSets, and Jobs in the crew's namespace.
 
 Scaffold with `--members 5` for the full crew of five specialists: workloads, events,
 networking, config, and a reviewer.
@@ -20,28 +22,28 @@ networking, config, and a reviewer.
 **1. Install it.**
 
 ```bash
-helm upgrade --install hello . --namespace crew-hello --create-namespace
-kmctl crew get hello -n crew-hello   # wait for Ready
+helm upgrade --install homelab-health-guide . --namespace crew-homelab-health-guide --create-namespace
+kmctl crew get homelab-health-guide -n crew-homelab-health-guide   # wait for Ready
 ```
 
 **2. Ask it something.**
 
 ```bash
-kmctl conversation ask hello "List the pods in this namespace and their status." -n crew-hello
+kmctl conversation ask homelab-health-guide "List the pods in this namespace and their status." -n crew-homelab-health-guide
 ```
 
-The answer names the crew's own pods: you can check it with `kubectl get pods -n crew-hello`.
+The answer names the crew's own pods: you can check it with `kubectl get pods -n crew-homelab-health-guide`.
 Ask it to delete something and it declines: it is read-only by its prompts and by its RBAC.
 
 **3. Run its fitness suite.**
 
 ```bash
-kmctl fitness run -f fitness/fitness.yaml -n crew-hello
-kmctl fitness get hello-starter -n crew-hello
+kmctl fitness run -f fitness/fitness.yaml -n crew-homelab-health-guide
+kmctl fitness get homelab-health-guide-starter -n crew-homelab-health-guide
 ```
 
 Each scenario asks a question whose answer the namespace itself proves. Delete the suite
-before running it again: `kubectl delete crewfitnesssuite hello-starter -n crew-hello`.
+before running it again: `kubectl delete crewfitnesssuite homelab-health-guide-starter -n crew-homelab-health-guide`.
 
 **4. Change one rule and see the difference.** The crew's behavior is the ADL in
 `templates/promptmodules.yaml`. In the `synthesis-prompt` module, which shapes

@@ -1,0 +1,47 @@
+apiVersion: kubemoot.ai/v1alpha1
+kind: Agent
+metadata:
+  name: homelab-health-guide-coordinator
+  labels:
+    kubemoot.ai/crew: homelab-health-guide
+    kubemoot.ai/role: coordinator
+spec:
+  type: chat
+  description: "Coordinator for the homelab-health-guide crew: picks the specialists for each question and writes the answer."
+  discussRole: coordinator
+  capabilities: [tool-calling, reasoning]
+  discussChannels: [kubernetes, general]
+  promptRefs: [advisory-prompt, coordinator-decision-logic, synthesis-prompt]
+  temperature: "0.1"
+  maxTokens: 4096
+  deployment:
+    replicas: 1
+    port: 8080
+    env:
+      # The coordinator calls no tools: the specialists gather, it writes the answer.
+      - name: KUBEMOOT_GATEWAY_ENABLED
+        value: "false"
+---
+apiVersion: kubemoot.ai/v1alpha1
+kind: Agent
+metadata:
+  name: homelab-health-guide-workloads
+  labels:
+    kubemoot.ai/crew: homelab-health-guide
+    kubemoot.ai/role: tooler
+spec:
+  type: chat
+  description: "Pods, Deployments, ReplicaSets, StatefulSets, and Jobs in the crew's namespace."
+  triageSummary: "Lists and inspects Pods, Deployments, ReplicaSets, StatefulSets, and Jobs in this namespace: phase, readiness, replicas, conditions, and logs."
+  discussRole: tooler
+  capabilities: [tool-calling, kubernetes]
+  discussChannels: [kubernetes]
+  discussKeywords: [pod, pods, deployment, deployments, replicaset, statefulset, job, jobs, replicas, workload, logs, running]
+  promptRefs: [discussion-protocol, response-style, homelab-health-guide-workloads-system]
+  # Only this specialist's tools from the crew's Kubernetes MCP server (tools.yaml).
+  enabledTools: [pods_list_in_namespace, pods_get, pods_log, resources_list, resources_get]
+  temperature: "0.3"
+  maxTokens: 4096
+  deployment:
+    replicas: 1
+    port: 8080
