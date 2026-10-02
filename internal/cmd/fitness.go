@@ -110,9 +110,11 @@ func newRunCommand(f *client.Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "run [SUITE]",
 		Short: "Run a fitness suite (or one scenario) and wait for completion",
-		Long: `Run waits for a fitness suite to finish - phase Completed (the operator sets
-that only after the deferred judge has scored, so it is the completion gate) -
-printing progress. Name an existing suite, or apply one from a manifest with -f.
+		Long: `Run waits for a fitness suite to reach a terminal phase, printing progress.
+Completed means every iteration ran; quality is filled in after the judge pass, so
+check 'kmctl fitness get' before downloading the workbook. The exit code reflects
+timeouts and API errors only, not the suite's result. Name an existing suite, or
+apply one from a manifest with -f.
 With --scenario NAME, only that one scenario runs: a single CrewFitness is created
 from the suite's matching script, useful for iterating on one scenario.`,
 		Example: `  kmctl fitness run demo-starter
