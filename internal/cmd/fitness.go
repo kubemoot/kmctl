@@ -26,8 +26,7 @@ func newFitnessCommand(f *client.Factory) *cobra.Command {
 		Aliases: []string{"fit"},
 		Args:    cobra.NoArgs,
 	}
-	cmd.AddCommand(newListCommand(f, resource.CrewFitnessSuite))
-	cmd.AddCommand(newGetCommand(f, resource.CrewFitnessSuite))
+	addResourceCommands(cmd, f, resource.CrewFitnessSuite)
 	cmd.AddCommand(newScenariosCommand(f))
 	cmd.AddCommand(newRunCommand(f))
 	cmd.AddCommand(newDownloadCommand(f))

@@ -14,7 +14,6 @@ func newCrewCommand(f *client.Factory) *cobra.Command {
 		Aliases: []string{"crews"},
 		Args:    cobra.NoArgs,
 	}
-	cmd.AddCommand(newListCommand(f, resource.Crew))
-	cmd.AddCommand(newGetCommand(f, resource.Crew))
+	addResourceCommands(cmd, f, resource.Crew)
 	return cmd
 }

@@ -397,7 +397,7 @@ roleRef:
 {{- end }}
 `
 
-const bundleRBACTemplate = rbacHeader + `# kmctl applies only kubemoot.ai kinds, so apply this file with kubectl:
+const bundleRBACTemplate = rbacHeader + `# kmctl apply takes only kubemoot.ai kinds, so apply this file with kubectl:
 #
 #   kubectl apply -n [[ .NS ]] -f access/
 apiVersion: v1
@@ -629,7 +629,7 @@ kubectl create namespace [[ .TargetNS ]]
 kubectl apply -n [[ .TargetNS ]] -f access/
 kmctl apply -n [[ .TargetNS ]] -f .
 [[- end ]]
-kmctl crew status [[ .Name ]] -n [[ .TargetNS ]]   # wait for Ready
+kmctl crew get [[ .Name ]] -n [[ .TargetNS ]]   # wait for Ready
 ` + "```" + `
 
 **2. Ask it something.**

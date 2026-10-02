@@ -11,15 +11,22 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
-// newListCommand builds a `list` subcommand for a kind.
-func newListCommand(f *client.Factory, k resource.Kind) *cobra.Command {
+// addResourceCommands adds `list` and `get` for a kind under a noun command; their
+// examples name the noun the commands are reached by.
+func addResourceCommands(parent *cobra.Command, f *client.Factory, k resource.Kind) {
+	parent.AddCommand(newListCommand(f, parent.Name(), k), newGetCommand(f, parent.Name(), k))
+}
+
+// newListCommand builds a `list` subcommand for a kind, under the parent command
+// named noun (its examples read `kmctl <noun> list`).
+func newListCommand(f *client.Factory, noun string, k resource.Kind) *cobra.Command {
 	var allNS bool
 	var outFmt string
 	cmd := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
 		Short:   fmt.Sprintf("List %s", k.Plural),
-		Example: fmt.Sprintf("  kmctl %s list\n  kmctl %s list -A -o yaml", k.Singular, k.Singular),
+		Example: fmt.Sprintf("  kmctl %s list\n  kmctl %s list -A -o yaml", noun, noun),
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			dc, err := f.Dynamic()
@@ -77,12 +84,12 @@ func completeNames(f *client.Factory, k resource.Kind) func(*cobra.Command, []st
 
 // newGetCommand builds a `get NAME` subcommand for a kind. Default output is a
 // single-row table (kubectl-consistent); -o yaml|json prints the full object.
-func newGetCommand(f *client.Factory, k resource.Kind) *cobra.Command {
+func newGetCommand(f *client.Factory, noun string, k resource.Kind) *cobra.Command {
 	var outFmt string
 	cmd := &cobra.Command{
 		Use:               "get NAME",
-		Short:             fmt.Sprintf("Get a %s by name", k.Singular),
-		Example:           fmt.Sprintf("  kmctl %s get NAME\n  kmctl %s get NAME -o yaml", k.Singular, k.Singular),
+		Short:             fmt.Sprintf("Get %s by name", withArticle(k.Singular)),
+		Example:           fmt.Sprintf("  kmctl %s get NAME\n  kmctl %s get NAME -o yaml", noun, noun),
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeNames(f, k),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -102,4 +109,12 @@ func newGetCommand(f *client.Factory, k resource.Kind) *cobra.Command {
 	}
 	cmd.Flags().StringVarP(&outFmt, "output", "o", "", "Output format: yaml or json (default: table)")
 	return cmd
+}
+
+// withArticle prefixes a singular noun with "a", or "an" before a vowel.
+func withArticle(noun string) string {
+	if noun != "" && strings.ContainsRune("aeiouAEIOU", rune(noun[0])) {
+		return "an " + noun
+	}
+	return "a " + noun
 }
