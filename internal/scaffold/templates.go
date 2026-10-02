@@ -12,6 +12,7 @@ metadata:
     kubemoot.ai/crew: [[ .Name ]]
   annotations:
     kubemoot.ai/manage-namespace: "true"
+    kubemoot.ai/display-name: [[ .CrewDisplayName ]]
 spec:
   description: "A read-only guide to its own Kubernetes namespace, scaffolded by kmctl create."
   discussion:
@@ -578,6 +579,7 @@ type: application
 version: 0.1.0
 annotations:
   kubemoot.ai/crew-chart: "true"
+  kubemoot.ai/display-name: [[ .DisplayName ]]
 `
 
 const valuesTemplate = `# Values for the [[ .Name ]] crew. The crew's manifests are under templates/; move a
@@ -591,8 +593,12 @@ access:
   clusterWide: false
 `
 
-const readmeTemplate = `# [[ .Name ]] crew
+const readmeTemplate = `# [[ .Title ]]
 
+[[ if .Renamed -]]
+Its Kubernetes name is ` + "`[[ .Name ]]`" + `: the crew's objects are named after it.
+
+[[ end -]]
 A small, complete Kubemoot crew scaffolded by ` + "`kmctl create`" + `: a read-only guide to its own
 Kubernetes namespace. Ask it what is running, what is wrong, and why; it reads the
 namespace with real tools and answers from what it found. It never changes anything.

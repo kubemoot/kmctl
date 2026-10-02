@@ -1,12 +1,12 @@
 apiVersion: kubemoot.ai/v1alpha1
 kind: Crew
 metadata:
-  name: hello
+  name: homelab-health-guide
   labels:
-    kubemoot.ai/crew: hello
+    kubemoot.ai/crew: homelab-health-guide
   annotations:
     kubemoot.ai/manage-namespace: "true"
-    kubemoot.ai/display-name: "hello"
+    kubemoot.ai/display-name: "Homelab Health Guide"
 spec:
   description: "A read-only guide to its own Kubernetes namespace, scaffolded by kmctl create."
   discussion:
@@ -15,11 +15,11 @@ spec:
 apiVersion: kubemoot.ai/v1alpha1
 kind: CrewSchedulingPolicy
 metadata:
-  name: hello-scheduling
+  name: homelab-health-guide-scheduling
   labels:
-    kubemoot.ai/crew: hello
+    kubemoot.ai/crew: homelab-health-guide
 spec:
-  crewRef: "hello"
+  crewRef: "homelab-health-guide"
   archetypeRef: consent-3
   # Per-capability quality bias in [0,1]: lower -> speed-lean, higher -> quality-lean.
   # Agents never name a model; the scheduler matches Models by capability label.

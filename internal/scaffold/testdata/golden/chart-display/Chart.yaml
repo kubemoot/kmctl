@@ -1,0 +1,8 @@
+apiVersion: v2
+name: homelab-health-guide
+description: The homelab-health-guide Kubemoot crew, a read-only guide to its own namespace, scaffolded by kmctl create.
+type: application
+version: 0.1.0
+annotations:
+  kubemoot.ai/crew-chart: "true"
+  kubemoot.ai/display-name: "Homelab Health Guide"

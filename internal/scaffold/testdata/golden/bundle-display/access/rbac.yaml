@@ -1,0 +1,60 @@
+# Read access for the crew's Kubernetes MCP server: get, list, and watch on the
+# namespace's resources and nothing else. Secrets are left out: Kubernetes cannot
+# grant their names without their data, so the crew names Secrets from the
+# references in pod specs instead.
+# kmctl apply takes only kubemoot.ai kinds, so apply this file with kubectl:
+#
+#   kubectl apply -n crew-lab-ops-crew-2 -f access/
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: lab-ops-crew-2-kubernetes-mcp
+  labels:
+    kubemoot.ai/crew: lab-ops-crew-2
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: lab-ops-crew-2-kubernetes-mcp
+  labels:
+    kubemoot.ai/crew: lab-ops-crew-2
+rules:
+  - apiGroups: [""]
+    resources: [pods, pods/log, services, endpoints, configmaps, serviceaccounts, events, persistentvolumeclaims]
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [deployments, replicasets, statefulsets, daemonsets]
+    verbs: [get, list, watch]
+  - apiGroups: [batch]
+    resources: [jobs, cronjobs]
+    verbs: [get, list, watch]
+  - apiGroups: [discovery.k8s.io]
+    resources: [endpointslices]
+    verbs: [get, list, watch]
+  - apiGroups: [events.k8s.io]
+    resources: [events]
+    verbs: [get, list, watch]
+  - apiGroups: [networking.k8s.io]
+    resources: [ingresses, networkpolicies]
+    verbs: [get, list, watch]
+  - apiGroups: [gateway.networking.k8s.io]
+    resources: [httproutes, gateways]
+    verbs: [get, list, watch]
+  - apiGroups: [kubemoot.ai]
+    resources: [crews, agents, promptmodules, models, mcpservers, mcpgateways]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: lab-ops-crew-2-kubernetes-mcp
+  labels:
+    kubemoot.ai/crew: lab-ops-crew-2
+subjects:
+  - kind: ServiceAccount
+    name: lab-ops-crew-2-kubernetes-mcp
+    namespace: crew-lab-ops-crew-2
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: lab-ops-crew-2-kubernetes-mcp

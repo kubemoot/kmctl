@@ -1,12 +1,12 @@
 apiVersion: kubemoot.ai/v1alpha1
 kind: Crew
 metadata:
-  name: hello
+  name: lab-ops-crew-2
   labels:
-    kubemoot.ai/crew: hello
+    kubemoot.ai/crew: lab-ops-crew-2
   annotations:
     kubemoot.ai/manage-namespace: "true"
-    kubemoot.ai/display-name: "hello"
+    kubemoot.ai/display-name: "Lab-Ops \"Crew\" #2"
 spec:
   description: "A read-only guide to its own Kubernetes namespace, scaffolded by kmctl create."
   discussion:
@@ -15,11 +15,11 @@ spec:
 apiVersion: kubemoot.ai/v1alpha1
 kind: CrewSchedulingPolicy
 metadata:
-  name: hello-scheduling
+  name: lab-ops-crew-2-scheduling
   labels:
-    kubemoot.ai/crew: hello
+    kubemoot.ai/crew: lab-ops-crew-2
 spec:
-  crewRef: "hello"
+  crewRef: "lab-ops-crew-2"
   archetypeRef: consent-3
   # Per-capability quality bias in [0,1]: lower -> speed-lean, higher -> quality-lean.
   # Agents never name a model; the scheduler matches Models by capability label.

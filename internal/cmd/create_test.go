@@ -50,6 +50,7 @@ func TestWarnIfNoModels(t *testing.T) {
 
 // fakePrompter records calls and returns canned answers, or err from every prompt.
 type fakePrompter struct {
+	textVal  string
 	intVal   int
 	multiVal []string
 	selVal   string
@@ -57,6 +58,10 @@ type fakePrompter struct {
 	called   bool
 }
 
+func (f *fakePrompter) Text(string, string) (string, error) {
+	f.called = true
+	return f.textVal, f.err
+}
 func (f *fakePrompter) Int(string, int) (int, error) { f.called = true; return f.intVal, f.err }
 func (f *fakePrompter) MultiSelect(string, []string) ([]string, error) {
 	f.called = true
@@ -93,7 +98,7 @@ func TestGather_FlagsProvided_NoPrompting(t *testing.T) {
 	opts := scaffold.Options{Name: "demo", Members: 4, ModelFamily: "qwen", Providers: []string{"p"}}
 	fp := &fakePrompter{}
 	// All three inputs marked as set via flags -> prompter must not be called.
-	if err := gather(&opts, changedSet("members", "providers", "model-family"), false, nil, fp); err != nil {
+	if err := gather(&opts, changedSet("display-name", "members", "providers", "model-family"), false, nil, fp); err != nil {
 		t.Fatalf("gather: %v", err)
 	}
 	if fp.called {
@@ -106,11 +111,11 @@ func TestGather_FlagsProvided_NoPrompting(t *testing.T) {
 
 func TestGather_PromptsFillMissing(t *testing.T) {
 	opts := scaffold.Options{Name: "demo"}
-	fp := &fakePrompter{intVal: 5, multiVal: []string{"ollama-gpu"}, selVal: "gemma"}
+	fp := &fakePrompter{textVal: "  Demo Crew ", intVal: 5, multiVal: []string{"ollama-gpu"}, selVal: "gemma"}
 	if err := gather(&opts, changedSet(), false, []string{"ollama-gpu", "ollama-rig1"}, fp); err != nil {
 		t.Fatalf("gather: %v", err)
 	}
-	if opts.Members != 5 || opts.ModelFamily != "gemma" || len(opts.Providers) != 1 {
+	if opts.DisplayName != "Demo Crew" || opts.Members != 5 || opts.ModelFamily != "gemma" || len(opts.Providers) != 1 {
 		t.Errorf("prompted values not applied: %+v", opts)
 	}
 }
@@ -193,7 +198,7 @@ func TestExplicitNamespace(t *testing.T) {
 func TestGather_AsksOnlyForUnsetInputs(t *testing.T) {
 	opts := scaffold.Options{Name: "demo", Members: 2}
 	fp := &fakePrompter{intVal: 4, selVal: "llama"}
-	if err := gather(&opts, changedSet("members"), false, nil, fp); err != nil {
+	if err := gather(&opts, changedSet("members", "display-name"), false, nil, fp); err != nil {
 		t.Fatalf("gather: %v", err)
 	}
 	if opts.Members != 2 || opts.ModelFamily != "llama" || opts.Providers != nil {
@@ -240,5 +245,89 @@ func TestCreateCommand_ChartHintsHelm(t *testing.T) {
 	want := "Next: helm upgrade --install demo " + dir + "/demo --namespace crew-demo --create-namespace"
 	if !strings.Contains(out.String(), want) {
 		t.Fatalf("want %q, got %q", want, out.String())
+	}
+}
+
+// --display-name lands on the Crew and the chart, and the summary names both names.
+func TestCreateCommand_DisplayName(t *testing.T) {
+	t.Setenv("KUBECONFIG", t.TempDir()+"/absent-kubeconfig")
+	dir := t.TempDir()
+	cmd := newCreateCommand(client.NewFactory())
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"homelab-health-guide", "--display-name", "Homelab Health Guide", "--chart", "--no-input", "-o", dir})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if !strings.Contains(out.String(), `Scaffolded crew "Homelab Health Guide" (homelab-health-guide)`) {
+		t.Errorf("the summary names the display name and the technical name: %q", out.String())
+	}
+	for _, file := range []string{"Chart.yaml", "templates/crew.yaml"} {
+		body, err := os.ReadFile(filepath.Join(dir, "homelab-health-guide", file))
+		if err != nil || !strings.Contains(string(body), `kubemoot.ai/display-name: "Homelab Health Guide"`) {
+			t.Errorf("%s lacks the display name (err %v):\n%s", file, err, body)
+		}
+	}
+}
+
+func TestCreateCommand_RefusesBadNames(t *testing.T) {
+	cases := map[string][]string{
+		"lowercase letters, digits and hyphens": {"Homelab Guide"},
+		"one line":                              {"demo", "--display-name", "two\nlines"},
+		"keep it to 36":                         {strings.Repeat("a", 37)},
+	}
+	for want, args := range cases {
+		t.Setenv("KUBECONFIG", t.TempDir()+"/absent-kubeconfig")
+		cmd := newCreateCommand(client.NewFactory())
+		cmd.SetOut(&bytes.Buffer{})
+		cmd.SetErr(&bytes.Buffer{})
+		cmd.SetArgs(append(args, "--no-input", "-o", t.TempDir()))
+		if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%v: want an error saying %q, got %v", args, want, err)
+		}
+	}
+}
+
+// Without --display-name the Crew's display name is its technical name.
+func TestCreateCommand_DisplayNameDefaultsToName(t *testing.T) {
+	t.Setenv("KUBECONFIG", t.TempDir()+"/absent-kubeconfig")
+	dir := t.TempDir()
+	cmd := newCreateCommand(client.NewFactory())
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"demo", "--no-input", "-o", dir})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	body, err := os.ReadFile(filepath.Join(dir, "demo", "crew.yaml"))
+	if err != nil || !strings.Contains(string(body), `kubemoot.ai/display-name: "demo"`) {
+		t.Errorf("crew.yaml must default the display name to demo (err %v):\n%s", err, body)
+	}
+	if !strings.Contains(out.String(), `Scaffolded crew "demo" (`) {
+		t.Errorf("summary: %q", out.String())
+	}
+}
+
+func TestAskDisplayName_PassesThePromptError(t *testing.T) {
+	opts := scaffold.Options{Name: "demo"}
+	if err := askDisplayName(&opts, nil, &fakePrompter{err: errors.New("interrupted")}); err == nil {
+		t.Fatal("want the prompt error")
+	}
+	if opts.DisplayName != "" {
+		t.Errorf("a failed prompt must leave the display name unset, got %q", opts.DisplayName)
+	}
+}
+
+func TestCrewNamed(t *testing.T) {
+	if got := crewNamed(scaffold.Options{Name: "demo"}); got != `"demo"` {
+		t.Errorf("no display name: %s", got)
+	}
+	if got := crewNamed(scaffold.Options{Name: "demo", DisplayName: "demo"}); got != `"demo"` {
+		t.Errorf("display name equal to the name: %s", got)
+	}
+	if got := crewNamed(scaffold.Options{Name: "demo", DisplayName: "Demo Crew"}); got != `"Demo Crew" (demo)` {
+		t.Errorf("display name: %s", got)
 	}
 }

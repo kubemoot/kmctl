@@ -19,6 +19,9 @@ var goldenCases = map[string]Options{
 	"chart-1":  {Name: "hello", Members: 1, ModelFamily: "qwen", Providers: []string{"ollama"}, Chart: true},
 	"chart-5":  {Name: "hello", Members: 5, ModelFamily: "qwen", Providers: []string{"ollama"}, Chart: true},
 	"bundle-1": {Name: "hello", Members: 1, ModelFamily: "qwen", Providers: []string{"ollama"}},
+	// With a display name: the Crew's annotation, the chart's annotation, and the README title.
+	"chart-display":  {Name: "homelab-health-guide", DisplayName: "Homelab Health Guide", Members: 1, ModelFamily: "qwen", Providers: []string{"ollama"}, Chart: true},
+	"bundle-display": {Name: "lab-ops-crew-2", DisplayName: `Lab-Ops "Crew" #2`, Members: 1, ModelFamily: "qwen", Providers: []string{"ollama"}},
 }
 
 func TestGenerate_Golden(t *testing.T) {

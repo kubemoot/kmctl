@@ -17,6 +17,7 @@ import (
 // prompter asks the user for inputs not supplied as flags. Abstracted so the
 // gather logic is testable without a TTY.
 type prompter interface {
+	Text(label, def string) (string, error)
 	Int(label string, def int) (int, error)
 	MultiSelect(label string, options []string) ([]string, error)
 	SelectOrOther(label string, options []string) (string, error)
@@ -25,6 +26,7 @@ type prompter interface {
 func newCreateCommand(f *client.Factory) *cobra.Command {
 	var (
 		members     int
+		displayName string
 		providers   []string
 		modelFamily string
 		noInput     bool
@@ -44,17 +46,25 @@ Specialists, in the order --members adds them:
 ` + specialistHelp() + `
 Agents declare capabilities, never a model; the scheduling policy binds Models.
 
+NAME is the crew's technical name: lowercase letters, digits and hyphens, at
+most ` + strconv.Itoa(scaffold.MaxNameLength) + ` characters; it becomes the Kubernetes name of the crew's objects.
+--display-name is the name people read, any one line of text, such as
+"Homelab Health Guide"; it is stored as the kubemoot.ai/display-name annotation on
+the Crew (and on a chart's Chart.yaml) and defaults to NAME.
+
 Inputs not given as flags are prompted for interactively. With --no-input nothing
 is prompted, and --members defaults to 1. A bundle (no --chart) is applied to the
 namespace given by -n, or crew-NAME.`,
 		Example: `  kmctl create demo
   kmctl create demo --chart --members 5 --model-family qwen --no-input
+  kmctl create homelab-health-guide --display-name "Homelab Health Guide"
   kmctl create demo -o ./crews
   kmctl create demo --members 2 --model-family qwen --no-input -n team-a`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts := scaffold.Options{
 				Name:        args[0],
+				DisplayName: displayName,
 				Members:     members,
 				Providers:   providers,
 				ModelFamily: modelFamily,
@@ -76,7 +86,7 @@ namespace given by -n, or crew-NAME.`,
 				return err
 			}
 			out := cmd.OutOrStdout()
-			if _, err := fmt.Fprintf(out, "Scaffolded crew %q (%d specialist(s) beside the coordinator) in %s/%s:\n", opts.Name, opts.Members, opts.OutputDir, opts.Name); err != nil {
+			if _, err := fmt.Fprintf(out, "Scaffolded crew %s (%d specialist(s) beside the coordinator) in %s/%s:\n", crewNamed(opts), opts.Members, opts.OutputDir, opts.Name); err != nil {
 				return err
 			}
 			for _, p := range written {
@@ -91,6 +101,7 @@ namespace given by -n, or crew-NAME.`,
 			return nil
 		},
 	}
+	cmd.Flags().StringVar(&displayName, "display-name", "", "The name people read, any one line of text (default NAME; prompted if unset)")
 	cmd.Flags().IntVar(&members, "members", 1, fmt.Sprintf("Specialists beside the coordinator, 1 to %d (prompted if unset)", scaffold.MaxMembers))
 	cmd.Flags().StringSliceVar(&providers, "providers", nil, "Model providers the crew may use (prompted if unset)")
 	cmd.Flags().StringVar(&modelFamily, "model-family", "", "Preferred model family, e.g. qwen (prompted if unset)")
@@ -98,6 +109,15 @@ namespace given by -n, or crew-NAME.`,
 	cmd.Flags().StringVarP(&outputDir, "output", "o", ".", "Directory to write the scaffold into")
 	cmd.Flags().BoolVar(&chart, "chart", false, "Lay the crew out as a Helm chart (Chart.yaml, templates/, fitness/)")
 	return cmd
+}
+
+// crewNamed is the crew as the summary names it: "demo", or "Demo Crew" (demo).
+func crewNamed(opts scaffold.Options) string {
+	named := strconv.Quote(opts.Display())
+	if opts.Display() != opts.Name {
+		named += " (" + opts.Name + ")"
+	}
+	return named
 }
 
 // nextStep is the command that deploys what was just scaffolded.
@@ -136,6 +156,7 @@ func gather(opts *scaffold.Options, changed func(string) bool, noInput bool, dis
 		flag string
 		ask  func(*scaffold.Options, []string, prompter) error
 	}{
+		{"display-name", askDisplayName},
 		{"members", askMembers},
 		{"providers", askProviders},
 		{"model-family", askFamily},
@@ -149,6 +170,14 @@ func gather(opts *scaffold.Options, changed func(string) bool, noInput bool, dis
 		}
 	}
 	return nil
+}
+
+func askDisplayName(opts *scaffold.Options, _ []string, p prompter) error {
+	name, err := p.Text("Display name, the name people read (any text):", opts.Name)
+	if err == nil {
+		opts.DisplayName = strings.TrimSpace(name)
+	}
+	return err
 }
 
 func askMembers(opts *scaffold.Options, _ []string, p prompter) error {
@@ -222,6 +251,12 @@ func discoverProviders(ctx context.Context, f *client.Factory) []string {
 
 // surveyPrompter is the interactive TTY implementation.
 type surveyPrompter struct{}
+
+func (surveyPrompter) Text(label, def string) (string, error) {
+	answer := def
+	err := survey.AskOne(&survey.Input{Message: label, Default: def}, &answer)
+	return answer, err
+}
 
 func (surveyPrompter) Int(label string, def int) (int, error) {
 	answer := strconv.Itoa(def)
