@@ -50,7 +50,7 @@ func TestRenderSuiteResultsJudgeAndScenarios(t *testing.T) {
 	}
 	lines := strings.Split(strings.TrimSpace(out), "\n")
 	gpu, node := strings.Fields(lines[len(lines)-2]), strings.Fields(lines[len(lines)-1])
-	// gpu-live: 15 iterations, 14 passed, 1 failed, 0 errored, 1m24s, score 0 (omitted by the operator).
+	// gpu-live: 15 iterations, 14 passed, 1 failed, 0 errored, 1m24s, score 0 (absent here; a missing score renders as 0).
 	if strings.Join(gpu[:7], " ") != "gpu-live 15 14 1 0 1m24s 0" {
 		t.Errorf("gpu-live row = %v", gpu)
 	}

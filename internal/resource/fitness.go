@@ -170,7 +170,8 @@ func intField(m map[string]any, key string) string {
 	return ""
 }
 
-// orZero fills an absent count: the operator omits zero counts.
+// orZero renders an absent count or score as 0, so a field the operator left out
+// (an omitempty count) or a hand-written object without it still reads as a number.
 func orZero(s string) string {
 	if s == "" {
 		return "0"
