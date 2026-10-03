@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -176,7 +177,36 @@ func helmTemplate(t *testing.T, helm, chart string, extra []string) string {
 	if err != nil {
 		t.Fatalf("helm %v: %v\n%s", args, err, out)
 	}
-	return string(out)
+	return normalizeHelmOutput(string(out))
+}
+
+// blankBeforeSeparator matches the blank lines helm 4 leaves between a rendered
+// template and the next document separator, which helm 3 omits.
+var blankBeforeSeparator = regexp.MustCompile(`\n(?:[ \t]*\n)+---`)
+
+// normalizeHelmOutput drops the blank lines before each "---" separator, so the helm
+// goldens compare the rendered manifests, not the layout of whichever helm renders them.
+func normalizeHelmOutput(s string) string {
+	return blankBeforeSeparator.ReplaceAllString(s, "\n---")
+}
+
+func TestNormalizeHelmOutput(t *testing.T) {
+	helm3 := "# Source: a.yaml\nkind: A\n---\n# Source: b.yaml\nkind: B\n"
+	cases := map[string]struct{ in, want string }{
+		"helm 3 layout is unchanged":           {helm3, helm3},
+		"helm 4 blank line before separator":   {"# Source: a.yaml\nkind: A\n\n---\n# Source: b.yaml\nkind: B\n", helm3},
+		"several blank and whitespace lines":   {"kind: A\n\n  \n\t\n---\nkind: B\n", "kind: A\n---\nkind: B\n"},
+		"blank line inside a document is kept": {"kind: A\n\nspec: {}\n---\nkind: B\n", "kind: A\n\nspec: {}\n---\nkind: B\n"},
+		"no separator":                         {"kind: A\n\n", "kind: A\n\n"},
+		"empty":                                {"", ""},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			if got := normalizeHelmOutput(c.in); got != c.want {
+				t.Errorf("normalizeHelmOutput(%q) = %q, want %q", c.in, got, c.want)
+			}
+		})
+	}
 }
 
 func kindCounts(t *testing.T, yaml string) map[string]int {
