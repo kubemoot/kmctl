@@ -110,11 +110,12 @@ func newRunCommand(f *client.Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "run [SUITE]",
 		Short: "Run a fitness suite (or one scenario) and wait for completion",
-		Long: `Run waits for a fitness suite to reach a terminal phase, printing progress.
-Completed means every iteration ran; quality is filled in after the judge pass, so
-check 'kmctl fitness get' before downloading the workbook. The exit code reflects
-timeouts and API errors only, not the suite's result. Name an existing suite, or
-apply one from a manifest with -f.
+		Long: `Run waits for a fitness suite's iterations to finish (phase Completed, or
+Cancelled when the suite is stopped), printing progress. The deferred judge scores
+the run after that: when run returns while the judge is still scoring, it says so,
+and kmctl fitness get shows the judge's progress and scores from the suite's status.
+The exit code reflects timeouts and API errors only, not the suite's result. Name an
+existing suite, or apply one from a manifest with -f.
 With --scenario NAME, only that one scenario runs: a single CrewFitness is created
 from the suite's matching script, useful for iterating on one scenario.`,
 		Example: `  kmctl fitness run demo-starter
@@ -138,7 +139,11 @@ from the suite's matching script, useful for iterating on one scenario.`,
 			w := cmd.OutOrStdout()
 
 			if scenario == "" {
-				return pollPhase(cmd.Context(), dc, resource.CrewFitnessSuite, ns, suiteName, w, timeout)
+				done, err := pollPhase(cmd.Context(), dc, resource.CrewFitnessSuite, ns, suiteName, w, timeout)
+				if err != nil {
+					return err
+				}
+				return printJudgeHint(w, done)
 			}
 
 			content, ok := findScript(suite, scenario)
@@ -154,7 +159,8 @@ from the suite's matching script, useful for iterating on one scenario.`,
 			if _, err := fmt.Fprintf(w, "running scenario %q as crewfitness/%s\n", scenario, created.GetName()); err != nil {
 				return err
 			}
-			return pollPhase(cmd.Context(), dc, resource.CrewFitness, ns, created.GetName(), w, timeout)
+			_, err = pollPhase(cmd.Context(), dc, resource.CrewFitness, ns, created.GetName(), w, timeout)
+			return err
 		},
 	}
 	cmd.Flags().StringVar(&scenario, "scenario", "", "Run only this scenario (by testRef) as a single CrewFitness")
@@ -241,7 +247,7 @@ func buildCrewFitness(suite, scenario, crewRef, testContent string) *unstructure
 
 func isTerminalPhase(phase string) bool {
 	switch phase {
-	case "Completed", "Failed", "Error":
+	case "Completed", "Cancelled", "Passed", "Failed", "Error":
 		return true
 	default:
 		return false
@@ -249,34 +255,47 @@ func isTerminalPhase(phase string) bool {
 }
 
 // pollPhase polls an object's status.phase until terminal or timeout, printing
-// progress lines (phase + iteration progress where present).
-func pollPhase(ctx context.Context, dc dynamic.Interface, kind resource.Kind, ns, name string, w io.Writer, timeout time.Duration) error {
+// progress lines (phase + iteration progress where present), and returns the
+// object as last read.
+func pollPhase(ctx context.Context, dc dynamic.Interface, kind resource.Kind, ns, name string, w io.Writer, timeout time.Duration) (*unstructured.Unstructured, error) {
 	deadline := time.Now().Add(timeout)
 	last := ""
 	for {
 		obj, err := resource.Get(ctx, dc, kind, ns, name)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		phase, _, _ := unstructured.NestedString(obj.Object, "status", "phase")
 		if line := progressLine(obj, phase); line != last {
 			if _, werr := fmt.Fprintln(w, line); werr != nil {
-				return werr
+				return nil, werr
 			}
 			last = line
 		}
 		if isTerminalPhase(phase) {
-			return nil
+			return obj, nil
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("timed out after %s waiting for %s/%s (phase=%q)", timeout, kind.Singular, name, phase)
+			return nil, fmt.Errorf("timed out after %s waiting for %s/%s (phase=%q)", timeout, kind.Singular, name, phase)
 		}
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return nil, ctx.Err()
 		case <-time.After(3 * time.Second):
 		}
 	}
+}
+
+// printJudgeHint tells the reader when a finished suite's judge is still to
+// score it (status.judge.phase Pending or Judging), and where the scores show.
+func printJudgeHint(w io.Writer, suite *unstructured.Unstructured) error {
+	phase, _, _ := unstructured.NestedString(suite.Object, "status", "judge", "phase")
+	if phase != "Pending" && phase != "Judging" {
+		return nil
+	}
+	_, err := fmt.Fprintf(w, "The judge is still scoring this run (judge %s); kmctl fitness get %s shows its progress and scores.\n",
+		phase, suite.GetName())
+	return err
 }
 
 func progressLine(obj *unstructured.Unstructured, phase string) string {

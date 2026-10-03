@@ -41,11 +41,13 @@ type Column struct {
 	Path   string
 }
 
-// Kind describes a Kubemoot resource type for the generic commands.
+// Kind describes a Kubemoot resource type for the generic commands. Details,
+// when set, writes more of one object's status after the row `get` prints.
 type Kind struct {
 	Plural   string
 	Singular string
 	Columns  []Column
+	Details  func(w io.Writer, obj map[string]any) error
 }
 
 // GVR returns the GroupVersionResource for the kind.
@@ -123,8 +125,11 @@ var (
 			{"TOTAL", "status.iterationsTotal"},
 			{"PASSED", "status.passed"},
 			{"FAILED", "status.failed"},
+			{"JUDGE", "status.judge.phase"},
+			{"QUALITY", "status.judge.mean"},
 			{"AGE", fieldMetadataCreationTimestamp},
 		},
+		Details: RenderSuiteResults,
 	}
 	CrewFitness = Kind{
 		Plural:   "crewfitnesses",
@@ -155,9 +160,6 @@ func Get(ctx context.Context, dc dynamic.Interface, k Kind, namespace, name stri
 
 // RenderTable writes items as an aligned table using the kind's columns.
 func RenderTable(w io.Writer, k Kind, items []unstructured.Unstructured, withNamespace bool) error {
-	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
-	out := output.NewWriter(tw)
-
 	headers := make([]string, 0, len(k.Columns)+1)
 	if withNamespace {
 		headers = append(headers, "NAMESPACE")
@@ -165,17 +167,26 @@ func RenderTable(w io.Writer, k Kind, items []unstructured.Unstructured, withNam
 	for _, c := range k.Columns {
 		headers = append(headers, c.Header)
 	}
-	out.Printf("%s\n", strings.Join(headers, "\t"))
-
+	rows := make([][]string, 0, len(items))
 	for i := range items {
-		obj := items[i].Object
 		cells := make([]string, 0, len(headers))
 		if withNamespace {
 			cells = append(cells, items[i].GetNamespace())
 		}
 		for _, c := range k.Columns {
-			cells = append(cells, Cell(obj, c))
+			cells = append(cells, Cell(items[i].Object, c))
 		}
+		rows = append(rows, cells)
+	}
+	return writeTable(w, headers, rows)
+}
+
+// writeTable writes a header line and rows as tab-aligned columns.
+func writeTable(w io.Writer, headers []string, rows [][]string) error {
+	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
+	out := output.NewWriter(tw)
+	out.Printf("%s\n", strings.Join(headers, "\t"))
+	for _, cells := range rows {
 		out.Printf("%s\n", strings.Join(cells, "\t"))
 	}
 	if out.Err() != nil {
