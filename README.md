@@ -1,4 +1,11 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/assets/kubemoot-horizontal-white-text.png">
+  <img src=".github/assets/kubemoot-horizontal-color.png" alt="Kubemoot" height="64">
+</picture>
+
 # kmctl
+
+[![Latest release](https://img.shields.io/github/v/release/kubemoot/kmctl?sort=semver)](https://github.com/kubemoot/kmctl/releases/latest) [![Build status](https://github.com/kubemoot/kmctl/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/kubemoot/kmctl/actions/workflows/ci.yaml?query=branch%3Amain) [![License: Apache 2.0](https://img.shields.io/github/license/kubemoot/kmctl)](https://github.com/kubemoot/kmctl/blob/main/LICENSE)
 
 `kmctl` is the command-line tool for working with crews and Kubemoot. It is the
 scriptable, terminal-native counterpart to
