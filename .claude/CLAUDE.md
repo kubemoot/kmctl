@@ -1,5 +1,5 @@
 DEFINE DOMAIN kmctl
-DESCRIPTION The Kubemoot CLI (Go + Cobra). Inherits ecosystem rules from the parent .claude/CLAUDE.md files.
+DESCRIPTION The Kubemoot CLI (Go + Cobra).
 
 # Role
 
@@ -10,7 +10,7 @@ ASSERT kmctl is the command-line tool for working with crews and Kubemoot - the 
 ASSERT everything Kubemoot manages is a Kubernetes resource; kmctl is a typed client over those resources plus live-stream helpers
 NEVER implement lifecycle logic in kmctl (namespace create/delete, Job management, cascading cleanup) - the operator owns that via finalizers and owner refs
 WHEN a write is needed THEN apply/delete the Kubemoot CRDs (server-side apply); let the operator reconcile
-ASSERT mirrors the CrewForge boundary (see parent architecture-boundaries) - a CRD editor + read helpers, nothing more
+ASSERT mirrors the CrewForge boundary - a CRD editor + read helpers, nothing more
 
 # UX consistency
 
@@ -30,14 +30,14 @@ ASSERT loosely bound - no homelab topology baked in; discover providers/models/n
 DEFINE COMPONENT cli-quality
 DESCRIPTION Gates from day one
 
-ASSERT golangci-lint enforces gocyclo CC<=10 + dupl (see parent code-quality-gates)
+ASSERT golangci-lint enforces gocyclo CC<=10 + dupl
 ASSERT run gates: make lint (golangci-lint), make test (unit tests with coverage)
-ASSERT every command lands WITH its unit tests (Cobra command tests + fake-dynamic-client coverage of its cluster code path) - see parent testing-policy
+ASSERT every command lands WITH its unit tests (Cobra command tests + fake-dynamic-client coverage of its cluster code path)
 ASSERT three test tiers (see TESTING.md): (1) unit+mocks per-push CI - fast, no cluster, no operator, uses the client-go fake dynamic client for list/get/delete paths; (2) envtest scheduled/dispatch for CRD schema drift; (3) e2e dogfood in Kubemoot's own e2e, driving Kubemoot via kmctl
 ASSERT per-push CI MUST stay fast, MUST NOT require a running operator, and MUST NEVER touch or disrupt the homelab cluster (there is no staging cluster) - mock the cluster, never reach for the real one in CI
 ASSERT kmctl uses the dynamic client, so DRIFT (CRD changes) is the main test risk - the drift guard is Tier 2 envtest against current CRDs + Tier 3 dogfood, NOT per-push CI
-ASSERT fix what SonarQube flags (.github/workflows/quality.yaml) - see parent quality-authority
-ASSERT goreleaser publishes binaries on push to main (conventional commits drive the SemVer bump) - see parent gitops-versioning
+ASSERT fix what SonarQube flags (.github/workflows/quality.yaml)
+ASSERT goreleaser publishes binaries on push to main (conventional commits drive the SemVer bump)
 
 # Types
 
