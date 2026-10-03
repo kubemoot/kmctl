@@ -20,7 +20,14 @@ updates:
       - "/"
     schedule:
       interval: weekly
+    # Kubernetes libraries (k8s.io/*, sigs.k8s.io/*, controller-runtime among them) get
+    # their own pull request so their API migrations do not hold back low-risk bumps.
+    # Dependabot puts a dependency in the first group it matches, so this group comes first.
     groups:
+      kubernetes:
+        patterns:
+          - "k8s.io/*"
+          - "sigs.k8s.io/*"
       gomod:
         patterns: ["*"]
     open-pull-requests-limit: 5
