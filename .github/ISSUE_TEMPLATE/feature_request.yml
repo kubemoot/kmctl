@@ -1,0 +1,46 @@
+name: Feature request
+description: Something you want kmctl to do.
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: "This repository covers the kmctl command line. Ideas for the operator, dashboard, or crews belong in [another repository, found through the issue chooser](https://github.com/kubemoot/kubemoot/issues/new/choose)."
+  - type: checkboxes
+    id: searched
+    attributes:
+      label: Before you file
+      options:
+        - label: I searched existing issues and discussions and did not find this one
+          required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: Describe the situation you are in, not only the feature you have in mind.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like to see
+      description: If it is a new command or flag, show how you would type it.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Anything else you tried, or why no workaround exists.
+    validations:
+      required: false
+  - type: dropdown
+    id: contribute
+    attributes:
+      label: "Would you be open to contributing this?"
+      options:
+        - "Yes"
+        - Maybe
+        - "No"
+    validations:
+      required: false
