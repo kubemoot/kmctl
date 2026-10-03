@@ -16,16 +16,16 @@ jobs:
     runs-on: homelab-runners
     steps:
       - name: Checkout kmctl
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
 
       - name: Fetch current Kubemoot CRDs
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           repository: kubemoot/kubemoot
           token: ${{ secrets.KUBEMOOT_READ_TOKEN || github.token }}
