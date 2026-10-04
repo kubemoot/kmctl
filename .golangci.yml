@@ -17,7 +17,7 @@ linters:
   settings:
     gocyclo:
       # Report (block) functions whose cyclomatic complexity exceeds 10.
-      min-complexity: 11
+      min-complexity: 10
     dupl:
       threshold: 100
 

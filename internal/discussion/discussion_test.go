@@ -56,11 +56,15 @@ func TestParseSSE_SkipsNonJSON(t *testing.T) {
 
 func TestRender_Exact(t *testing.T) {
 	cases := map[Event]string{
-		{Type: "connected"}:                "* connected",
-		{Type: "done"}:                     "* done",
-		{Type: "error", Error: "boom"}:     "ERROR: boom",
-		{Type: "heartbeat"}:                "",
-		{Type: "synthesis", Content: "hi"}: "\nANSWER:\nhi",
+		{Type: "connected"}:                    "* connected",
+		{Type: "done"}:                         "* done",
+		{Type: "error", Error: "boom"}:         "ERROR: boom",
+		{Type: "heartbeat"}:                    "",
+		{Type: "synthesis", Content: "hi"}:     "\nANSWER:\nhi",
+		{Type: "thread_found", ThreadID: "t1"}: "* thread t1",
+		{Type: "phase", Agent: "k8s", Status: "mulling", StoodAside: true}:         "  k8s                    mulling (stood aside)",
+		{Type: "finding", Agent: "k8s", Signal: "agree", Content: "first\nsecond"}: "  k8s                    agree: first",
+		{Type: ""}: "",
 	}
 	for e, want := range cases {
 		if got := Render(e); got != want {
