@@ -39,14 +39,29 @@ archives:
 checksum:
   name_template: checksums.txt
 
+# Release notes list only what changes for kmctl's users, the same rule as the shared
+# release action: breaking changes, features, fixes and performance. A commit that matches
+# no group (ci, chore, docs, test, build, refactor, style) is left out, and so are fixes
+# scoped to tests, CI, the build or dependency bumps.
 changelog:
   use: github
   sort: asc
   filters:
     exclude:
-      - "^docs:"
-      - "^test:"
-      - "^chore:"
+      - '^fix\((test|tests|ci|build|deps|deps-dev|release)\)'
+  groups:
+    - title: Breaking changes
+      regexp: '^[a-z]+(\([^)]*\))?!:'
+      order: 0
+    - title: New
+      regexp: '^feat(\([^)]*\))?:'
+      order: 1
+    - title: Fixed
+      regexp: '^fix(\([^)]*\))?:'
+      order: 2
+    - title: Faster
+      regexp: '^perf(\([^)]*\))?:'
+      order: 3
 
 release:
   github:
