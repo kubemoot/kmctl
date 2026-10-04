@@ -19,7 +19,7 @@ jobs:
       contents: write # push the release candidate tag
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # RELEASE_TOKEN (contents+workflows write) pushes even when main's workflow files changed after this commit; GITHUB_TOKEN is refused there.
           token: ${{ secrets.RELEASE_TOKEN || github.token }}
@@ -47,7 +47,7 @@ jobs:
 
       - name: Set up Go
         if: steps.version.outputs.release_created == 'true'
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
 
@@ -55,7 +55,7 @@ jobs:
       # publishes nothing; Promote Release publishes the final version.
       - name: Build the candidate with goreleaser (no publish)
         if: steps.version.outputs.release_created == 'true'
-        uses: goreleaser/goreleaser-action@v7
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
           version: latest
           args: release --clean --skip=publish,announce
