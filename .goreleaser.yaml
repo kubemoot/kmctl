@@ -67,5 +67,9 @@ release:
   github:
     owner: kubemoot
     name: kmctl
+  # GoReleaser creates the GitHub Release as a draft, uploads every archive and the
+  # checksums, then publishes it; draft: false only means it publishes at the end. That is
+  # the order GitHub's immutable releases require (assets locked once published).
+  # draft: true would leave the release unpublished.
   draft: false
   prerelease: auto
