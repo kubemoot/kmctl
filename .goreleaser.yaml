@@ -39,6 +39,21 @@ archives:
 checksum:
   name_template: checksums.txt
 
+# Keyless Sigstore signature of the checksums file: cosign signs with the short-lived
+# certificate Sigstore issues for the workflow's GitHub OIDC identity, so no signing key
+# is stored anywhere. checksums.txt.sigstore.json holds the signature, the certificate,
+# and the transparency log entry; a verified checksums file vouches for every archive.
+signs:
+  - id: cosign
+    cmd: cosign
+    artifacts: checksum
+    signature: "${artifact}.sigstore.json"
+    args:
+      - sign-blob
+      - "--bundle=${signature}"
+      - "${artifact}"
+      - --yes
+
 # Release notes list only what changes for kmctl's users, the same rule as the shared
 # release action: breaking changes, features, fixes and performance. A commit that matches
 # no group (ci, chore, docs, test, build, refactor, style) is left out, and so are fixes
@@ -67,9 +82,10 @@ release:
   github:
     owner: kubemoot
     name: kmctl
-  # GoReleaser creates the GitHub Release as a draft, uploads every archive and the
-  # checksums, then publishes it; draft: false only means it publishes at the end. That is
-  # the order GitHub's immutable releases require (assets locked once published).
-  # draft: true would leave the release unpublished.
-  draft: false
+  # GoReleaser leaves the GitHub Release a draft holding every archive, the checksums,
+  # and their signature; Promote Release then attaches the build provenance and publishes
+  # it. GitHub's immutable releases lock the assets once a release is published, so
+  # every asset goes on the draft first.
+  draft: true
+  replace_existing_draft: true
   prerelease: auto
