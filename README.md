@@ -55,7 +55,9 @@ Planned, not yet implemented: `crew status`, `conversation list | get`, and a
 `kmctl` ships as a single static binary with no runtime dependencies. Each
 [GitHub Release](https://github.com/kubemoot/kmctl/releases) publishes six archives,
 `kmctl_<version>_<os>_<arch>`, for `linux`, `darwin`, and `windows` on `amd64` and
-`arm64` (`.tar.gz`, or `.zip` for Windows), plus `checksums.txt`.
+`arm64` (`.tar.gz`, or `.zip` for Windows), plus `checksums.txt`, its Sigstore signature
+`checksums.txt.sigstore.json`, and the SLSA build provenance `kmctl_<version>.intoto.jsonl`
+(see [Verify a release](#verify-a-release)).
 
 ### Linux and macOS
 
@@ -95,6 +97,31 @@ sudo install -m 0755 kmctl /usr/local/bin/kmctl
 Download `kmctl_<version>_windows_amd64.zip` (or `_arm64`) from the
 [latest release](https://github.com/kubemoot/kmctl/releases/latest), extract
 `kmctl.exe`, and put it on your `PATH`.
+
+### Verify a release
+
+Releases are signed without a stored key: Sigstore issues a short-lived certificate to
+the `promote-release.yaml` workflow on `main` of `kubemoot/kmctl`, and the signature is
+recorded in Sigstore's public transparency log. Check that `checksums.txt` was signed by
+that workflow with [cosign](https://docs.sigstore.dev/cosign/system_config/installation/),
+then check the archive against it:
+
+```bash
+cosign verify-blob checksums.txt \
+  --bundle checksums.txt.sigstore.json \
+  --certificate-identity https://github.com/kubemoot/kmctl/.github/workflows/promote-release.yaml@refs/heads/main \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+sha256sum -c --ignore-missing checksums.txt          # macOS: shasum -a 256 -c --ignore-missing
+```
+
+The build provenance states which workflow run built each archive from which commit.
+Verify it with the GitHub CLI (add `--bundle kmctl_<version>.intoto.jsonl` to use the
+downloaded copy instead of the repository's attestations):
+
+```bash
+gh attestation verify kmctl_<version>_linux_amd64.tar.gz --repo kubemoot/kmctl \
+  --signer-workflow kubemoot/kmctl/.github/workflows/promote-release.yaml
+```
 
 ### With Go
 
