@@ -103,37 +103,45 @@ func ParseSSE(r io.Reader, handle func(Event) bool) error {
 	return sc.Err()
 }
 
+// renderers formats each event type; a type without an entry is skipped.
+var renderers = map[string]func(Event) string{
+	"connected":    func(Event) string { return "* connected" },
+	"thread_found": func(e Event) string { return "* thread " + e.ThreadID },
+	"phase":        renderPhase,
+	"finding":      renderFinding,
+	"synthesis":    func(e Event) string { return "\nANSWER:\n" + e.Content },
+	"error":        func(e Event) string { return "ERROR: " + e.Error },
+	"done":         func(Event) string { return "* done" },
+}
+
 // Render formats an event as a human-readable line (empty string = skip).
 func Render(e Event) string {
-	switch e.Type {
-	case "connected":
-		return "* connected"
-	case "thread_found":
-		return "* thread " + e.ThreadID
-	case "phase":
-		line := fmt.Sprintf("  %-22s %s", e.Agent, e.Status)
-		if e.GPU != "" {
-			line += " [" + e.GPU + "]"
-		}
-		if e.StoodAside {
-			line += " (stood aside)"
-		}
-		return line
-	case "finding":
-		summary := e.Summary
-		if summary == "" {
-			summary = firstLine(e.Content)
-		}
-		return fmt.Sprintf("  %-22s %s: %s", e.Agent, e.Signal, summary)
-	case "synthesis":
-		return "\nANSWER:\n" + e.Content
-	case "error":
-		return "ERROR: " + e.Error
-	case "done":
-		return "* done"
-	default:
-		return ""
+	if render, ok := renderers[e.Type]; ok {
+		return render(e)
 	}
+	return ""
+}
+
+// renderPhase shows an agent's phase, with the GPU it ran on and whether it stood aside.
+func renderPhase(e Event) string {
+	line := fmt.Sprintf("  %-22s %s", e.Agent, e.Status)
+	if e.GPU != "" {
+		line += " [" + e.GPU + "]"
+	}
+	if e.StoodAside {
+		line += " (stood aside)"
+	}
+	return line
+}
+
+// renderFinding shows an agent's signal with its summary, or the first line of its
+// content when it gave no summary.
+func renderFinding(e Event) string {
+	summary := e.Summary
+	if summary == "" {
+		summary = firstLine(e.Content)
+	}
+	return fmt.Sprintf("  %-22s %s: %s", e.Agent, e.Signal, summary)
 }
 
 // Terminal reports whether an event ends the stream.

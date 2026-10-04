@@ -113,7 +113,11 @@ func TestPromoteSignsVerifiesAndAttestsBeforePublishing(t *testing.T) {
 	if v := promote.Steps[verify]; v.If != "" || !strings.Contains(v.Run, "cosign verify-blob dist/checksums.txt") {
 		t.Errorf("the signature must be verified on every run: %+v", v)
 	}
-	a := promote.Steps[attest]
+}
+
+func TestPromoteAttestsTheReleasedArchives(t *testing.T) {
+	promote := loadWorkflow(t, "promote-release.yaml").Jobs["promote"]
+	a := promote.Steps[stepIndex(t, promote, "Attest the build provenance")]
 	if !strings.Contains(a.If, "!inputs.dry_run") || fmt.Sprint(a.With["subject-checksums"]) != "dist/checksums.txt" {
 		t.Errorf("provenance must cover the released archives on a real run only: %+v", a)
 	}
