@@ -44,6 +44,6 @@ server version if the cluster is reachable.`,
 			return out.Err()
 		},
 	}
-	cmd.Flags().StringVarP(&outFmt, "output", "o", "", "Output format: yaml or json")
+	cmd.Flags().StringVarP(&outFmt, "output", "o", "", output.FormatHelp(""))
 	return cmd
 }

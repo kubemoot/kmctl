@@ -53,7 +53,7 @@ func newListCommand(f *client.Factory, noun string, k resource.Kind) *cobra.Comm
 		},
 	}
 	cmd.Flags().BoolVarP(&allNS, "all-namespaces", "A", false, "List across all namespaces")
-	cmd.Flags().StringVarP(&outFmt, "output", "o", "", "Output format: yaml or json (default: table)")
+	cmd.Flags().StringVarP(&outFmt, "output", "o", "", output.FormatHelp("table"))
 	return cmd
 }
 
@@ -84,7 +84,7 @@ func completeNames(f *client.Factory, k resource.Kind) func(*cobra.Command, []st
 }
 
 // newGetCommand builds a `get NAME` subcommand for a kind. Default output is a
-// single-row table (kubectl-consistent); -o yaml|json prints the full object.
+// single-row table (kubectl-consistent); -o yaml|json|kyaml prints the full object.
 func newGetCommand(f *client.Factory, noun string, k resource.Kind) *cobra.Command {
 	var outFmt string
 	cmd := &cobra.Command{
@@ -105,11 +105,11 @@ func newGetCommand(f *client.Factory, noun string, k resource.Kind) *cobra.Comma
 			return printObject(cmd.OutOrStdout(), k, obj, outFmt)
 		},
 	}
-	cmd.Flags().StringVarP(&outFmt, "output", "o", "", "Output format: yaml or json (default: table)")
+	cmd.Flags().StringVarP(&outFmt, "output", "o", "", output.FormatHelp("table"))
 	return cmd
 }
 
-// printObject writes one object: the full object for -o yaml|json, otherwise
+// printObject writes one object: the full object for -o yaml|json|kyaml, otherwise
 // its table row followed by the kind's details, if it has any.
 func printObject(w io.Writer, k resource.Kind, obj *unstructured.Unstructured, outFmt string) error {
 	if outFmt != "" {

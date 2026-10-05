@@ -44,7 +44,8 @@ kmctl
 ```
 
 The UX mirrors `kubectl` / `helm`: the standard kubeconfig, `--context`, and
-`-n/--namespace` flags, `-o yaml|json` output (a table by default), full `--help`,
+`-n/--namespace` flags, `-o yaml|json|kyaml` output (a table by default; `kyaml` is the
+strict, quoted YAML subset `kubectl -o kyaml` prints), full `--help`,
 and generated shell completion.
 
 Planned, not yet implemented: `crew status`, `conversation list | get`, and a

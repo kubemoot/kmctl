@@ -97,8 +97,22 @@ func TestPrintObjectFormats(t *testing.T) {
 	if strings.Contains(table.String(), "Judge:") {
 		t.Errorf("a kind without details prints its row only:\n%s", table.String())
 	}
-	if err := printObject(&table, resource.CrewFitnessSuite, obj, "toml"); err == nil {
-		t.Error("an unknown output format is an error")
+	if err := printObject(&table, resource.CrewFitnessSuite, obj, "toml"); err == nil || !strings.Contains(err.Error(), `"kyaml"`) {
+		t.Errorf("an unknown output format is an error that lists kyaml, got %v", err)
+	}
+}
+
+func TestPrintObjectKYAML(t *testing.T) {
+	obj := &unstructured.Unstructured{}
+	if err := obj.UnmarshalJSON([]byte(judgedSuiteJSON)); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := printObject(&out, resource.CrewFitnessSuite, obj, "kyaml"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(out.String(), "---\n") || strings.Contains(out.String(), "Judge:") || !strings.Contains(out.String(), `kind: "CrewFitnessSuite"`) {
+		t.Errorf("-o kyaml prints the object only, as KYAML:\n%s", out.String())
 	}
 }
 

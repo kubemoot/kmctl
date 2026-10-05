@@ -19,7 +19,7 @@ DESCRIPTION Look and feel consistent with kubectl / istioctl / helm
 
 ASSERT command structure is HYBRID noun-verb (the istioctl/helm consensus): resources are noun-first and scoped (crew list/get, agent list/get, prompt/model, fitness list/get/scenarios/run, conversation ask/watch) so `kmctl <noun> --help` shows a clean per-resource action list and completion scales; cross-cutting actions are global verbs (create, apply -f, delete, status, info, version, completion)
 NEVER add a top-level generic verb like `get`/`describe` that takes a resource type - it fractures the noun-verb model (you would have both `kmctl get crews` and `kmctl crew list`). apply/delete are the only kubectl-style verbs, and only because they are type-agnostic manifest ops (like `helm install`)
-ASSERT use Cobra + genericclioptions; global flags --kubeconfig, --context, -n/--namespace, -A, -o {table|yaml|json|name|wide}, -v
+ASSERT use Cobra + genericclioptions; global flags --kubeconfig, --context, -n/--namespace, -A, -o {table|yaml|json|kyaml|name|wide}, -v
 ASSERT every command has a short + long description and runnable Examples in --help
 ASSERT shell completion (bash/zsh/fish/powershell) stays enabled (Cobra built-in completion command)
 ASSERT live discussion/fitness streaming is over HTTP/SSE using the active kubectl context + credentials - NEVER client-side NATS
