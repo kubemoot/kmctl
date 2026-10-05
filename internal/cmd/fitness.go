@@ -127,46 +127,62 @@ from the suite's matching script, useful for iterating on one scenario.`,
 			if err != nil {
 				return err
 			}
-			ns := f.Namespace()
 			suiteName, err := resolveRunSuite(cmd, f, dc, args, filename)
 			if err != nil {
 				return err
 			}
-			suite, err := resource.Get(cmd.Context(), dc, resource.CrewFitnessSuite, ns, suiteName)
-			if err != nil {
-				return err
-			}
-			w := cmd.OutOrStdout()
-
+			run := fitnessRun{dc: dc, ns: f.Namespace(), w: cmd.OutOrStdout(), timeout: timeout}
 			if scenario == "" {
-				done, err := pollPhase(cmd.Context(), dc, resource.CrewFitnessSuite, ns, suiteName, w, timeout)
-				if err != nil {
-					return err
-				}
-				return printJudgeHint(w, done)
+				return run.suite(cmd.Context(), suiteName)
 			}
-
-			content, ok := findScript(suite, scenario)
-			if !ok {
-				return fmt.Errorf("scenario %q not found in suite %q (see: kmctl fitness scenarios %s)", scenario, suiteName, suiteName)
-			}
-			crewRef, _, _ := unstructured.NestedString(suite.Object, "spec", "crewRef")
-			cf := buildCrewFitness(suiteName, scenario, crewRef, content)
-			created, err := dc.Resource(resource.CrewFitness.GVR()).Namespace(ns).Create(cmd.Context(), cf, metav1.CreateOptions{})
-			if err != nil {
-				return fmt.Errorf("create single-scenario run: %w", err)
-			}
-			if _, err := fmt.Fprintf(w, "running scenario %q as crewfitness/%s\n", scenario, created.GetName()); err != nil {
-				return err
-			}
-			_, err = pollPhase(cmd.Context(), dc, resource.CrewFitness, ns, created.GetName(), w, timeout)
-			return err
+			return run.scenario(cmd.Context(), suiteName, scenario)
 		},
 	}
 	cmd.Flags().StringVar(&scenario, "scenario", "", "Run only this scenario (by testRef) as a single CrewFitness")
 	cmd.Flags().StringVarP(&filename, "filename", "f", "", "Apply a CrewFitnessSuite manifest, then run it")
 	cmd.Flags().DurationVar(&timeout, "timeout", 30*time.Minute, "Max time to wait for completion")
 	return cmd
+}
+
+// fitnessRun waits on a fitness run in one namespace, printing its progress to w.
+type fitnessRun struct {
+	dc      dynamic.Interface
+	ns      string
+	w       io.Writer
+	timeout time.Duration
+}
+
+// suite waits for the named suite's iterations to finish, then says whether the
+// judge is still scoring it.
+func (r fitnessRun) suite(ctx context.Context, name string) error {
+	done, err := pollPhase(ctx, r.dc, resource.CrewFitnessSuite, r.ns, name, r.w, r.timeout)
+	if err != nil {
+		return err
+	}
+	return printJudgeHint(r.w, done)
+}
+
+// scenario runs one of the suite's scripts as a single CrewFitness and waits for it.
+func (r fitnessRun) scenario(ctx context.Context, suiteName, scenario string) error {
+	suite, err := resource.Get(ctx, r.dc, resource.CrewFitnessSuite, r.ns, suiteName)
+	if err != nil {
+		return err
+	}
+	content, ok := findScript(suite, scenario)
+	if !ok {
+		return fmt.Errorf("scenario %q not found in suite %q (see: kmctl fitness scenarios %s)", scenario, suiteName, suiteName)
+	}
+	crewRef, _, _ := unstructured.NestedString(suite.Object, "spec", "crewRef")
+	cf := buildCrewFitness(suiteName, scenario, crewRef, content)
+	created, err := r.dc.Resource(resource.CrewFitness.GVR()).Namespace(r.ns).Create(ctx, cf, metav1.CreateOptions{})
+	if err != nil {
+		return fmt.Errorf("create single-scenario run: %w", err)
+	}
+	if _, err := fmt.Fprintf(r.w, "running scenario %q as crewfitness/%s\n", scenario, created.GetName()); err != nil {
+		return err
+	}
+	_, err = pollPhase(ctx, r.dc, resource.CrewFitness, r.ns, created.GetName(), r.w, r.timeout)
+	return err
 }
 
 // resolveRunSuite returns the suite name to run: from -f (apply the manifest and

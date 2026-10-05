@@ -658,6 +658,14 @@ access:
   clusterWide: false
 `
 
+// Markdown pieces the README repeats: the target namespace and the chart's
+// cluster-wide switch as code spans, and the opening fence of a shell block.
+const (
+	mdTargetNS    = "`[[ .TargetNS ]]`"
+	mdClusterWide = "`access.clusterWide: true`"
+	fenceBash     = "```bash"
+)
+
 const readmeTemplate = `# [[ .Title ]]
 
 [[ if .Renamed -]]
@@ -688,11 +696,11 @@ networking, config, and a reviewer.
 **1. Install it.**
 [[- if not .Chart ]]
 
-This bundle is written for the namespace ` + "`[[ .TargetNS ]]`" + `: its prompts and its RoleBinding name it.
+This bundle is written for the namespace ` + mdTargetNS + `: its prompts and its RoleBinding name it.
 For another namespace, scaffold again with ` + "`kmctl create [[ .Name ]] -n <namespace>`" + `.
 [[- end ]]
 
-` + "```bash" + `
+` + fenceBash + `
 [[- if .Chart ]]
 helm upgrade --install [[ .Name ]] . --namespace [[ .TargetNS ]] --create-namespace
 [[- else ]]
@@ -705,7 +713,7 @@ kmctl crew get [[ .Name ]] -n [[ .TargetNS ]]   # wait for Ready
 
 **2. Ask it something.**
 
-` + "```bash" + `
+` + fenceBash + `
 kmctl conversation ask [[ .Name ]] "List the pods in this namespace and their status." -n [[ .TargetNS ]]
 ` + "```" + `
 
@@ -714,7 +722,7 @@ Ask it to delete something and it declines: it is read-only by its prompts and b
 
 **3. Run its fitness suite.**
 
-` + "```bash" + `
+` + fenceBash + `
 kmctl fitness run -f fitness/fitness.yaml -n [[ .TargetNS ]]
 kmctl fitness get [[ .Name ]]-starter -n [[ .TargetNS ]]
 ` + "```" + `
@@ -742,7 +750,7 @@ same question: the answer now ends with that line.
   never a model; the policy binds Models to them.
 - ` + "`templates/promptmodules.yaml`" + `: every prompt, in ADL.
 - ` + "`templates/tools.yaml`" + `: the Kubernetes MCP server, read-only, and the MCP gateway the agents reach it through.
-- ` + "`templates/rbac.yaml`" + `: the read-only Role the tool server runs with. Set ` + "`access.clusterWide: true`" + ` in
+- ` + "`templates/rbac.yaml`" + `: the read-only Role the tool server runs with. Set ` + mdClusterWide + ` in
   ` + "`values.yaml`" + ` to let it read every namespace.
 - ` + "`templates/models.yaml`" + `: the Models the scheduler binds agents to.
 - ` + "`fitness/fitness.yaml`" + `: the fitness suite, outside ` + "`templates/`" + ` so installing does not start a run.
@@ -774,15 +782,15 @@ Model providers:[[ range .Providers ]] ` + "`[[ . ]]`" + `[[ end ]].
 By default the crew reads only the namespace it is installed into: its Role covers that
 namespace, and its prompts say so. Every answer names the namespace, and a question about
 other namespaces or the whole cluster gets a plain "this crew reads only ..." with the way
-to widen it. Set ` + "`access.clusterWide: true`" + ` in ` + "`values.yaml`" + ` and redeploy (the ` + "`helm upgrade`" + ` above) to
+to widen it. Set ` + mdClusterWide + ` in ` + "`values.yaml`" + ` and redeploy (the ` + "`helm upgrade`" + ` above) to
 widen both: a ClusterRole lets the tool server read every namespace, still read-only and
 without Secrets, and the prompts switch with it: the specialists read every namespace
 unless a question names one, and the crew names the namespace of each resource it reports.
 [[ else ]]
-This bundle reads only the namespace ` + "`[[ .TargetNS ]]`" + `: its Role binds there, and its prompts say so.
-Every answer names ` + "`[[ .TargetNS ]]`" + `, and a question about other namespaces or the whole cluster
-gets a plain "this crew reads only ` + "`[[ .TargetNS ]]`" + `". For read-only access to the whole cluster,
-scaffold the crew as a Helm chart (` + "`kmctl create [[ .Name ]] --chart`" + `) and set ` + "`access.clusterWide: true`" + `.
+This bundle reads only the namespace ` + mdTargetNS + `: its Role binds there, and its prompts say so.
+Every answer names ` + mdTargetNS + `, and a question about other namespaces or the whole cluster
+gets a plain "this crew reads only ` + mdTargetNS + `". For read-only access to the whole cluster,
+scaffold the crew as a Helm chart (` + "`kmctl create [[ .Name ]] --chart`" + `) and set ` + mdClusterWide + `.
 [[ end ]]
 ## Read-only by design
 

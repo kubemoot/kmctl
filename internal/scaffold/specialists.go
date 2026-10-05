@@ -8,6 +8,12 @@ import (
 // MaxMembers is the largest starter crew: four toolers and the reviewer.
 const MaxMembers = 5
 
+// The capabilities every tooler declares; the scheduler binds a Model by them.
+const (
+	capToolCalling = "tool-calling"
+	capKubernetes  = "kubernetes"
+)
+
 // specialist is one member of the starter crew beside the coordinator. The crew
 // is a read-only guide to its own namespace, so every specialist owns one slice
 // of that namespace and carries only the tools for it.
@@ -45,7 +51,7 @@ var workloads = specialist{
 	Role:         "tooler",
 	Summary:      "Pods, Deployments, ReplicaSets, StatefulSets, and Jobs.",
 	Triage:       "Lists and inspects Pods, Deployments, ReplicaSets, StatefulSets, and Jobs: phase, readiness, replicas, conditions, and logs.",
-	Capabilities: []string{"tool-calling", "kubernetes"},
+	Capabilities: []string{capToolCalling, capKubernetes},
 	Tools:        []string{"pods_list_in_namespace", "pods_get", "pods_log", "resources_list", "resources_get"},
 	Keywords:     []string{"pod", "pods", "deployment", "deployments", "replicaset", "statefulset", "job", "jobs", "replicas", "workload", "logs", "running"},
 	Namespaced: scope{
@@ -78,7 +84,7 @@ var events = specialist{
 	Role:         "tooler",
 	Summary:      "Warning events, container restarts, and recent failures.",
 	Triage:       "Reads Warning events, container restart counts, and the reasons for recent failures (crashes, failed probes, failed pulls).",
-	Capabilities: []string{"tool-calling", "kubernetes"},
+	Capabilities: []string{capToolCalling, capKubernetes},
 	Tools:        []string{"events_list", "pods_list_in_namespace", "pods_get", "pods_log"},
 	Keywords:     []string{"event", "events", "warning", "warnings", "restart", "restarts", "crash", "failing", "failed", "error", "unhealthy", "problem"},
 	Namespaced: scope{
@@ -111,7 +117,7 @@ var networking = specialist{
 	Role:         "tooler",
 	Summary:      "Services, endpoints, Ingresses or HTTPRoutes, and NetworkPolicies.",
 	Triage:       "Lists Services and whether they have ready endpoints, Ingresses, HTTPRoutes, and NetworkPolicies.",
-	Capabilities: []string{"tool-calling", "kubernetes"},
+	Capabilities: []string{capToolCalling, capKubernetes},
 	Tools:        []string{"resources_list", "resources_get"},
 	Keywords:     []string{"service", "services", "endpoint", "endpoints", "port", "ports", "ingress", "httproute", "route", "networkpolicy", "network", "traffic", "dns"},
 	Namespaced: scope{
@@ -142,7 +148,7 @@ var config = specialist{
 	Role:         "tooler",
 	Summary:      "ConfigMaps, ServiceAccounts, and the Secrets workloads reference.",
 	Triage:       "Lists ConfigMaps and their keys, ServiceAccounts and the pods that use them, and the names of the Secrets workloads reference.",
-	Capabilities: []string{"tool-calling", "kubernetes"},
+	Capabilities: []string{capToolCalling, capKubernetes},
 	Tools:        []string{"resources_list", "resources_get"},
 	Keywords:     []string{"configmap", "configmaps", "config", "configuration", "secret", "secrets", "serviceaccount", "serviceaccounts", "account", "env", "volume"},
 	Namespaced: scope{

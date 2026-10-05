@@ -125,28 +125,35 @@ var readOnlyTools = []string{"pods_list_in_namespace", "pods_get", "pods_log", "
 func TestGenerate_ToolsPerRole(t *testing.T) {
 	p := generated(t, bundle(MaxMembers))
 	for _, a := range ofKind(p, "Agent") {
-		role := str(&a, "spec", "discussRole")
-		tools := strs(&a, "spec", "enabledTools")
-		gatewayOff := envValue(&a, "KUBEMOOT_GATEWAY_ENABLED") == "false"
-		switch role {
-		case "tooler":
-			if len(tools) == 0 || len(tools) > 5 {
-				t.Errorf("tooler %q enables %d tools, want 1 to 5", a.GetName(), len(tools))
-			}
-			for _, tool := range tools {
-				if !slices.Contains(readOnlyTools, tool) {
-					t.Errorf("tooler %q enables %q, which is not a read tool", a.GetName(), tool)
-				}
-			}
-		case "coordinator", "analyst":
-			if len(tools) != 0 || !gatewayOff {
-				t.Errorf("%s %q must call no tools (enabledTools %v, gateway off %v)", role, a.GetName(), tools, gatewayOff)
-			}
-		default:
-			t.Errorf("agent %q has unexpected role %q", a.GetName(), role)
-		}
+		checkAgentTools(t, &a)
 	}
 }
+
+// checkAgentTools holds one Agent to its role's tool rule: a tooler enables one to
+// five read tools; the coordinator and the analyst enable none and run without the
+// gateway.
+func checkAgentTools(t *testing.T, a *unstructured.Unstructured) {
+	t.Helper()
+	role := str(a, "spec", "discussRole")
+	tools := strs(a, "spec", "enabledTools")
+	switch role {
+	case "tooler":
+		if len(tools) == 0 || len(tools) > 5 {
+			t.Errorf("tooler %q enables %d tools, want 1 to 5", a.GetName(), len(tools))
+		}
+		if extra := slices.DeleteFunc(slices.Clone(tools), isReadOnlyTool); len(extra) > 0 {
+			t.Errorf("tooler %q enables %v, which are not read tools", a.GetName(), extra)
+		}
+	case "coordinator", "analyst":
+		if gatewayOff := envValue(a, "KUBEMOOT_GATEWAY_ENABLED") == "false"; len(tools) != 0 || !gatewayOff {
+			t.Errorf("%s %q must call no tools (enabledTools %v, gateway off %v)", role, a.GetName(), tools, gatewayOff)
+		}
+	default:
+		t.Errorf("agent %q has unexpected role %q", a.GetName(), role)
+	}
+}
+
+func isReadOnlyTool(tool string) bool { return slices.Contains(readOnlyTools, tool) }
 
 // envValue is the value of the named env var in an Agent's deployment, or "".
 func envValue(a *unstructured.Unstructured, name string) string {
