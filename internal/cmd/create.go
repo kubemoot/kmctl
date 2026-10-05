@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/AlecAivazis/survey/v2"
 	"github.com/kubemoot/kmctl/internal/client"
 	"github.com/kubemoot/kmctl/internal/resource"
 	"github.com/kubemoot/kmctl/internal/scaffold"
@@ -73,7 +72,7 @@ namespace given by -n, or crew-NAME.`,
 				Namespace:   explicitNamespace(f),
 			}
 			discovered := discoverProviders(cmd.Context(), f)
-			if err := gather(&opts, cmd.Flags().Changed, noInput, discovered, &surveyPrompter{}); err != nil {
+			if err := gather(&opts, cmd.Flags().Changed, noInput, discovered, &huhPrompter{}); err != nil {
 				return err
 			}
 			// Default to all discovered providers so the scaffold can generate Models
@@ -247,51 +246,4 @@ func discoverProviders(ctx context.Context, f *client.Factory) []string {
 		names = append(names, list.Items[i].GetName())
 	}
 	return names
-}
-
-// surveyPrompter is the interactive TTY implementation.
-type surveyPrompter struct{}
-
-func (surveyPrompter) Text(label, def string) (string, error) {
-	answer := def
-	err := survey.AskOne(&survey.Input{Message: label, Default: def}, &answer)
-	return answer, err
-}
-
-func (surveyPrompter) Int(label string, def int) (int, error) {
-	answer := strconv.Itoa(def)
-	if err := survey.AskOne(&survey.Input{Message: label, Default: answer}, &answer); err != nil {
-		return 0, err
-	}
-	n, err := strconv.Atoi(strings.TrimSpace(answer))
-	if err != nil {
-		return 0, fmt.Errorf("expected a number, got %q", answer)
-	}
-	return n, nil
-}
-
-func (surveyPrompter) MultiSelect(label string, options []string) ([]string, error) {
-	var selected []string
-	err := survey.AskOne(&survey.MultiSelect{Message: label, Options: options}, &selected)
-	return selected, err
-}
-
-func (surveyPrompter) SelectOrOther(label string, options []string) (string, error) {
-	const other, skip = "other (type a name)", "skip - define later"
-	choice := ""
-	if err := survey.AskOne(&survey.Select{Message: label, Options: append(append([]string{}, options...), other, skip)}, &choice); err != nil {
-		return "", err
-	}
-	switch choice {
-	case skip:
-		return "", nil
-	case other:
-		name := ""
-		if err := survey.AskOne(&survey.Input{Message: "Model name:"}, &name); err != nil {
-			return "", err
-		}
-		return strings.TrimSpace(name), nil
-	default:
-		return choice, nil
-	}
 }
