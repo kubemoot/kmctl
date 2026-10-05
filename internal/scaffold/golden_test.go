@@ -34,35 +34,37 @@ func TestGenerate_Golden(t *testing.T) {
 			}
 			root := filepath.Join("testdata", "golden", name)
 			if *update {
-				writeGolden(t, root, files)
+				// Start from an empty tree, so a file no longer generated goes away.
+				if err := os.RemoveAll(root); err != nil {
+					t.Fatal(err)
+				}
 			}
 			for rel, content := range files {
-				want, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
-				if err != nil {
-					t.Fatalf("missing golden %s (run go test ./internal/scaffold -update): %v", rel, err)
-				}
-				if string(want) != content {
-					t.Errorf("%s differs from its golden file; run go test ./internal/scaffold -update and review the diff", rel)
-				}
+				assertGolden(t, filepath.Join(root, filepath.FromSlash(rel)), content)
 			}
 			assertNoExtraGolden(t, root, files)
 		})
 	}
 }
 
-func writeGolden(t *testing.T, root string, files map[string]string) {
+// assertGolden compares got with the golden file at path, after rewriting the file
+// with got when the test runs with -update.
+func assertGolden(t *testing.T, path, got string) {
 	t.Helper()
-	if err := os.RemoveAll(root); err != nil {
-		t.Fatal(err)
+	if *update {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(got), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
-	for rel, content := range files {
-		p := filepath.Join(root, filepath.FromSlash(rel))
-		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
-			t.Fatal(err)
-		}
+	want, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("missing golden %s (run go test ./internal/scaffold -update): %v", path, err)
+	}
+	if string(want) != got {
+		t.Errorf("%s differs from its golden file; run go test ./internal/scaffold -update and review the diff", path)
 	}
 }
 
@@ -105,22 +107,7 @@ func TestChart_HelmRenderedGolden(t *testing.T) {
 	for file, extra := range helmGolden {
 		t.Run(file, func(t *testing.T) {
 			got := helmTemplate(t, helm, filepath.Join(dir, o.Name), extra)
-			golden := filepath.Join("testdata", "golden", "helm", file)
-			if *update {
-				if err := os.MkdirAll(filepath.Dir(golden), 0o755); err != nil {
-					t.Fatal(err)
-				}
-				if err := os.WriteFile(golden, []byte(got), 0o644); err != nil {
-					t.Fatal(err)
-				}
-			}
-			want, err := os.ReadFile(golden)
-			if err != nil {
-				t.Fatalf("missing golden %s (run go test ./internal/scaffold -update): %v", golden, err)
-			}
-			if string(want) != got {
-				t.Errorf("helm template %v differs from %s; run go test ./internal/scaffold -update and review the diff", extra, golden)
-			}
+			assertGolden(t, filepath.Join("testdata", "golden", "helm", file), got)
 		})
 	}
 }
