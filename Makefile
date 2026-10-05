@@ -20,8 +20,11 @@ test-race: ## Run unit tests with the race detector (requires CGO)
 	CGO_ENABLED=1 go test -race ./...
 
 ENVTEST := $(LOCALBIN)/setup-envtest
-ENVTEST_VERSION ?= release-0.21
-ENVTEST_K8S_VERSION ?= 1.33
+# go.mod is the version source, as in the integration workflow: setup-envtest from
+# the controller-runtime release branch kmctl builds with, and the API server at
+# the Kubernetes minor of its client-go.
+ENVTEST_VERSION ?= $(shell go list -m -f '{{.Version}}' sigs.k8s.io/controller-runtime | sed -E 's/^v([0-9]+)\.([0-9]+)\..*/release-\1.\2/')
+ENVTEST_K8S_VERSION ?= $(shell go list -m -f '{{.Version}}' k8s.io/client-go | sed -E 's/^v0\.([0-9]+)\..*/1.\1/')
 
 .PHONY: setup-envtest
 setup-envtest: $(LOCALBIN) ## Install setup-envtest + the apiserver/etcd binaries
