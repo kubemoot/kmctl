@@ -83,7 +83,7 @@ release:
     owner: kubemoot
     name: kmctl
   # GoReleaser leaves the GitHub Release a draft holding every archive, the checksums,
-  # and their signature; Promote Release then attaches the build provenance and publishes
+  # and their signature; Publish Release then attaches the build provenance and publishes
   # it. GitHub's immutable releases lock the assets once a release is published, so
   # every asset goes on the draft first.
   draft: true

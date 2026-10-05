@@ -101,7 +101,7 @@ Download `kmctl_<version>_windows_amd64.zip` (or `_arm64`) from the
 ### Verify a release
 
 Releases are signed without a stored key: Sigstore issues a short-lived certificate to
-the `promote-release.yaml` workflow on `main` of `kubemoot/kmctl`, and the signature is
+the `publish-release.yaml` workflow on `main` of `kubemoot/kmctl`, and the signature is
 recorded in Sigstore's public transparency log. Check that `checksums.txt` was signed by
 that workflow with [cosign](https://docs.sigstore.dev/cosign/system_config/installation/),
 then check the archive against it:
@@ -109,7 +109,7 @@ then check the archive against it:
 ```bash
 cosign verify-blob checksums.txt \
   --bundle checksums.txt.sigstore.json \
-  --certificate-identity https://github.com/kubemoot/kmctl/.github/workflows/promote-release.yaml@refs/heads/main \
+  --certificate-identity https://github.com/kubemoot/kmctl/.github/workflows/publish-release.yaml@refs/heads/main \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 sha256sum -c --ignore-missing checksums.txt          # macOS: shasum -a 256 -c --ignore-missing
 ```
@@ -120,7 +120,7 @@ downloaded copy instead of the repository's attestations):
 
 ```bash
 gh attestation verify kmctl_<version>_linux_amd64.tar.gz --repo kubemoot/kmctl \
-  --signer-workflow kubemoot/kmctl/.github/workflows/promote-release.yaml
+  --signer-workflow kubemoot/kmctl/.github/workflows/publish-release.yaml
 ```
 
 ### With Go
@@ -175,7 +175,7 @@ make hooks      # install the pre-commit gate (gofmt + lint)
 ## Releases
 
 Every merge to `main` tags a release candidate; the version comes from conventional commits.
-A maintainer runs Promote Release to tag the final version, and `goreleaser` publishes
+A maintainer runs Publish Release to tag the final version, and `goreleaser` publishes
 cross-platform binaries to a GitHub Release. See
 [Releases and Versioning](https://kubemoot.org/docs/community/releases/).
 

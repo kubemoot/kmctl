@@ -1,4 +1,4 @@
-# Promote Release: publish a tested kmctl release candidate as the public release.
+# Publish Release: publish a tested kmctl release candidate as the public release.
 #
 # Every push to main tags a release candidate vX.Y.Z-rc.N and builds it without
 # publishing. A maintainer runs this workflow (Actions tab, Run workflow; dispatch
@@ -14,7 +14,7 @@
 # attached to the draft release before it is published, since GitHub's immutable
 # releases lock the assets on publish. A dry run signs and verifies its snapshot too,
 # so a signing problem shows before anything is tagged; it attests nothing.
-name: Promote Release
+name: Publish Release
 
 on:
   workflow_dispatch:
@@ -31,14 +31,14 @@ on:
         type: boolean
 
 concurrency:
-  group: promote-release
+  group: publish-release
   cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
-  promote:
+  prepare:
     # The same runners as every release in the ecosystem, and only from main.
     if: github.ref == 'refs/heads/main'
     runs-on: homelab-runners
@@ -49,7 +49,7 @@ jobs:
       id-token: write # Sigstore keyless signing and the provenance attestation
       attestations: write # store the provenance attestation in the repository
     outputs:
-      final_tag: ${{ steps.promote.outputs.final_tag }}
+      final_tag: ${{ steps.tag.outputs.final_tag }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -64,11 +64,11 @@ jobs:
         uses: kubemoot/release-actions/setup@76c35a749b9db4105e73307b91b8f7cf1359b755 # v0.4.0
 
       - name: Tag the final version
-        id: promote
+        id: tag
         env:
           RC_TAG: ${{ inputs.rc_tag }}
           DRY_RUN: ${{ inputs.dry_run }}
-          OUT_DIR: ${{ runner.temp }}/promotion
+          OUT_DIR: ${{ runner.temp }}/release-files
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -77,11 +77,11 @@ jobs:
           rl_promote_single v kmctl "${OUT_DIR}" >> "$GITHUB_OUTPUT"
           cat "${OUT_DIR}/notes.md" >> "$GITHUB_STEP_SUMMARY"
 
-      # goreleaser builds from the checkout, so it moves to the promoted commit; the
+      # goreleaser builds from the checkout, so it moves to the candidate's commit; the
       # notes live outside the checkout so the tree stays clean.
-      - name: Check out the promoted commit
+      - name: Check out the release commit
         env:
-          COMMIT: ${{ steps.promote.outputs.commit }}
+          COMMIT: ${{ steps.tag.outputs.commit }}
         run: git checkout --quiet "${COMMIT}"
 
       - name: Set up Go
@@ -104,13 +104,13 @@ jobs:
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
           version: latest
-          args: release --clean --release-notes ${{ runner.temp }}/promotion/notes.md
+          args: release --clean --release-notes ${{ runner.temp }}/release-files/notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GORELEASER_CURRENT_TAG: ${{ steps.promote.outputs.final_tag }}
-          GORELEASER_PREVIOUS_TAG: ${{ steps.promote.outputs.previous_tag }}
+          GORELEASER_CURRENT_TAG: ${{ steps.tag.outputs.final_tag }}
+          GORELEASER_PREVIOUS_TAG: ${{ steps.tag.outputs.previous_tag }}
 
-      # The certificate names the workflow that signed: promote-release.yaml on main.
+      # The certificate names the workflow that signed: publish-release.yaml on main.
       - name: Verify the checksums signature
         env:
           IDENTITY: https://github.com/${{ github.workflow_ref }}
@@ -131,7 +131,7 @@ jobs:
         if: ${{ !inputs.dry_run }}
         env:
           BUNDLE: ${{ steps.attest.outputs.bundle-path }}
-          FINAL_TAG: ${{ steps.promote.outputs.final_tag }}
+          FINAL_TAG: ${{ steps.tag.outputs.final_tag }}
         run: |
           mkdir -p "${RUNNER_TEMP}/provenance"
           cp "${BUNDLE}" "${RUNNER_TEMP}/provenance/kmctl_${FINAL_TAG#v}.intoto.jsonl"
@@ -150,7 +150,7 @@ jobs:
   # gh release download, upload, and edit all find a draft by its tag name). A failed
   # run of this job alone can be re-run, since the draft and the provenance artifact stay.
   publish:
-    needs: promote
+    needs: prepare
     if: ${{ !inputs.dry_run }}
     runs-on: ubuntu-latest
     permissions:
@@ -165,20 +165,20 @@ jobs:
       - name: Verify the draft's archives against the provenance
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.promote.outputs.final_tag }}
+          TAG: ${{ needs.prepare.outputs.final_tag }}
         run: |
           gh release download "${TAG}" --repo "${GITHUB_REPOSITORY}" --dir archives \
             --pattern 'kmctl_*.tar.gz' --pattern 'kmctl_*.zip'
           for archive in archives/*; do
             gh attestation verify "${archive}" --repo "${GITHUB_REPOSITORY}" \
               --bundle "provenance/kmctl_${TAG#v}.intoto.jsonl" \
-              --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/promote-release.yaml"
+              --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/publish-release.yaml"
           done
 
       - name: Attach the provenance and publish the release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.promote.outputs.final_tag }}
+          TAG: ${{ needs.prepare.outputs.final_tag }}
         run: |
           gh release upload "${TAG}" --repo "${GITHUB_REPOSITORY}" --clobber \
             "provenance/kmctl_${TAG#v}.intoto.jsonl"

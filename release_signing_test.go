@@ -10,7 +10,7 @@ import (
 )
 
 // The release signing contract: goreleaser signs checksums.txt keylessly and leaves the
-// release a draft, Promote Release attests the provenance and attaches it before the
+// release a draft, Publish Release attests the provenance and attaches it before the
 // draft is published, and only the job that signs holds an OIDC token.
 
 type wfStep struct {
@@ -100,40 +100,40 @@ func TestGoreleaserSignsChecksumsKeylessly(t *testing.T) {
 	}
 }
 
-func TestPromoteSignsVerifiesAndAttestsBeforePublishing(t *testing.T) {
-	promote := loadWorkflow(t, "promote-release.yaml").Jobs["promote"]
-	install := stepIndex(t, promote, "Install cosign")
-	snapshot := stepIndex(t, promote, "Build a snapshot (dry run)")
-	publish := stepIndex(t, promote, "Publish the release with goreleaser")
-	verify := stepIndex(t, promote, "Verify the checksums signature")
-	attest := stepIndex(t, promote, "Attest the build provenance")
+func TestPrepareSignsVerifiesAndAttestsBeforePublishing(t *testing.T) {
+	prepare := loadWorkflow(t, "publish-release.yaml").Jobs["prepare"]
+	install := stepIndex(t, prepare, "Install cosign")
+	snapshot := stepIndex(t, prepare, "Build a snapshot (dry run)")
+	publish := stepIndex(t, prepare, "Publish the release with goreleaser")
+	verify := stepIndex(t, prepare, "Verify the checksums signature")
+	attest := stepIndex(t, prepare, "Attest the build provenance")
 	if install >= snapshot || install >= publish || verify <= publish || attest <= verify {
 		t.Errorf("step order: install %d, snapshot %d, publish %d, verify %d, attest %d", install, snapshot, publish, verify, attest)
 	}
-	if v := promote.Steps[verify]; v.If != "" || !strings.Contains(v.Run, "cosign verify-blob dist/checksums.txt") {
+	if v := prepare.Steps[verify]; v.If != "" || !strings.Contains(v.Run, "cosign verify-blob dist/checksums.txt") {
 		t.Errorf("the signature must be verified on every run: %+v", v)
 	}
 }
 
-func TestPromoteAttestsTheReleasedArchives(t *testing.T) {
-	promote := loadWorkflow(t, "promote-release.yaml").Jobs["promote"]
-	a := promote.Steps[stepIndex(t, promote, "Attest the build provenance")]
+func TestPrepareAttestsTheReleasedArchives(t *testing.T) {
+	prepare := loadWorkflow(t, "publish-release.yaml").Jobs["prepare"]
+	a := prepare.Steps[stepIndex(t, prepare, "Attest the build provenance")]
 	if !strings.Contains(a.If, "!inputs.dry_run") || fmt.Sprint(a.With["subject-checksums"]) != "dist/checksums.txt" {
 		t.Errorf("provenance must cover the released archives on a real run only: %+v", a)
 	}
 	if !strings.HasPrefix(a.Uses, "actions/attest@") {
 		t.Errorf("attest step uses %q", a.Uses)
 	}
-	name := promote.Steps[stepIndex(t, promote, "Name the provenance for the release")]
+	name := prepare.Steps[stepIndex(t, prepare, "Name the provenance for the release")]
 	if !strings.Contains(name.Run, "kmctl_${FINAL_TAG#v}.intoto.jsonl") {
 		t.Errorf("the provenance asset must end in .intoto.jsonl: %q", name.Run)
 	}
 }
 
 func TestPublishAttachesProvenanceThenPublishesTheDraft(t *testing.T) {
-	job := loadWorkflow(t, "promote-release.yaml").Jobs["publish"]
-	if job.Needs != "promote" || !strings.Contains(job.If, "!inputs.dry_run") {
-		t.Errorf("publish must follow promote on a real run only: needs %v, if %q", job.Needs, job.If)
+	job := loadWorkflow(t, "publish-release.yaml").Jobs["publish"]
+	if job.Needs != "prepare" || !strings.Contains(job.If, "!inputs.dry_run") {
+		t.Errorf("publish must follow prepare on a real run only: needs %v, if %q", job.Needs, job.If)
 	}
 	verify := stepIndex(t, job, "Verify the draft's archives against the provenance")
 	attach := stepIndex(t, job, "Attach the provenance and publish the release")
@@ -147,19 +147,19 @@ func TestPublishAttachesProvenanceThenPublishesTheDraft(t *testing.T) {
 	}
 }
 
-func TestOnlyThePromoteJobHoldsAnOIDCToken(t *testing.T) {
-	wf := loadWorkflow(t, "promote-release.yaml")
+func TestOnlyThePrepareJobHoldsAnOIDCToken(t *testing.T) {
+	wf := loadWorkflow(t, "publish-release.yaml")
 	if len(wf.Permissions) != 1 || wf.Permissions["contents"] != "read" {
 		t.Errorf("workflow permissions %v, want contents: read only", wf.Permissions)
 	}
 	for name, job := range wf.Jobs {
 		holds := job.Permissions["id-token"] == "write"
-		if holds != (name == "promote") {
+		if holds != (name == "prepare") {
 			t.Errorf("job %s id-token write: %v", name, holds)
 		}
 	}
-	if p := wf.Jobs["promote"].Permissions; p["attestations"] != "write" {
-		t.Errorf("promote permissions %v lack attestations: write", p)
+	if p := wf.Jobs["prepare"].Permissions; p["attestations"] != "write" {
+		t.Errorf("prepare permissions %v lack attestations: write", p)
 	}
 	if p := wf.Jobs["publish"].Permissions; len(p) != 1 || p["contents"] != "write" {
 		t.Errorf("publish permissions %v, want contents: write only", p)
@@ -190,17 +190,17 @@ func stepUsing(t *testing.T, job wfJob, prefix string) wfStep {
 }
 
 func TestProvenanceHandOffUsesOneArtifactAndOneFileName(t *testing.T) {
-	wf := loadWorkflow(t, "promote-release.yaml")
-	promote, publish := wf.Jobs["promote"], wf.Jobs["publish"]
-	up := stepUsing(t, promote, "actions/upload-artifact@")
+	wf := loadWorkflow(t, "publish-release.yaml")
+	prepare, publish := wf.Jobs["prepare"], wf.Jobs["publish"]
+	up := stepUsing(t, prepare, "actions/upload-artifact@")
 	down := stepUsing(t, publish, "actions/download-artifact@")
 	if fmt.Sprint(up.With["name"]) != fmt.Sprint(down.With["name"]) {
 		t.Errorf("artifact names differ: upload %v, download %v", up.With["name"], down.With["name"])
 	}
 	const file = "kmctl_${TAG#v}.intoto.jsonl"
-	named := promote.Steps[stepIndex(t, promote, "Name the provenance for the release")].Run
+	named := prepare.Steps[stepIndex(t, prepare, "Name the provenance for the release")].Run
 	if !strings.Contains(strings.ReplaceAll(named, "FINAL_TAG", "TAG"), file) {
-		t.Errorf("promote names the provenance differently: %q", named)
+		t.Errorf("prepare names the provenance differently: %q", named)
 	}
 	for _, name := range []string{"Verify the draft's archives against the provenance", "Attach the provenance and publish the release"} {
 		if run := publish.Steps[stepIndex(t, publish, name)].Run; !strings.Contains(run, fmt.Sprint(down.With["path"])+"/"+file) {
@@ -209,9 +209,9 @@ func TestProvenanceHandOffUsesOneArtifactAndOneFileName(t *testing.T) {
 	}
 }
 
-func TestPromoteRunsOnlyFromMain(t *testing.T) {
-	// The signing identity in the README is promote-release.yaml@refs/heads/main.
-	if got := loadWorkflow(t, "promote-release.yaml").Jobs["promote"].If; got != "github.ref == 'refs/heads/main'" {
-		t.Errorf("promote job guard %q", got)
+func TestPrepareRunsOnlyFromMain(t *testing.T) {
+	// The signing identity in the README is publish-release.yaml@refs/heads/main.
+	if got := loadWorkflow(t, "publish-release.yaml").Jobs["prepare"].If; got != "github.ref == 'refs/heads/main'" {
+		t.Errorf("prepare job guard %q", got)
 	}
 }

@@ -52,7 +52,7 @@ jobs:
           go-version-file: go.mod
 
       # A candidate builds every archive and checksum to prove the release works, and
-      # publishes and signs nothing; Promote Release signs and publishes the final version.
+      # publishes and signs nothing; Publish Release signs and publishes the final version.
       - name: Build the candidate with goreleaser (no publish)
         if: steps.version.outputs.release_created == 'true'
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
