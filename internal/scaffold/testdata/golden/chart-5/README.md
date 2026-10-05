@@ -10,10 +10,10 @@ it reads is in the namespace you install it into, starting with its own pods.
 ## The crew
 
 - **coordinator** (`hello-coordinator`) picks the specialists for each question and writes the answer.
-- **workloads** (`hello-workloads`, tooler): Pods, Deployments, ReplicaSets, StatefulSets, and Jobs in the crew's namespace.
-- **events** (`hello-events`, tooler): Warning events, container restarts, and recent failures in the crew's namespace.
-- **networking** (`hello-networking`, tooler): Services, endpoints, Ingresses or HTTPRoutes, and NetworkPolicies in the crew's namespace.
-- **config** (`hello-config`, tooler): ConfigMaps, ServiceAccounts, and the Secrets workloads reference in the crew's namespace.
+- **workloads** (`hello-workloads`, tooler): Pods, Deployments, ReplicaSets, StatefulSets, and Jobs.
+- **events** (`hello-events`, tooler): Warning events, container restarts, and recent failures.
+- **networking** (`hello-networking`, tooler): Services, endpoints, Ingresses or HTTPRoutes, and NetworkPolicies.
+- **config** (`hello-config`, tooler): ConfigMaps, ServiceAccounts, and the Secrets workloads reference.
 - **reviewer** (`hello-reviewer`, analyst): Checks the answer against the data the other specialists gathered and flags unsupported claims.
 
 ## Your first five minutes
@@ -79,8 +79,8 @@ namespace, and its prompts say so. Every answer names the namespace, and a quest
 other namespaces or the whole cluster gets a plain "this crew reads only ..." with the way
 to widen it. Set `access.clusterWide: true` in `values.yaml` and redeploy (the `helm upgrade` above) to
 widen both: a ClusterRole lets the tool server read every namespace, still read-only and
-without Secrets, and the prompts tell the crew to name the namespace of each resource it
-reports.
+without Secrets, and the prompts switch with it: the specialists read every namespace
+unless a question names one, and the crew names the namespace of each resource it reports.
 
 ## Read-only by design
 

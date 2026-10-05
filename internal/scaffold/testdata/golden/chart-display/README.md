@@ -12,7 +12,7 @@ it reads is in the namespace you install it into, starting with its own pods.
 ## The crew
 
 - **coordinator** (`homelab-health-guide-coordinator`) picks the specialists for each question and writes the answer.
-- **workloads** (`homelab-health-guide-workloads`, tooler): Pods, Deployments, ReplicaSets, StatefulSets, and Jobs in the crew's namespace.
+- **workloads** (`homelab-health-guide-workloads`, tooler): Pods, Deployments, ReplicaSets, StatefulSets, and Jobs.
 
 Scaffold with `--members 5` for the full crew of five specialists: workloads, events,
 networking, config, and a reviewer.
@@ -80,8 +80,8 @@ namespace, and its prompts say so. Every answer names the namespace, and a quest
 other namespaces or the whole cluster gets a plain "this crew reads only ..." with the way
 to widen it. Set `access.clusterWide: true` in `values.yaml` and redeploy (the `helm upgrade` above) to
 widen both: a ClusterRole lets the tool server read every namespace, still read-only and
-without Secrets, and the prompts tell the crew to name the namespace of each resource it
-reports.
+without Secrets, and the prompts switch with it: the specialists read every namespace
+unless a question names one, and the crew names the namespace of each resource it reports.
 
 ## Read-only by design
 

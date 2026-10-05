@@ -10,7 +10,7 @@ it reads is in the namespace you install it into, starting with its own pods.
 ## The crew
 
 - **coordinator** (`hello-coordinator`) picks the specialists for each question and writes the answer.
-- **workloads** (`hello-workloads`, tooler): Pods, Deployments, ReplicaSets, StatefulSets, and Jobs in the crew's namespace.
+- **workloads** (`hello-workloads`, tooler): Pods, Deployments, ReplicaSets, StatefulSets, and Jobs.
 
 Scaffold with `--members 5` for the full crew of five specialists: workloads, events,
 networking, config, and a reviewer.

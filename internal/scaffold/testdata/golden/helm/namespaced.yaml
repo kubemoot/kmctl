@@ -116,8 +116,8 @@ metadata:
     kubemoot.ai/role: tooler
 spec:
   type: chat
-  description: "Pods, Deployments, ReplicaSets, StatefulSets, and Jobs in the crew's namespace."
-  triageSummary: "Lists and inspects Pods, Deployments, ReplicaSets, StatefulSets, and Jobs in this namespace: phase, readiness, replicas, conditions, and logs."
+  description: "Pods, Deployments, ReplicaSets, StatefulSets, and Jobs."
+  triageSummary: "Lists and inspects Pods, Deployments, ReplicaSets, StatefulSets, and Jobs: phase, readiness, replicas, conditions, and logs."
   discussRole: tooler
   capabilities: [tool-calling, kubernetes]
   discussChannels: [kubernetes]

@@ -136,14 +136,21 @@ func TestChart_HelmRenders(t *testing.T) {
 	if _, err := Write(Options{Name: "hello", Members: MaxMembers, OutputDir: dir, Chart: true}); err != nil {
 		t.Fatal(err)
 	}
-	cases := map[string][]string{"Role": nil, "ClusterRole": {"--set", "access.clusterWide=true"}}
-	for kind, extra := range cases {
+	cases := map[string]struct {
+		extra  []string
+		prompt string // how the prompts name the release namespace
+	}{
+		"Role":        {nil, `pass namespace "team-a"`},
+		"ClusterRole": {[]string{"--set", "access.clusterWide=true"}, "it is installed in the namespace team-a"},
+	}
+	for kind, c := range cases {
+		extra := c.extra
 		out := helmTemplate(t, helm, filepath.Join(dir, "hello"), extra)
 		kinds := kindCounts(t, out)
 		if kinds[kind] != 1 || kinds[kind+"Binding"] != 1 {
 			t.Errorf("%v: want one %s and its binding, got %v", extra, kind, kinds)
 		}
-		if !strings.Contains(out, `pass namespace "team-a"`) || !strings.Contains(out, "namespace: team-a") {
+		if !strings.Contains(out, c.prompt) || !strings.Contains(out, "namespace: team-a") {
 			t.Errorf("%v: the release namespace must reach the prompts and the binding", extra)
 		}
 	}

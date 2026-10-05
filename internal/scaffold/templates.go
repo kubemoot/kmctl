@@ -130,10 +130,22 @@ spec:
     DESCRIPTION How every specialist takes part in a crew discussion
 
     DEFINE COMPONENT scope
+[[- if .Chart ]]
+{{- if .Values.access.clusterWide }}
+    ASSERT this crew reads every namespace in the cluster, read-only and without Secrets; it is installed in the namespace [[ .NS ]]
+    WHEN a question says "this namespace" or "here" THEN it means [[ .NS ]]
+    WHEN a question names a namespace THEN pass that namespace to every tool that takes one
+    WHEN a question names no namespace THEN read every namespace: leave the namespace out of resources_list and events_list
+    ALWAYS report the namespace of every resource
+{{- else }}
+[[- end ]]
     ASSERT this crew reads ONE Kubernetes namespace, its own: [[ .NS ]]
     WHEN a question says "this namespace" or "here", or names no namespace THEN it means [[ .NS ]]
     ALWAYS pass namespace "[[ .NS ]]" to every tool that takes a namespace
     WHEN a question names another namespace AND the tool reports access denied THEN say this crew can read only its own namespace; NEVER guess what is there
+[[- if .Chart ]]
+{{- end }}
+[[- end ]]
 
     DEFINE COMPONENT contribute
     WHEN the question touches your domain AND you have tools THEN call them first and report what they returned
@@ -271,7 +283,7 @@ metadata:
 spec:
   order: 30
   content: |
-[[ indent 4 .System ]]
+[[ .Prompt $.Chart ]]
 [[- end ]]
 `
 
@@ -640,8 +652,9 @@ const valuesTemplate = `# Values for the [[ .Name ]] crew. The crew's manifests 
 access:
   # false: the crew's Kubernetes MCP server can read only the release namespace
   # (a Role). true: it can read every namespace (a ClusterRole), still read-only
-  # and still without Secrets. The prompts keep the crew on its own namespace
-  # unless a question names another.
+  # and still without Secrets. The prompts follow it: false keeps every agent on
+  # the release namespace; true has the specialists read every namespace and name
+  # the namespace of each resource they report.
   clusterWide: false
 `
 
@@ -763,8 +776,8 @@ namespace, and its prompts say so. Every answer names the namespace, and a quest
 other namespaces or the whole cluster gets a plain "this crew reads only ..." with the way
 to widen it. Set ` + "`access.clusterWide: true`" + ` in ` + "`values.yaml`" + ` and redeploy (the ` + "`helm upgrade`" + ` above) to
 widen both: a ClusterRole lets the tool server read every namespace, still read-only and
-without Secrets, and the prompts tell the crew to name the namespace of each resource it
-reports.
+without Secrets, and the prompts switch with it: the specialists read every namespace
+unless a question names one, and the crew names the namespace of each resource it reports.
 [[ else ]]
 This bundle reads only the namespace ` + "`[[ .TargetNS ]]`" + `: its Role binds there, and its prompts say so.
 Every answer names ` + "`[[ .TargetNS ]]`" + `, and a question about other namespaces or the whole cluster

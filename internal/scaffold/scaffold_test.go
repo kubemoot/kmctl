@@ -5,6 +5,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -421,24 +422,41 @@ func flatAndChart(t *testing.T, members int) (map[string]string, map[string]stri
 // namespacedBranch is chart text as Helm renders it with access.clusterWide false,
 // for the access switch only: its cluster-wide branch and its own lines go, and any
 // other Helm action stays as it is.
-func namespacedBranch(text string) string {
+func namespacedBranch(text string) string { return accessBranch(text, false) }
+
+// clusterWideBranch is chart text as Helm renders it with access.clusterWide true.
+func clusterWideBranch(text string) string { return accessBranch(text, true) }
+
+// accessBranch keeps the lines of each access switch that Helm renders for the
+// given value of access.clusterWide, and drops the switch's own lines.
+func accessBranch(text string, wide bool) string {
 	var out []string
 	inSwitch, skipping := false, false
 	for _, line := range strings.Split(text, "\n") {
 		switch {
-		case line == "{{- if .Values.access.clusterWide }}":
-			inSwitch, skipping = true, true
-		case line == "{{- if not .Values.access.clusterWide }}":
-			inSwitch = true
-		case inSwitch && line == "{{- else }}":
-			skipping = false
-		case inSwitch && line == "{{- end }}":
+		case line == helmIfClusterWide:
+			inSwitch, skipping = true, !wide
+		case line == helmIfNotClusterWide:
+			inSwitch, skipping = true, wide
+		case inSwitch && line == helmElse:
+			skipping = !skipping
+		case inSwitch && line == helmEnd:
 			inSwitch, skipping = false, false
 		case !skipping:
 			out = append(out, line)
 		}
 	}
 	return strings.Join(out, "\n")
+}
+
+func TestAccessBranch(t *testing.T) {
+	text := "a\n{{- if .Values.access.clusterWide }}\nwide\n{{- else }}\nnarrow\n{{- end }}\nb\n{{- if not .Values.access.clusterWide }}\nonly-narrow\n{{- end }}\n{{ .Release.Namespace }}"
+	if got, want := namespacedBranch(text), "a\nnarrow\nb\nonly-narrow\n{{ .Release.Namespace }}"; got != want {
+		t.Errorf("namespaced = %q, want %q", got, want)
+	}
+	if got, want := clusterWideBranch(text), "a\nwide\nb\n{{ .Release.Namespace }}"; got != want {
+		t.Errorf("cluster-wide = %q, want %q", got, want)
+	}
 }
 
 // The chart's prompts switch on access.clusterWide without helm: the cluster-wide
@@ -453,8 +471,101 @@ func TestGenerate_ChartPromptsSwitchOnClusterWide(t *testing.T) {
 	if !strings.Contains(prompts, "{{- if not .Values.access.clusterWide }}\n    WHEN the question asks about other namespaces") {
 		t.Error("the out-of-scope rule must render only when clusterWide is false")
 	}
-	if strings.Count(prompts, "{{- end }}") != 2 {
-		t.Errorf("want the two access switches closed, got %d ends", strings.Count(prompts, "{{- end }}"))
+	protocol := strings.Index(prompts, "{{- if .Values.access.clusterWide }}\n    ASSERT this crew reads every namespace in the cluster")
+	if protocol < 0 || !strings.Contains(prompts[protocol:], "{{- else }}\n    ASSERT this crew reads ONE Kubernetes namespace, its own: {{ .Release.Namespace }}") {
+		t.Error("discussion-protocol must hold the cluster-wide and the namespaced scope rules in the access switch")
+	}
+	ifs := strings.Count(prompts, "{{- if .Values.access.clusterWide }}") + strings.Count(prompts, "{{- if not .Values.access.clusterWide }}")
+	if ends := strings.Count(prompts, "{{- end }}"); ends != ifs || ifs != 4 {
+		t.Errorf("want four access switches, each closed (three shared, one for the specialist), got %d ifs and %d ends", ifs, ends)
+	}
+}
+
+// Each specialist's own module follows access.clusterWide in a chart: a widened
+// crew's specialists gather across every namespace, a namespaced crew's read only
+// their own, and the rules that do not depend on scope are the same in both.
+func TestGenerate_SpecialistPromptsFollowAccess(t *testing.T) {
+	flat, chart := flatAndChart(t, MaxMembers)
+	modules := chart["templates/promptmodules.yaml"]
+	narrow, wide := namespacedBranch(modules), clusterWideBranch(modules)
+	for _, s := range specialists {
+		t.Run(s.Key, func(t *testing.T) { checkSpecialistScope(t, s, narrow, wide, flat["promptmodules.yaml"]) })
+	}
+	if strings.Contains(narrow+wide, "{{- if") || strings.Contains(narrow+wide, "{{- else") {
+		t.Fatal("an access switch was left open")
+	}
+	if strings.Contains(wide, "reads ONE Kubernetes namespace") || !strings.Contains(narrow, "reads ONE Kubernetes namespace") {
+		t.Error("the shared discussion-protocol scope must follow access.clusterWide too")
+	}
+}
+
+// checkSpecialistScope checks one specialist's module in the chart's namespaced
+// and cluster-wide renderings, and in the bundle.
+func checkSpecialistScope(t *testing.T, s specialist, narrow, wide, bundle string) {
+	t.Helper()
+	if !s.scoped() {
+		if strings.Contains(s.Namespaced.Description, "namespace") || strings.Contains(s.Rules, "this crew's namespace") {
+			t.Error("a specialist with no cluster-wide rules must not name a scope")
+		}
+		return
+	}
+	if !strings.Contains(wide, "DESCRIPTION "+s.ClusterWide.Description) || strings.Contains(wide, "DESCRIPTION "+s.Namespaced.Description) {
+		t.Error("the cluster-wide prompt must describe every namespace, not the crew's own")
+	}
+	if !strings.Contains(narrow, "DESCRIPTION "+s.Namespaced.Description) || strings.Contains(narrow, "DESCRIPTION "+s.ClusterWide.Description) {
+		t.Error("the namespaced prompt must describe the crew's own namespace only")
+	}
+	if strings.Contains(bundle, s.ClusterWide.Description) {
+		t.Error("a bundle reads one namespace, so it must not carry the cluster-wide rules")
+	}
+	if strings.Contains(s.ClusterWide.Gather, "this crew's namespace") {
+		t.Error("the cluster-wide gather rules must not confine the specialist to its own namespace")
+	}
+	checkGatherTools(t, s)
+}
+
+// checkGatherTools checks that the gather rules of both scopes call only the
+// tools the specialist enables.
+func checkGatherTools(t *testing.T, s specialist) {
+	t.Helper()
+	for name, sc := range map[string]scope{"namespaced": s.Namespaced, "cluster-wide": s.ClusterWide} {
+		for _, tool := range toolNames.FindAllString(sc.Gather, -1) {
+			if !slices.Contains(s.Tools, tool) {
+				t.Errorf("the %s gather rules call %s, which the specialist does not enable", name, tool)
+			}
+		}
+	}
+}
+
+// toolNames matches the Kubernetes MCP tool names a prompt rule calls.
+var toolNames = regexp.MustCompile(`\b(?:pods|resources|events)_[a-z_]+\b`)
+
+// An Agent describes its specialist the same way in either scope, so neither its
+// description nor its triage summary may confine it to one namespace.
+func TestSpecialists_ResumeNamesNoScope(t *testing.T) {
+	for _, s := range specialists {
+		for _, text := range []string{s.Summary, s.Triage} {
+			if strings.Contains(text, "namespace") {
+				t.Errorf("%s: %q names a scope; the crew's prompts carry it", s.Key, text)
+			}
+		}
+	}
+}
+
+// A specialist without cluster-wide rules renders the same in both forms, with no switch.
+func TestAgentPrompt_NoSwitchWithoutClusterWideRules(t *testing.T) {
+	a := agent{specialist: reviewer, Name: "demo-reviewer"}
+	if a.Prompt(true) != a.Prompt(false) || strings.Contains(a.Prompt(true), "{{") {
+		t.Error("the reviewer's prompt has no scope, so it must not switch")
+	}
+	w := agent{specialist: workloads, Name: "demo-workloads"}
+	if strings.Contains(w.Prompt(false), "{{") || !strings.Contains(w.Prompt(true), "{{- if .Values.access.clusterWide }}") {
+		t.Error("only the chart form of a scoped specialist switches on access.clusterWide")
+	}
+	for _, line := range strings.Split(w.Prompt(true), "\n") {
+		if line != "" && !strings.HasPrefix(line, "    ") && !strings.HasPrefix(line, "{{-") {
+			t.Errorf("prompt line %q is outside the block scalar", line)
+		}
 	}
 }
 
