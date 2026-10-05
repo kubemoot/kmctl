@@ -96,9 +96,17 @@ func TestPrint_KYAMLNil(t *testing.T) {
 	}
 }
 
-func TestPrint_KYAMLUnmarshalable(t *testing.T) {
-	if err := Print(new(bytes.Buffer), FormatKYAML, map[string]any{"c": make(chan int)}); err == nil {
-		t.Fatal("expected an error for a value JSON cannot encode")
+// A value JSON cannot encode (a channel) is an error in every format, and nothing
+// is written.
+func TestPrint_Unmarshalable(t *testing.T) {
+	for _, f := range Formats {
+		buf := new(bytes.Buffer)
+		if err := Print(buf, f, map[string]any{"c": make(chan int)}); err == nil {
+			t.Errorf("%s: expected an error for a value JSON cannot encode", f)
+		}
+		if buf.Len() != 0 {
+			t.Errorf("%s: a failed encode writes nothing, got %q", f, buf.String())
+		}
 	}
 }
 
