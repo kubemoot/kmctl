@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"io"
 	"slices"
 	"strings"
@@ -111,5 +112,28 @@ func TestGatherWithHuhPrompter(t *testing.T) {
 	}
 	if opts.DisplayName != "Demo Crew" || opts.Members != 3 || !slices.Equal(opts.Providers, []string{"ollama-cpu"}) || opts.ModelFamily != scaffold.KnownModelFamilies[0] {
 		t.Fatalf("unexpected options: %+v", opts)
+	}
+}
+
+// brokenTerminal is an input that fails every read, like a terminal that went away.
+type brokenTerminal struct{}
+
+func (brokenTerminal) Read([]byte) (int, error) { return 0, errors.New("terminal gone") }
+
+// On a terminal that fails, every prompt returns the form's error, never a default
+// answer that would scaffold a crew nobody chose.
+func TestHuhPrompterFailingTerminal(t *testing.T) {
+	p := huhPrompter{in: brokenTerminal{}, out: io.Discard}
+	if got, err := p.Text("Display name:", "demo"); err == nil {
+		t.Errorf("Text: want an error, got %q", got)
+	}
+	if got, err := p.Int("How many?", 1); err == nil || got != 0 {
+		t.Errorf("Int: want 0 and an error, got %d, %v", got, err)
+	}
+	if got, err := p.MultiSelect("Providers:", []string{"ollama-gpu"}); err == nil {
+		t.Errorf("MultiSelect: want an error, got %v", got)
+	}
+	if got, err := p.SelectOrOther("Family:", []string{"qwen"}); err == nil || got != "" {
+		t.Errorf("SelectOrOther: want no choice and an error, got %q, %v", got, err)
 	}
 }

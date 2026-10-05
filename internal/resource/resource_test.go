@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+	"time"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
@@ -53,6 +54,27 @@ func TestCell(t *testing.T) {
 	for _, tc := range cases {
 		if got := Cell(obj, tc.col); got != tc.want {
 			t.Errorf("Cell(%s) = %q, want %q", tc.col.Path, got, tc.want)
+		}
+	}
+}
+
+// The AGE column shows how long ago a timestamp was; a value that is not an
+// RFC 3339 timestamp shows as <none>, and a non-string value as itself.
+func TestCell_Age(t *testing.T) {
+	age := Column{"AGE", "metadata.creationTimestamp"}
+	cases := map[string]struct {
+		ts   any
+		want string
+	}{
+		"two hours ago":   {time.Now().Add(-2 * time.Hour).UTC().Format(time.RFC3339), "120m"},
+		"three days ago":  {time.Now().Add(-72 * time.Hour).UTC().Format(time.RFC3339), "3d"},
+		"not a timestamp": {"yesterday", none},
+		"not a string":    {int64(5), "5"},
+	}
+	for name, c := range cases {
+		obj := map[string]any{"metadata": map[string]any{"creationTimestamp": c.ts}}
+		if got := Cell(obj, age); got != c.want {
+			t.Errorf("%s: Cell(AGE) = %q, want %q", name, got, c.want)
 		}
 	}
 }
