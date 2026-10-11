@@ -65,6 +65,7 @@ Planned, not yet implemented: `crew status`, `conversation list | get`, and a
 Releases are built for `amd64` and `arm64` only.
 
 ```bash
+cd "$(mktemp -d)"
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"          # linux | darwin
 case "$(uname -m)" in
   x86_64|amd64) ARCH=amd64 ;;
@@ -87,6 +88,7 @@ kmctl version
 With the GitHub CLI instead:
 
 ```bash
+cd "$(mktemp -d)"
 gh release download -R kubemoot/kmctl --pattern 'kmctl_*_linux_amd64.tar.gz' --pattern checksums.txt
 sha256sum -c --ignore-missing checksums.txt
 tar -xzf kmctl_*_linux_amd64.tar.gz kmctl
