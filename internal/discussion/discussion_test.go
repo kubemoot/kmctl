@@ -87,7 +87,7 @@ func TestParseSSE_DecodesActivity(t *testing.T) {
 }
 
 func TestServiceName(t *testing.T) {
-	if serviceName("homelab-pilot") != "homelab-pilot-discussion" {
-		t.Errorf("serviceName = %q", serviceName("homelab-pilot"))
+	if ServiceName("homelab-pilot") != "homelab-pilot-discussion" {
+		t.Errorf("ServiceName = %q", ServiceName("homelab-pilot"))
 	}
 }

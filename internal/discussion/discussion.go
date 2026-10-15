@@ -19,7 +19,8 @@ import (
 // namespace (see the operator's Crew status.discussionEndpoint).
 const gatewayPort = "80"
 
-func serviceName(crew string) string { return crew + "-discussion" }
+// ServiceName is the name of a crew's discussion gateway Service.
+func ServiceName(crew string) string { return crew + "-discussion" }
 
 // Event mirrors the gateway's SSE event shape.
 type Event struct {
@@ -59,7 +60,7 @@ func Ask(ctx context.Context, rc rest.Interface, namespace, crew, message, conve
 	if err != nil {
 		return "", err
 	}
-	raw, err := client.ServiceProxy(rc.Post(), namespace, serviceName(crew), gatewayPort).
+	raw, err := client.ServiceProxy(rc.Post(), namespace, ServiceName(crew), gatewayPort).
 		Suffix("api", "v1", "discussions", crew).
 		Body(body).SetHeader("Content-Type", "application/json").
 		DoRaw(ctx)
@@ -80,7 +81,7 @@ func Ask(ctx context.Context, rc rest.Interface, namespace, crew, message, conve
 
 // Stream opens the SSE stream for a conversation.
 func Stream(ctx context.Context, rc rest.Interface, namespace, crew, conversationID string) (io.ReadCloser, error) {
-	return client.ServiceProxy(rc.Get(), namespace, serviceName(crew), gatewayPort).
+	return client.ServiceProxy(rc.Get(), namespace, ServiceName(crew), gatewayPort).
 		Suffix("api", "v1", "discussions", crew, conversationID, "stream").
 		Stream(ctx)
 }

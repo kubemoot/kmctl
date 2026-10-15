@@ -462,8 +462,9 @@ func TestConversationAsk_Quiet(t *testing.T) {
 
 func TestConversationAsk_GatewayFailures(t *testing.T) {
 	s := newFakeAPIServer(t)
-	if _, _, err := s.kmctl(t, "conversation", "ask", "demo", "hi"); err == nil || !strings.Contains(err.Error(), `start discussion with crew "demo"`) {
-		t.Errorf("no gateway: want a start-discussion error, got %v", err)
+	s.add("crews", contextNS, "demo", nil)
+	if _, _, err := s.kmctl(t, "conversation", "ask", "demo", "hi"); err == nil || !strings.Contains(err.Error(), `the discussion gateway of crew "demo" in namespace "team-a" is not ready`) {
+		t.Errorf("no gateway: want a gateway-not-ready error, got %v", err)
 	}
 	s.proxy["demo-discussion/api/v1/discussions/demo"] = func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{})

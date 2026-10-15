@@ -190,3 +190,18 @@ var errBoom = &boomError{}
 type boomError struct{}
 
 func (*boomError) Error() string { return "boom" }
+
+func TestValidate(t *testing.T) {
+	for _, f := range Formats {
+		if err := Validate(f); err != nil {
+			t.Errorf("%s is supported, got %v", f, err)
+		}
+	}
+	for _, f := range []Format{"", "table", "YAML"} {
+		err := Validate(f)
+		want := `unsupported output format "` + string(f) + `" (want one of "yaml", "json", "kyaml")`
+		if err == nil || err.Error() != want {
+			t.Errorf("%q: got %v, want %s", f, err, want)
+		}
+	}
+}
