@@ -97,6 +97,24 @@ func TestRenderClosing_MarkdownThenFollowUp(t *testing.T) {
 	}
 }
 
+func TestRenderClosing_SuggestedCommandsAreBlueNotRed(t *testing.T) {
+	tr := NewTracker(testStart)
+	tr.Answer = "Fetch it with `kmctl conversation artifact x y`"
+	for style, want := range map[string]string{"dark": "38;5;39", "light": "38;5;26"} {
+		out := renderClosing(tr, testOptions(ModeFull), style, 100)
+		lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+		if last := lines[len(lines)-1]; !strings.Contains(last, want) {
+			t.Errorf("%s: the follow-up command is drawn in %s: %q", style, want, last)
+		}
+		if !strings.Contains(out, want+"m") && !strings.Contains(out, want+";") {
+			t.Errorf("%s: inline code uses the command color", style)
+		}
+		if strings.Contains(out, "38;5;203") {
+			t.Errorf("%s: no suggestion is drawn in the theme's red", style)
+		}
+	}
+}
+
 func TestRenderClosing_UnknownStyleFallsBackToRaw(t *testing.T) {
 	tr := NewTracker(testStart)
 	tr.Answer = "## Nodes"
