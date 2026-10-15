@@ -11,6 +11,8 @@ import (
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/glamour/v2"
+	gansi "charm.land/glamour/v2/ansi"
+	"charm.land/glamour/v2/styles"
 	"charm.land/lipgloss/v2"
 	"github.com/kubemoot/kmctl/internal/discussion"
 	"golang.org/x/term"
@@ -234,13 +236,38 @@ func renderClosing(t *Tracker, o Options, style string, width int) string {
 		doc = strings.TrimRight(t.Answer, "\n") + "\n\n" + doc
 	}
 	out := doc
-	r, err := glamour.NewTermRenderer(glamour.WithStandardStyle(style), glamour.WithWordWrap(width))
+	r, err := glamour.NewTermRenderer(closingStyle(style), glamour.WithWordWrap(width))
 	if err == nil {
 		if rendered, rerr := r.Render(doc); rerr == nil {
 			out = rendered
 		}
 	}
-	return out + styleDim.Render("Next: ") + FollowUp(o.Crew, o.Namespace, o.ConversationID) + "\n"
+	next := lipgloss.NewStyle().Foreground(lipgloss.Color(commandColor(style)))
+	return out + styleDim.Render("Next: ") + next.Render(FollowUp(o.Crew, o.Namespace, o.ConversationID)) + "\n"
+}
+
+// commandColor is the color for commands kmctl suggests: blue, so a suggestion
+// never reads as an error the way the theme's red inline code does.
+func commandColor(style string) string {
+	if style == "light" {
+		return "26"
+	}
+	return "39"
+}
+
+// closingStyle is the named glamour style with inline code drawn in the command
+// color. A style glamour does not know is passed through by name, so the
+// renderer reports it and the closing falls back to raw markdown.
+func closingStyle(style string) glamour.TermRendererOption {
+	base, ok := styles.DefaultStyles[style]
+	if !ok || base == nil {
+		return glamour.WithStandardStyle(style)
+	}
+	cfg := *base
+	color := commandColor(style)
+	cfg.Code = gansi.StyleBlock{StylePrimitive: cfg.Code.StylePrimitive}
+	cfg.Code.Color = &color
+	return glamour.WithStyles(cfg)
 }
 
 // glamourStyle is GLAMOUR_STYLE when set, else dark or light to match the
