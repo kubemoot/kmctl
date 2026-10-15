@@ -77,10 +77,10 @@ as the last line, the command that asks a follow-up in the same conversation.
 			defer cancel()
 			opts.ConversationID, err = discussion.Ask(ctx, rc, opts.Namespace, crew, message, conversationID)
 			if err != nil {
-				return err
+				return explainGateway(ctx, f, err, crew, opts.Namespace)
 			}
 			opts.Announce = true
-			return followStream(ctx, cmd, rc, opts, sf)
+			return followStream(ctx, cmd, rc, opts, sf, f)
 		},
 	}
 	cmd.Flags().StringVar(&conversationID, "conversation-id", "", "Continue an existing conversation (its full ID)")
@@ -112,7 +112,7 @@ The output modes (-o full|plain|json) are the same as for "kmctl conversation as
 			ctx, cancel := sf.overall(cmd.Context())
 			defer cancel()
 			opts.ConversationID = id
-			return followStream(ctx, cmd, rc, opts, sf)
+			return followStream(ctx, cmd, rc, opts, sf, f)
 		},
 	}
 	sf.register(cmd)
@@ -196,12 +196,12 @@ func (sf *streamFlags) overall(parent context.Context) (context.Context, context
 
 // followStream opens the conversation's discussion stream and renders it. The idle
 // clock ends the stream when the crew shows no activity for --idle-timeout.
-func followStream(ctx context.Context, cmd *cobra.Command, rc rest.Interface, opts conversation.Options, sf streamFlags) error {
+func followStream(ctx context.Context, cmd *cobra.Command, rc rest.Interface, opts conversation.Options, sf streamFlags, f *client.Factory) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	stream, err := discussion.Stream(ctx, rc, opts.Namespace, opts.Crew, opts.ConversationID)
 	if err != nil {
-		return err
+		return explainGateway(ctx, f, err, opts.Crew, opts.Namespace)
 	}
 	defer func() { _ = stream.Close() }()
 	w := &streamWatch{idle: conversation.NewIdleClock(sf.idleTimeout, sf.after, cancel)}
@@ -242,7 +242,7 @@ func (w *streamWatch) endErr(ctx context.Context, err error, timeout time.Durati
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):
 		why = fmt.Sprintf("stopped waiting after --timeout %s", timeout)
 	default:
-		return err
+		return streamCut(err, o)
 	}
 	w.mu.Lock()
 	thread := w.threadID

@@ -45,13 +45,20 @@ func FormatHelp(fallback string) string {
 	return help
 }
 
-// Print writes v to w in the requested structured format.
-func Print(w io.Writer, format Format, v any) error {
-	p, ok := printers[format]
-	if !ok {
+// Validate reports an error when format is not a supported -o value.
+func Validate(format Format) error {
+	if _, ok := printers[format]; !ok {
 		return fmt.Errorf("unsupported output format %q (want one of %s)", format, quotedFormats())
 	}
-	return p(w, v)
+	return nil
+}
+
+// Print writes v to w in the requested structured format.
+func Print(w io.Writer, format Format, v any) error {
+	if err := Validate(format); err != nil {
+		return err
+	}
+	return printers[format](w, v)
 }
 
 func quotedFormats() string {

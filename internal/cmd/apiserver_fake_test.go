@@ -28,6 +28,9 @@ type fakeAPIServer struct {
 	// react, when set, stands in for the operator: it sees each object the server
 	// stores on create or apply and may change it (set a status) before it is stored.
 	react func(obj map[string]any)
+	// refuse, when set, answers a request with an error Status instead of
+	// serving it: it returns the HTTP code and message, or 0 to serve the request.
+	refuse func(r *http.Request) (code int, message string)
 
 	srv        *httptest.Server
 	kubeconfig string
@@ -124,6 +127,12 @@ func (s *fakeAPIServer) get(plural, name string) map[string]any {
 func objKey(plural, ns, name string) string { return plural + "/" + ns + "/" + name }
 
 func (s *fakeAPIServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if s.refuse != nil {
+		if code, msg := s.refuse(r); code != 0 {
+			writeStatus(w, code, http.StatusText(code), msg)
+			return
+		}
+	}
 	p := r.URL.Path
 	if doc, ok := s.discovery()[p]; ok {
 		writeJSON(w, http.StatusOK, doc)
@@ -327,6 +336,12 @@ func writeStatus(w http.ResponseWriter, code int, reason, message string) {
 	})
 }
 
+// writeNotFound answers as the API server does for a missing object: a NotFound
+// Status whose details name the object.
 func writeNotFound(w http.ResponseWriter, plural, name string) {
-	writeStatus(w, http.StatusNotFound, "NotFound", plural+`.kubemoot.ai "`+name+`" not found`)
+	writeJSON(w, http.StatusNotFound, map[string]any{
+		"kind": "Status", "apiVersion": "v1", "status": "Failure",
+		"message": plural + `.kubemoot.ai "` + name + `" not found`, "reason": "NotFound", "code": http.StatusNotFound,
+		"details": map[string]any{"name": name, "group": "kubemoot.ai", "kind": plural},
+	})
 }

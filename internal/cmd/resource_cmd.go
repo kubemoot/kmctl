@@ -30,6 +30,9 @@ func newListCommand(f *client.Factory, noun string, k resource.Kind) *cobra.Comm
 		Example: fmt.Sprintf("  kmctl %s list\n  kmctl %s list -A -o yaml", noun, noun),
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if err := checkOutput(outFmt); err != nil {
+				return err
+			}
 			dc, err := f.Dynamic()
 			if err != nil {
 				return fmt.Errorf("build client: %w", err)
@@ -94,6 +97,9 @@ func newGetCommand(f *client.Factory, noun string, k resource.Kind) *cobra.Comma
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeNames(f, k),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := checkOutput(outFmt); err != nil {
+				return err
+			}
 			dc, err := f.Dynamic()
 			if err != nil {
 				return fmt.Errorf("build client: %w", err)
@@ -122,6 +128,15 @@ func printObject(w io.Writer, k resource.Kind, obj *unstructured.Unstructured, o
 		return nil
 	}
 	return k.Details(w, obj.Object)
+}
+
+// checkOutput rejects an unsupported -o before kmctl calls the cluster; empty is
+// the table.
+func checkOutput(outFmt string) error {
+	if outFmt == "" {
+		return nil
+	}
+	return output.Validate(output.Format(outFmt))
 }
 
 // withArticle prefixes a singular noun with "a", or "an" before a vowel.

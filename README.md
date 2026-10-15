@@ -44,7 +44,7 @@ kmctl
 ```
 
 The UX mirrors `kubectl` / `helm`: the standard kubeconfig, `--context`, and
-`-n/--namespace` flags, `-o yaml|json|kyaml` output (a table by default; `kyaml` is the
+`-n/--namespace` flags, `-v/--verbose` for the error underneath a failure, `-o yaml|json|kyaml` output (a table by default; `kyaml` is the
 strict, quoted YAML subset `kubectl -o kyaml` prints), full `--help`,
 and generated shell completion.
 
@@ -123,6 +123,40 @@ A gateway that does not send `activity` events yet sends nothing between an
 agent's signals; there the idle clock restarts only on signals, and the 5-minute
 default covers a cold model load followed by a long evaluation. Setting both
 `--idle-timeout 0` and `--timeout 0` waits for as long as the stream stays open.
+
+### Errors
+
+When a command fails, kmctl prints what went wrong and, on a second line, what to
+do next, and exits with status 1:
+
+```
+$ kmctl conversation ask homelab-pilot "List the pods in the system namespace."
+Error: no crew "homelab-pilot" in namespace "default"; found in "crew-homelab-pilot"
+Hint: Pass -n crew-homelab-pilot
+```
+
+| Failure | Message |
+|---------|---------|
+| No kubeconfig or no current context | `no Kubernetes cluster is configured (the kubeconfig has no current context)` |
+| `--context` not in the kubeconfig | `context "NAME" is not in the kubeconfig` |
+| API server unreachable | `cannot reach the Kubernetes API server (context "NAME")` |
+| Credentials rejected | `the Kubernetes API server did not accept your credentials (context "NAME")` |
+| Missing permission (RBAC) | `you are not allowed to VERB RESOURCE in namespace "NS"` |
+| Kubemoot not installed | `the cluster does not serve the Kubemoot API (kubemoot.ai)` |
+| `get` of a missing object | `no crew "NAME" in namespace "NS"` (and the same for the other nouns) |
+| Crew in another namespace | `no crew "NAME" in namespace "NS"; found in "OTHER"` |
+| Gateway missing, not ready, or failing | `the discussion gateway of crew "NAME" was not found in namespace "NS"`, `... is not ready`, `... answered HTTP CODE` |
+| Stream cut before the answer | `the discussion stream closed before the crew answered; the discussion may still finish` |
+| Bad flag or arguments | cobra's message, then the command's usage line |
+
+When a crew is not in the namespace, kmctl looks for a crew of that name in every
+namespace and names the ones it finds. Without permission to list crews across the
+cluster, it suggests `-n` and `kmctl crew list -A` instead. `-n` always decides the
+namespace; kmctl never switches it on its own.
+
+`-v` (`--verbose`) or `KMCTL_DEBUG=1` adds a third line, `Cause:`, with the error
+from the Kubernetes client underneath. The `Error:` and `Hint:` labels are colored
+only when stderr is a terminal, `NO_COLOR` is unset, and `TERM` is not `dumb`.
 
 ## Install
 
