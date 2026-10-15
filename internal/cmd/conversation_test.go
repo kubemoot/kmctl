@@ -48,40 +48,23 @@ func TestWatchCommand_RequiresCrewAndID(t *testing.T) {
 	}
 }
 
-func TestRenderStream_QuietPrintsOnlyAnswer(t *testing.T) {
-	stream := strings.NewReader(`data: {"type":"phase","agent":"a","status":"ready"}
-
-data: {"type":"synthesis","content":"the answer"}
-
-data: {"type":"done"}
-
-`)
-	buf := new(bytes.Buffer)
-	if err := renderStream(buf, stream, true); err != nil {
-		t.Fatalf("renderStream: %v", err)
-	}
-	got := strings.TrimSpace(buf.String())
-	if got != "the answer" {
-		t.Errorf("quiet output = %q, want just the answer", got)
-	}
-}
-
-func TestRenderStream_VerbosePrintsEvents(t *testing.T) {
-	stream := strings.NewReader(`data: {"type":"connected"}
-
-data: {"type":"synthesis","content":"hi"}
-
-data: {"type":"done"}
-
-`)
-	buf := new(bytes.Buffer)
-	if err := renderStream(buf, stream, false); err != nil {
-		t.Fatalf("renderStream: %v", err)
-	}
-	out := buf.String()
-	for _, want := range []string{"connected", "ANSWER", "hi", "done"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("verbose output missing %q\n%s", want, out)
+func TestConversationCommands_HaveOutputAndQuiet(t *testing.T) {
+	f := client.NewFactory()
+	for name, cmd := range map[string]*cobra.Command{"ask": newAskCommand(f), "watch": newWatchCommand(f)} {
+		out := cmd.Flags().Lookup("output")
+		if out == nil || out.Shorthand != "o" || out.DefValue != "full" {
+			t.Errorf("%s: want -o/--output defaulting to full, got %+v", name, out)
+		}
+		if q := cmd.Flags().Lookup("quiet"); q == nil || q.Shorthand != "q" {
+			t.Errorf("%s: want -q/--quiet", name)
+		}
+		complete, ok := cmd.GetFlagCompletionFunc("output")
+		if !ok {
+			t.Fatalf("%s: --output has no completion", name)
+		}
+		modes, directive := complete(cmd, nil, "")
+		if strings.Join(modes, ",") != "full,plain,json" || directive != cobra.ShellCompDirectiveNoFileComp {
+			t.Errorf("%s: --output completes %v (%v)", name, modes, directive)
 		}
 	}
 }

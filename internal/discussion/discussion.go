@@ -33,6 +33,8 @@ type Event struct {
 	ThreadID   string `json:"threadId,omitempty"`
 	Error      string `json:"error,omitempty"`
 	StoodAside bool   `json:"stood_aside,omitempty"`
+	Model      string `json:"model,omitempty"`
+	Reason     string `json:"reason,omitempty"`
 }
 
 // Ask starts a turn against a crew and returns the conversationId. A non-empty
@@ -103,53 +105,5 @@ func ParseSSE(r io.Reader, handle func(Event) bool) error {
 	return sc.Err()
 }
 
-// renderers formats each event type; a type without an entry is skipped.
-var renderers = map[string]func(Event) string{
-	"connected":    func(Event) string { return "* connected" },
-	"thread_found": func(e Event) string { return "* thread " + e.ThreadID },
-	"phase":        renderPhase,
-	"finding":      renderFinding,
-	"synthesis":    func(e Event) string { return "\nANSWER:\n" + e.Content },
-	"error":        func(e Event) string { return "ERROR: " + e.Error },
-	"done":         func(Event) string { return "* done" },
-}
-
-// Render formats an event as a human-readable line (empty string = skip).
-func Render(e Event) string {
-	if render, ok := renderers[e.Type]; ok {
-		return render(e)
-	}
-	return ""
-}
-
-// renderPhase shows an agent's phase, with the GPU it ran on and whether it stood aside.
-func renderPhase(e Event) string {
-	line := fmt.Sprintf("  %-22s %s", e.Agent, e.Status)
-	if e.GPU != "" {
-		line += " [" + e.GPU + "]"
-	}
-	if e.StoodAside {
-		line += " (stood aside)"
-	}
-	return line
-}
-
-// renderFinding shows an agent's signal with its summary, or the first line of its
-// content when it gave no summary.
-func renderFinding(e Event) string {
-	summary := e.Summary
-	if summary == "" {
-		summary = firstLine(e.Content)
-	}
-	return fmt.Sprintf("  %-22s %s: %s", e.Agent, e.Signal, summary)
-}
-
 // Terminal reports whether an event ends the stream.
 func Terminal(e Event) bool { return e.Type == "done" || e.Type == "error" }
-
-func firstLine(s string) string {
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		return s[:i]
-	}
-	return s
-}

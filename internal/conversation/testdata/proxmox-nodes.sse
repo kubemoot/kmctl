@@ -1,0 +1,35 @@
+: a recorded gateway stream for "Describe the proxmox nodes." on homelab-pilot
+
+data: {"type":"connected"}
+
+id: t-42:7
+data: {"type":"thread_found","threadId":"t-42"}
+
+data: {"type":"phase","agent":"pilot-proxmox","status":"waking"}
+
+data: {"type":"phase","agent":"pilot-proxmox","status":"triaging","gpu":"rig1-gpu0"}
+
+data: {"type":"phase","agent":"pilot-metrics","status":"triaging","gpu":"rig2-gpu0"}
+
+data: {"type":"phase","agent":"pilot-gpu","status":"waiting","model":"qwen3:8b","reason":"gpu-busy"}
+
+data: {"type":"heartbeat"}
+
+data: {"type":"phase","agent":"pilot-proxmox","status":"evaluating","gpu":"rig1-gpu0"}
+
+data: {"type":"phase","agent":"pilot-gpu","status":"done","stood_aside":true,"signal":"stand_aside","reason":"gpu-busy"}
+
+data: {"type":"phase","agent":"pilot-metrics","status":"evaluating","gpu":"rig2-gpu0"}
+
+data: {"type":"finding","agent":"pilot-proxmox","signal":"agree","summary":"The cluster has three Proxmox nodes, all online: pve1 hosts the control plane VMs, pve2 hosts the GPU workers...","content":"The cluster has three Proxmox nodes, all online: pve1 hosts the control plane VMs, pve2 hosts the GPU workers with two passthrough cards, and pve3 holds storage.\n\nDetails follow."}
+
+data: {"type":"finding","agent":"pilot-metrics","signal":"agree","summary":"[ARTIFACT key=crew-homelab-pilot/homelab-pilot/t-42/pilot-metrics/agree-1b2c bytes=8499 - the FULL data is in the file /artifacts/crew-homelab-pilot/homelab-pilot/t-42/pilot-metrics/agree-1b2c; READ it (exe...","content":"[ARTIFACT key=crew-homelab-pilot/homelab-pilot/t-42/pilot-metrics/agree-1b2c bytes=8499 - the FULL data is in the file /artifacts/crew-homelab-pilot/homelab-pilot/t-42/pilot-metrics/agree-1b2c; READ it (execute_code, or head/tail/grep/count over the artifact key) - do NOT answer from this reference line, it carries no data]"}
+
+data: {"type":"finding","agent":"pilot-storage","signal":"concern","summary":"pve3's ZFS pool is at 81% capacity."}
+
+data: {"type":"synthesis","content":"## Proxmox nodes\n\n| Node | Role |\n|------|------|\n| pve1 | control plane |\n| pve2 | GPU workers |\n| pve3 | storage |\n\n**Notes:**\n\n- pve3's ZFS pool is at 81% capacity.\n"}
+
+data: {"type":"done"}
+
+data: {"type":"phase","agent":"late","status":"ready"}
+
