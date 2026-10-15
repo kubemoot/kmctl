@@ -45,7 +45,7 @@ func closing(t *Tracker, o Options) string {
 	if t.Answer != "" {
 		b.WriteString("\nANSWER:\n" + strings.TrimRight(t.Answer, "\n") + "\n")
 	}
-	b.WriteString("\n" + t.Summarize(o.since()).Markdown())
+	b.WriteString("\n" + o.summarize(t).Markdown())
 	b.WriteString("\nNext: " + FollowUp(o.Crew, o.Namespace, o.ConversationID) + "\n")
 	return b.String()
 }
@@ -55,7 +55,8 @@ var plainLines = map[string]func(discussion.Event, Change) string{
 	"connected":    func(discussion.Event, Change) string { return "connected" },
 	"thread_found": func(e discussion.Event, _ Change) string { return "thread " + e.ThreadID },
 	"phase":        func(e discussion.Event, c Change) string { return agentLine(e.Agent, phaseText(e, c)) },
-	"finding":      func(e discussion.Event, c Change) string { return agentLine(e.Agent, findingText(c)) },
+	"finding":      func(e discussion.Event, c Change) string { return agentLine(e.Agent, findingText(e, c)) },
+	"subcommittee": func(e discussion.Event, _ Change) string { return subcommitteeText(e.Subcommittee) },
 	"activity":     func(e discussion.Event, _ Change) string { return "busy: " + busyText(e.Agents) },
 	"synthesis":    func(discussion.Event, Change) string { return "answer ready" },
 	"error":        func(e discussion.Event, _ Change) string { return "error: " + e.Error },
@@ -104,7 +105,7 @@ func agentLine(agent, text string) string {
 // it stood aside, with the duration of the step it just finished.
 func phaseText(e discussion.Event, c Change) string {
 	if e.StoodAside {
-		return withReason("stood aside"+durations(c), e.Reason)
+		return withReason("stood aside"+details(c, e.SignalMeta), e.Reason)
 	}
 	text := e.Status
 	if e.Status == "waiting" {
@@ -120,10 +121,23 @@ func phaseText(e discussion.Event, c Change) string {
 	return text + durations(c)
 }
 
-// findingText is an agent's signal with its step duration and short summary.
-func findingText(c Change) string {
+// findingText is an agent's signal with its step duration, model and tokens, and
+// short summary.
+func findingText(e discussion.Event, c Change) string {
 	a := c.Agent
-	return withReason(a.Signal+durations(c), shownSummary(a))
+	return withReason(a.Signal+details(c, e.SignalMeta), shownSummary(a))
+}
+
+// subcommitteeText is the convened agents and the start of the coordinator's brief.
+func subcommitteeText(sc *discussion.Subcommittee) string {
+	if sc == nil {
+		return "subcommittee"
+	}
+	text := "subcommittee: " + memberList(sc)
+	if sc.Brief != "" {
+		text += "; brief: " + shortSummary(sc.Brief, summaryWidth)
+	}
+	return text
 }
 
 func withReason(text, reason string) string {
@@ -135,7 +149,11 @@ func withReason(text, reason string) string {
 
 // durations is " (triage 2.0s)" or " (evaluation 6.0s)" for the step an event
 // finished, or empty.
-func durations(c Change) string {
+func durations(c Change) string { return details(c, nil) }
+
+// details is the step an event finished with its duration, and the model and tokens
+// of the signal when it says: " (evaluation 6.0s, qwen3:14b, 1,540 tokens)".
+func details(c Change, m *discussion.SignalMeta) string {
 	var parts []string
 	if c.Triage > 0 {
 		parts = append(parts, "triage "+formatDuration(c.Triage))
@@ -143,8 +161,28 @@ func durations(c Change) string {
 	if c.Evaluation > 0 {
 		parts = append(parts, "evaluation "+formatDuration(c.Evaluation))
 	}
+	if m != nil {
+		parts = appendNonEmpty(parts, m.ModelName, tokensText(m.InputTokens+m.OutputTokens))
+	}
 	if len(parts) == 0 {
 		return ""
 	}
 	return " (" + strings.Join(parts, ", ") + ")"
+}
+
+func appendNonEmpty(list []string, values ...string) []string {
+	for _, v := range values {
+		if v != "" {
+			list = append(list, v)
+		}
+	}
+	return list
+}
+
+// tokensText is "1,540 tokens", or empty for none.
+func tokensText(n int64) string {
+	if n <= 0 {
+		return ""
+	}
+	return thousands(n) + " tokens"
 }

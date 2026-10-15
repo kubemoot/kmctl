@@ -9,7 +9,7 @@ conversation 6733c361-aa0c-4bde-85c6-e143af23b251
 [   9.0s] pilot-gpu              stood aside: gpu-busy
 [  10.0s] pilot-metrics          evaluating on rig2-gpu0 (triage 5.0s)
 [  11.0s] pilot-proxmox          agree (evaluation 3.0s): The cluster has three Proxmox nodes, all online: pve1 hosts the control plane VMs, pve2 hosts the GPU workers with...
-[  12.0s] pilot-metrics          agree (evaluation 2.0s): attached artifact (8.3 KB); its key is in -o json
+[  12.0s] pilot-metrics          agree (evaluation 2.0s): attached artifact (8.3 KB); fetch command below
 [  13.0s] pilot-storage          concern: pve3's ZFS pool is at 81% capacity.
 [  14.0s] answer ready
 [  15.0s] done
@@ -35,5 +35,6 @@ ANSWER:
 - Accelerators: rig1-gpu0, rig2-gpu0
 - Models: qwen3:8b
 - Waited for GPU capacity: pilot-gpu
+- Artifact from pilot-metrics (8.3 KB): `kmctl conversation artifact homelab-pilot crew-homelab-pilot/homelab-pilot/t-42/pilot-metrics/agree-1b2c -n crew-homelab-pilot`
 
 Next: kmctl conversation ask homelab-pilot "<next question>" -n crew-homelab-pilot --conversation-id 6733c361-aa0c-4bde-85c6-e143af23b251

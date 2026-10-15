@@ -52,6 +52,11 @@ func (o Options) since() string {
 	return SinceWatch
 }
 
+// summarize is the summary of what t saw, with the commands that fetch its artifacts.
+func (o Options) summarize(t *Tracker) Summary {
+	return t.Summarize(o.since()).WithFetchCommands(o.Crew, o.Namespace)
+}
+
 // sink writes one output mode: a start, one call per event, and an end.
 type sink interface {
 	begin() error

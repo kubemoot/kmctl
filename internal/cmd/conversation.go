@@ -29,10 +29,13 @@ in-flight conversation. The crew's discussion gateway is reached through the
 Kubernetes API server's service proxy using your kubeconfig credentials.
 
 Pass the crew's namespace with -n (the crew and its <crew>-discussion service
-live there, e.g. -n crew-homelab-pilot).`,
+live there, e.g. -n crew-homelab-pilot).
+
+A conversation ID can be shortened to any unique prefix, as with git hashes, when
+the crew's gateway lists conversations ("kmctl conversation list").`,
 		Args: cobra.NoArgs,
 	}
-	cmd.AddCommand(newAskCommand(f), newWatchCommand(f))
+	cmd.AddCommand(newAskCommand(f), newWatchCommand(f), newConversationListCommand(f), newConversationArtifactCommand(f))
 	return cmd
 }
 
@@ -61,8 +64,10 @@ as the last line, the command that asks a follow-up in the same conversation.
   kmctl conv ask homelab-pilot "summarize gpu usage" --quiet
   kmctl conv ask homelab-pilot "list the nodes" -o json --timeout 15m
   kmctl conv ask homelab-pilot "list the nodes" -o json | jq -c 'select(.type == "result")'
-  kmctl conv ask homelab-pilot "and their memory?" --conversation-id 6733c361-aa0c-4bde-85c6-e143af23b251`,
-		Args: cobra.ExactArgs(2),
+  kmctl conv ask homelab-pilot "and their memory?" --conversation-id 6733c361-aa0c-4bde-85c6-e143af23b251
+  kmctl conv ask homelab-pilot "and their disks?" --conversation-id 6733c`,
+		Args:              cobra.ExactArgs(2),
+		ValidArgsFunction: completeCrewArg(f),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			crew, message := args[0], args[1]
 			opts, err := sf.options(cmd, f, crew)
@@ -75,6 +80,10 @@ as the last line, the command that asks a follow-up in the same conversation.
 			}
 			ctx, cancel := sf.overall(cmd.Context())
 			defer cancel()
+			conversationID, err = resolveConversation(ctx, rc, opts.Namespace, crew, conversationID)
+			if err != nil {
+				return explainGateway(ctx, f, err, crew, opts.Namespace)
+			}
 			opts.ConversationID, err = discussion.Ask(ctx, rc, opts.Namespace, crew, message, conversationID)
 			if err != nil {
 				return explainGateway(ctx, f, err, crew, opts.Namespace)
@@ -83,7 +92,14 @@ as the last line, the command that asks a follow-up in the same conversation.
 			return followStream(ctx, cmd, rc, opts, sf, f)
 		},
 	}
-	cmd.Flags().StringVar(&conversationID, "conversation-id", "", "Continue an existing conversation (its full ID)")
+	cmd.Flags().StringVar(&conversationID, "conversation-id", "", "Continue an existing conversation (its ID or a unique prefix)")
+	_ = cmd.RegisterFlagCompletionFunc("conversation-id", func(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
+		crew := ""
+		if len(args) > 0 {
+			crew = args[0]
+		}
+		return completeConversationIDs(f, cmd, crew, toComplete)
+	})
 	sf.register(cmd)
 	return cmd
 }
@@ -97,8 +113,9 @@ func newWatchCommand(f *client.Factory) *cobra.Command {
 The output modes (-o full|plain|json) are the same as for "kmctl conversation ask".
 ` + waitingHelp,
 		Example: `  kmctl conversation watch homelab-pilot 6733c361-aa0c-4bde-85c6-e143af23b251 -n crew-homelab-pilot
-  kmctl conv watch homelab-pilot 6733c361-aa0c-4bde-85c6-e143af23b251 -o plain`,
-		Args: cobra.ExactArgs(2),
+  kmctl conv watch homelab-pilot 6733c -o plain`,
+		Args:              cobra.ExactArgs(2),
+		ValidArgsFunction: completeCrewThenConversation(f),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			crew, id := args[0], args[1]
 			opts, err := sf.options(cmd, f, crew)
@@ -111,7 +128,10 @@ The output modes (-o full|plain|json) are the same as for "kmctl conversation as
 			}
 			ctx, cancel := sf.overall(cmd.Context())
 			defer cancel()
-			opts.ConversationID = id
+			opts.ConversationID, err = resolveConversation(ctx, rc, opts.Namespace, crew, id)
+			if err != nil {
+				return explainGateway(ctx, f, err, crew, opts.Namespace)
+			}
 			return followStream(ctx, cmd, rc, opts, sf, f)
 		},
 	}

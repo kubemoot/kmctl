@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/kubemoot/kmctl/internal/discussion"
 )
 
 // summaryWidth is the most characters an agent's one-line summary shows.
@@ -21,6 +23,15 @@ type Artifact struct {
 // artifactMarker matches the reference line the agent runtime writes in place of
 // a spilled contribution: "[ARTIFACT key=<key> bytes=<n> ...]".
 var artifactMarker = regexp.MustCompile(`\[ARTIFACT key=(\S+) bytes=(\d+)`)
+
+// artifactOf is the artifact a signal names: from its metadata when the gateway
+// forwards it, else from the reference line in its text.
+func artifactOf(m *discussion.SignalMeta, text string) *Artifact {
+	if m != nil && m.Artifact != nil && m.Artifact.Key != "" {
+		return &Artifact{Key: m.Artifact.Key, Bytes: m.Artifact.Bytes}
+	}
+	return parseArtifact(text)
+}
 
 // parseArtifact finds an artifact reference in text, or returns nil.
 func parseArtifact(text string) *Artifact {
@@ -41,10 +52,10 @@ func (a *Artifact) describe() string {
 }
 
 // shownSummary is an agent's summary as the terminal shows it: an artifact also
-// says where its key is, since the terminal does not print raw keys.
+// points to its fetch command, which the summary at the end lists.
 func shownSummary(a *Agent) string {
 	if a.Artifact != nil {
-		return a.Summary + "; its key is in -o json"
+		return a.Summary + "; fetch command below"
 	}
 	return a.Summary
 }

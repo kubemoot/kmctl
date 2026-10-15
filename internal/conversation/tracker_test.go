@@ -81,3 +81,99 @@ func TestTracker_WaitReasonIsNotStandAsideReason(t *testing.T) {
 		t.Errorf("a finished agent does not show its old wait reason: %q", rowNote(c.Agent))
 	}
 }
+
+// A malformed timestamp is ignored: the step is timed by receipt.
+func TestTracker_BadTimestampFallsBackToReceipt(t *testing.T) {
+	tr := NewTracker(testStart)
+	tr.Apply(discussion.Event{Type: "phase", Agent: "a", Status: "triaging", Timestamp: "soon"}, testStart.Add(time.Second))
+	c := tr.Apply(discussion.Event{Type: "phase", Agent: "a", Status: "evaluating", Timestamp: "later"}, testStart.Add(3*time.Second))
+	if c.Triage != 2*time.Second || tr.Stamped {
+		t.Errorf("triage = %s, stamped %v", c.Triage, tr.Stamped)
+	}
+}
+
+func TestTracker_SubcommitteeOfEveryAgent(t *testing.T) {
+	tr := NewTracker(testStart)
+	tr.Apply(discussion.Event{Type: "subcommittee"}, testStart)
+	if tr.Subcommittee != nil {
+		t.Fatal("an event without content records nothing")
+	}
+	tr.Apply(discussion.Event{Type: "subcommittee", Subcommittee: &discussion.Subcommittee{AllAgents: true}}, testStart)
+	if got := tr.Summarize(SinceAsk).subcommitteeLine(); got != "Subcommittee: none convened; every agent could take part" {
+		t.Errorf("got %q", got)
+	}
+	if got := subcommitteeText(nil); got != "subcommittee" {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestToolError(t *testing.T) {
+	cases := []struct {
+		in   discussion.SignalMeta
+		want string
+	}{
+		{discussion.SignalMeta{FailureType: "model_timeout"}, ""},
+		{discussion.SignalMeta{FailureType: "model_timeout", LastError: "read timed out"}, "model_timeout: read timed out"},
+		{discussion.SignalMeta{FailedTool: "pods_log", FailureCount: 1}, "pods_log"},
+		{discussion.SignalMeta{FailedTool: "pods_log", FailureCount: 2, LastError: "403"}, "pods_log failed 2 times: 403"},
+	}
+	for _, c := range cases {
+		if got := toolError(&c.in); got != c.want {
+			t.Errorf("%+v: got %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// A step whose start is a published time and whose end is a receipt time (or the
+// other way round) is not timed: the two clocks differ.
+func TestTracker_MixedClocksDoNotTimeAStep(t *testing.T) {
+	tr := NewTracker(testStart)
+	tr.Apply(discussion.Event{Type: "phase", Agent: "a", Status: "triaging", Timestamp: "2026-10-15T08:00:00Z"}, testStart.Add(time.Second))
+	c := tr.Apply(discussion.Event{Type: "phase", Agent: "a", Status: "evaluating"}, testStart.Add(3*time.Second))
+	if c.Triage != 0 {
+		t.Errorf("triage across clocks = %s, want none", c.Triage)
+	}
+	tr.Apply(discussion.Event{Type: "thread_found", ThreadID: "t", Timestamp: "bad"}, testStart)
+	if !tr.ThreadAt.IsZero() {
+		t.Error("a thread start without a valid timestamp has no published time")
+	}
+}
+
+// A later subcommittee event keeps the brief, technologies, and reasons of an
+// earlier one when it does not carry its own.
+func TestTracker_SubcommitteeKeepsEarlierDetail(t *testing.T) {
+	tr := NewTracker(testStart)
+	tr.Apply(discussion.Event{Type: "subcommittee", Subcommittee: &discussion.Subcommittee{
+		Source: "advisory", Brief: "Check the nodes.", Technologies: []string{"proxmox"},
+		Members: []discussion.SubcommitteeMember{{Agent: "a", Reason: "nodes"}, {Agent: "b"}},
+	}}, testStart)
+	tr.Apply(discussion.Event{Type: "subcommittee", Subcommittee: &discussion.Subcommittee{
+		Source: "triage", Members: []discussion.SubcommitteeMember{{Agent: "a"}, {Agent: "c", Reason: "disks"}},
+	}}, testStart)
+	sc := tr.Subcommittee
+	if sc.Brief != "Check the nodes." || len(sc.Technologies) != 1 || sc.Members[0].Reason != "nodes" || sc.Members[1].Reason != "disks" || len(sc.Members) != 2 {
+		t.Errorf("got %+v", sc)
+	}
+}
+
+func TestSmallHelpers(t *testing.T) {
+	if tokensText(0) != "" || tokensText(-5) != "" || tokensText(1234) != "1,234 tokens" {
+		t.Error("tokensText")
+	}
+	if artifactOf(nil, "plain text") != nil || artifactOf(&discussion.SignalMeta{Artifact: &discussion.ArtifactRef{}}, "") != nil {
+		t.Error("no artifact without a key")
+	}
+	if a := artifactOf(&discussion.SignalMeta{Artifact: &discussion.ArtifactRef{Key: "k", Bytes: 3}}, ""); a == nil || a.Key != "k" {
+		t.Error("artifact from metadata")
+	}
+}
+
+func TestSummaryHelpers(t *testing.T) {
+	if timeSource(true) != "published" || timeSource(false) != "received" {
+		t.Error("timeSource")
+	}
+	s := Summary{Artifacts: []ArtifactReport{{Key: "k"}}}.WithFetchCommands("crew", "")
+	if s.Artifacts[0].Fetch != "kmctl conversation artifact crew k" {
+		t.Errorf("fetch without a namespace: %q", s.Artifacts[0].Fetch)
+	}
+}

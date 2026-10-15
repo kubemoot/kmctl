@@ -36,7 +36,13 @@ func testOptions(mode Mode) Options {
 
 func renderRecorded(t *testing.T, o Options) string {
 	t.Helper()
-	f, err := os.Open(filepath.Join("testdata", "proxmox-nodes.sse"))
+	return renderFile(t, "proxmox-nodes.sse", o)
+}
+
+// renderFile renders the recorded stream in testdata/name.
+func renderFile(t *testing.T, name string, o Options) string {
+	t.Helper()
+	f, err := os.Open(filepath.Join("testdata", name))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,5 +173,77 @@ func TestRender_ReadErrorsSurface(t *testing.T) {
 	var out bytes.Buffer
 	if err := Render(&out, failingReader{}, testOptions(ModePlain)); err == nil || !strings.Contains(err.Error(), "stream reset") {
 		t.Errorf("a failed read is returned, got %v", err)
+	}
+}
+
+// A gateway that forwards timestamps, signal metadata, and the subcommittee: the step
+// times come from the published timestamps, and the summary gains the crew time, the
+// subcommittee, tokens, models, the tool error, and the artifact's fetch command.
+func TestRender_StampedPlainGolden(t *testing.T) {
+	assertGolden(t, "proxmox-nodes-stamped.plain.golden", renderFile(t, "proxmox-nodes-stamped.sse", testOptions(ModePlain)))
+}
+
+func TestRender_StampedJSONGolden(t *testing.T) {
+	assertGolden(t, "proxmox-nodes-stamped.json.golden", renderFile(t, "proxmox-nodes-stamped.sse", testOptions(ModeJSON)))
+}
+
+// stampedSummary is the summary of the stamped recording, as -o json writes it.
+func stampedSummary(t *testing.T) Summary {
+	t.Helper()
+	lines := strings.Split(strings.TrimSpace(renderFile(t, "proxmox-nodes-stamped.sse", testOptions(ModeJSON))), "\n")
+	var result struct {
+		Summary Summary `json:"summary"`
+	}
+	if err := json.Unmarshal([]byte(lines[len(lines)-1]), &result); err != nil {
+		t.Fatal(err)
+	}
+	return result.Summary
+}
+
+func TestRender_StampedSummaryTimesAndTokens(t *testing.T) {
+	s := stampedSummary(t)
+	if s.TimeSource != "published" || s.CrewSeconds == nil || *s.CrewSeconds != 31 {
+		t.Errorf("times: source %q crew %v", s.TimeSource, s.CrewSeconds)
+	}
+	if s.InputTokens != 15740 || s.OutputTokens != 2059 {
+		t.Errorf("tokens: %d in, %d out", s.InputTokens, s.OutputTokens)
+	}
+	proxmox := s.Agents[0]
+	if proxmox.Name != "pilot-proxmox" || *proxmox.TriageSeconds != 1.5 || *proxmox.EvaluationSeconds != 10.4 || *proxmox.InferenceSeconds != 9.8 {
+		t.Errorf("published step times: %+v", proxmox)
+	}
+}
+
+func TestRender_StampedSummarySubcommitteeErrorsArtifacts(t *testing.T) {
+	s := stampedSummary(t)
+	sc := s.Subcommittee
+	if sc == nil || len(sc.Members) != 3 || sc.Members[0].Reason != "node metrics" || sc.Members[2].Reason != "" {
+		t.Errorf("subcommittee keeps the triage reasons of the agents still convened: %+v", sc)
+	}
+	if len(s.ToolErrors) != 1 || s.ToolErrors[0] != "pilot-storage: zfs_pool_status failed 3 times: connection refused" {
+		t.Errorf("tool errors: %v", s.ToolErrors)
+	}
+	if len(s.Artifacts) != 1 || !strings.HasPrefix(s.Artifacts[0].Fetch, "kmctl conversation artifact homelab-pilot crew-homelab-pilot/") {
+		t.Errorf("artifacts: %+v", s.Artifacts)
+	}
+}
+
+func TestThousands(t *testing.T) {
+	for n, want := range map[int64]string{0: "0", 999: "999", 1000: "1,000", 1234567: "1,234,567", -1234: "-1,234"} {
+		if got := thousands(n); got != want {
+			t.Errorf("thousands(%d) = %q, want %q", n, got, want)
+		}
+	}
+}
+
+// An event other than a finding that names an artifact keeps it in -o json.
+func TestRender_JSONKeepsTheArtifactOfAStandAside(t *testing.T) {
+	stream := `data: {"type":"phase","agent":"a","status":"done","stood_aside":true,"artifact":{"key":"ns/c/t/a/x","bytes":5}}` + "\n\ndata: {\"type\":\"done\"}\n\n"
+	var out bytes.Buffer
+	if err := Render(&out, strings.NewReader(stream), testOptions(ModeJSON)); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), `"artifact":{"key":"ns/c/t/a/x","bytes":5}`) {
+		t.Errorf("artifact dropped:\n%s", out.String())
 	}
 }

@@ -402,15 +402,15 @@ data: {"type":"done"}
 `
 
 // withGateway serves crew demo's discussion gateway: a turn starts conversation
-// c-1, and its stream is discussionEvents.
+// 11111111-1111-4111-8111-111111111111, and its stream is discussionEvents.
 func withGateway(s *fakeAPIServer, asked *string) {
 	s.proxy["demo-discussion/api/v1/discussions/demo"] = func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]string
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		*asked = body["message"]
-		writeJSON(w, http.StatusOK, map[string]string{"conversationId": "c-1"})
+		writeJSON(w, http.StatusOK, map[string]string{"conversationId": "11111111-1111-4111-8111-111111111111"})
 	}
-	s.proxy["demo-discussion/api/v1/discussions/demo/c-1/stream"] = func(w http.ResponseWriter, _ *http.Request) {
+	s.proxy["demo-discussion/api/v1/discussions/demo/11111111-1111-4111-8111-111111111111/stream"] = func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = io.WriteString(w, discussionEvents)
 	}
@@ -427,9 +427,9 @@ func TestConversationAsk_AgainstCluster(t *testing.T) {
 	if asked != "how are the pods?" {
 		t.Errorf("gateway got message %q", asked)
 	}
-	assertContains(t, "ask", out, "conversation c-1", "] connected", "demo-workloads", "gathering", "ANSWER:\nAll pods are Running.", "] done",
+	assertContains(t, "ask", out, "conversation 11111111-1111-4111-8111-111111111111", "] connected", "demo-workloads", "gathering", "ANSWER:\nAll pods are Running.", "] done",
 		"Agents: 1 took part (demo-workloads)", "Accelerators: gpu-0")
-	if !strings.HasSuffix(out, "Next: kmctl conversation ask demo \"<next question>\" -n team-a --conversation-id c-1\n") {
+	if !strings.HasSuffix(out, "Next: kmctl conversation ask demo \"<next question>\" -n team-a --conversation-id 11111111-1111-4111-8111-111111111111\n") {
 		t.Errorf("the last line is the follow-up command for the namespace and conversation used:\n%s", out)
 	}
 
@@ -437,7 +437,7 @@ func TestConversationAsk_AgainstCluster(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertContains(t, "ask -o json", out, `"type":"conversation","conversationId":"c-1","crew":"demo","namespace":"team-a"`, `"type":"result"`, `"answer":"All pods are Running."`)
+	assertContains(t, "ask -o json", out, `"type":"conversation","conversationId":"11111111-1111-4111-8111-111111111111","crew":"demo","namespace":"team-a"`, `"type":"result"`, `"answer":"All pods are Running."`)
 
 	if _, _, err = s.kmctl(t, "conversation", "ask", "demo", "hi", "-o", "yaml"); err == nil || !strings.Contains(err.Error(), "unknown output") {
 		t.Errorf("an unknown output mode is an error, got %v", err)
@@ -478,29 +478,29 @@ func TestConversationWatch_AgainstCluster(t *testing.T) {
 	s := newFakeAPIServer(t)
 	var asked string
 	withGateway(s, &asked)
-	out, _, err := s.kmctl(t, "conversation", "watch", "demo", "c-1")
+	out, _, err := s.kmctl(t, "conversation", "watch", "demo", "11111111-1111-4111-8111-111111111111")
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertContains(t, "watch", out, "] connected", "ANSWER:", "] done", "--conversation-id c-1")
-	if strings.Contains(out, "conversation c-1") {
+	assertContains(t, "watch", out, "] connected", "ANSWER:", "] done", "--conversation-id 11111111-1111-4111-8111-111111111111")
+	if strings.Contains(out, "conversation 11111111-1111-4111-8111-111111111111") {
 		t.Errorf("watch does not start a turn, so it prints no conversation line:\n%s", out)
 	}
-	if _, _, err = s.kmctl(t, "conversation", "watch", "demo", "c-2"); err == nil {
+	if _, _, err = s.kmctl(t, "conversation", "watch", "demo", "22222222-2222-4222-8222-222222222222"); err == nil {
 		t.Error("watching an unknown conversation is an error")
 	}
 }
 
 const (
 	busyLine   = `data: {"type":"activity","at":"2026-10-15T12:00:00Z","agents":[{"agent":"compute","doing":"evaluating","gpu":"gpu-0"}]}`
-	reattachC1 = "Reattach: kmctl conversation watch demo c-1 -n team-a"
+	reattachC1 = "Reattach: kmctl conversation watch demo 11111111-1111-4111-8111-111111111111 -n team-a"
 )
 
-// streamEvery serves crew demo's c-1 stream: a connected event and the thread, then
+// streamEvery serves crew demo's 11111111-1111-4111-8111-111111111111 stream: a connected event and the thread, then
 // line every 20ms until the client leaves, or, when last is set, until until passes
 // and last ends the stream. The bound keeps a regression from hanging the test.
 func streamEvery(s *fakeAPIServer, line string, until time.Duration, last string) {
-	s.proxy["demo-discussion/api/v1/discussions/demo/c-1/stream"] = func(w http.ResponseWriter, r *http.Request) {
+	s.proxy["demo-discussion/api/v1/discussions/demo/11111111-1111-4111-8111-111111111111/stream"] = func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = io.WriteString(w, "data: {\"type\":\"connected\"}\n\ndata: {\"type\":\"thread_found\",\"threadId\":\"t-1\"}\n\n")
 		w.(http.Flusher).Flush()
@@ -527,7 +527,7 @@ func streamEvery(s *fakeAPIServer, line string, until time.Duration, last string
 func TestConversationWatch_ActivityKeepsWaiting(t *testing.T) {
 	s := newFakeAPIServer(t)
 	streamEvery(s, busyLine, 600*time.Millisecond, "data: {\"type\":\"synthesis\",\"content\":\"Three nodes.\"}\n\ndata: {\"type\":\"done\"}\n\n")
-	out, _, err := s.kmctl(t, "conversation", "watch", "demo", "c-1", "-o", "plain", "--idle-timeout", "200ms")
+	out, _, err := s.kmctl(t, "conversation", "watch", "demo", "11111111-1111-4111-8111-111111111111", "-o", "plain", "--idle-timeout", "200ms")
 	if err != nil {
 		t.Fatalf("watch gave up while the crew reported activity: %v", err)
 	}
@@ -539,21 +539,21 @@ func TestConversationWatch_ActivityKeepsWaiting(t *testing.T) {
 func TestConversationWatch_IdleLimit(t *testing.T) {
 	s := newFakeAPIServer(t)
 	streamEvery(s, `data: {"type":"heartbeat"}`, 10*time.Second, "")
-	_, _, err := s.kmctl(t, "conversation", "watch", "demo", "c-1", "--idle-timeout", "200ms")
+	_, _, err := s.kmctl(t, "conversation", "watch", "demo", "11111111-1111-4111-8111-111111111111", "--idle-timeout", "200ms")
 	if err == nil {
 		t.Fatal("a silent crew did not hit the idle limit")
 	}
 	assertContains(t, "idle", err.Error(), "the crew showed no activity for 200ms; the discussion may still finish.",
-		"Conversation c-1, thread t-1", reattachC1)
+		"Conversation 11111111-1111-4111-8111-111111111111, thread t-1", reattachC1)
 }
 
 // --timeout caps the wait even while the crew reports activity.
 func TestConversationWatch_TimeoutCaps(t *testing.T) {
 	s := newFakeAPIServer(t)
 	streamEvery(s, busyLine, 10*time.Second, "")
-	_, _, err := s.kmctl(t, "conversation", "watch", "demo", "c-1", "--timeout", "200ms", "--idle-timeout", "1m")
+	_, _, err := s.kmctl(t, "conversation", "watch", "demo", "11111111-1111-4111-8111-111111111111", "--timeout", "200ms", "--idle-timeout", "1m")
 	if err == nil {
 		t.Fatal("--timeout did not cap the wait")
 	}
-	assertContains(t, "timeout", err.Error(), "stopped waiting after --timeout 200ms", "Conversation c-1, thread t-1", reattachC1)
+	assertContains(t, "timeout", err.Error(), "stopped waiting after --timeout 200ms", "Conversation 11111111-1111-4111-8111-111111111111, thread t-1", reattachC1)
 }
