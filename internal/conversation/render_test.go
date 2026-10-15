@@ -124,13 +124,9 @@ func TestRender_WatchDoesNotAnnounce(t *testing.T) {
 }
 
 func TestRender_QuietPrintsOnlyAnswer(t *testing.T) {
-	for _, mode := range Modes {
-		o := testOptions(mode)
-		o.Quiet = true
-		out := renderRecorded(t, o)
-		if !strings.HasPrefix(out, "## Proxmox nodes") || strings.Contains(out, "Next:") {
-			t.Errorf("%s --quiet prints only the answer, got:\n%s", mode, out)
-		}
+	out := renderRecorded(t, testOptions(ModeQuiet))
+	if !strings.HasPrefix(out, "## Proxmox nodes") || strings.Contains(out, "Next:") {
+		t.Errorf("quiet prints only the answer, got:\n%s", out)
 	}
 }
 

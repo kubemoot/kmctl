@@ -34,7 +34,7 @@ kmctl
   delete (KIND NAME | -f ...)  delete Kubemoot resources (kubemoot.ai CRs only)
   crew                         list | get
   agent                        list | get
-  conversation (conv)          ask | watch        (stream a live discussion; -o full|plain|json)
+  conversation (conv)          ask | watch        (stream a live discussion; -o full|plain|json|quiet)
   fitness                      run | list | get | scenarios | download
   prompt                       list | get         (PromptModules)
   model                        list | get | footprint   (providers + live GPU footprint)
@@ -53,7 +53,7 @@ Planned, not yet implemented: `crew status`, `conversation list | get`, and a
 
 ### Conversation output
 
-`kmctl conversation ask` and `kmctl conversation watch` take `-o full|plain|json`:
+`kmctl conversation ask` and `kmctl conversation watch` take `-o full|plain|json|quiet`:
 
 | Mode | What it shows |
 |------|---------------|
@@ -62,7 +62,7 @@ Planned, not yet implemented: `crew status`, `conversation list | get`, and a
 | `json` | Newline-delimited JSON: a `conversation` line, one line per event with `elapsedMs` and any step duration, and a final `result` line with `answer`, `summary`, and `next`. Every line carries `schemaVersion` (1). |
 
 `full` falls back to `plain` when stdout is not a terminal, `NO_COLOR` is set, or
-`TERM=dumb`. `-q/--quiet` prints only the answer in any mode.
+`TERM=dumb`. `-o quiet` prints only the answer; `-q` is the same, and `-q` with a different `-o` is an error.
 
 Every mode ends with a short summary right after the answer's own notes (total
 time and time to the first signal, the agents that took part and those that stood

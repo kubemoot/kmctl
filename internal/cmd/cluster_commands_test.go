@@ -443,9 +443,20 @@ func TestConversationAsk_AgainstCluster(t *testing.T) {
 		t.Errorf("an unknown output mode is an error, got %v", err)
 	}
 
-	out, _, err = s.kmctl(t, "conversation", "ask", "demo", "again", "--quiet")
-	if err != nil || out != "All pods are Running.\n" {
-		t.Errorf("--quiet prints only the answer: got %q, %v", out, err)
+}
+
+func TestConversationAsk_Quiet(t *testing.T) {
+	s := newFakeAPIServer(t)
+	var asked string
+	withGateway(s, &asked)
+	for _, args := range [][]string{{"--quiet"}, {"-q"}, {"-o", "quiet"}, {"-q", "-o", "quiet"}} {
+		out, _, err := s.kmctl(t, append([]string{"conversation", "ask", "demo", "again"}, args...)...)
+		if err != nil || out != "All pods are Running.\n" {
+			t.Errorf("%v prints only the answer: got %q, %v", args, out, err)
+		}
+	}
+	if _, _, err := s.kmctl(t, "conversation", "ask", "demo", "hi", "-q", "-o", "json"); err == nil || !strings.Contains(err.Error(), "cannot be combined with -o json") {
+		t.Errorf("-q with a different -o is an error, got %v", err)
 	}
 }
 

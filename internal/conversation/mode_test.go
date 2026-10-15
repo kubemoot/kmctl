@@ -28,6 +28,7 @@ func TestResolve(t *testing.T) {
 		{"plain stays plain on a terminal", "plain", true, nil, ModePlain},
 		{"json stays json without a terminal", "json", false, map[string]string{"NO_COLOR": "1"}, ModeJSON},
 		{"case and spaces are ignored", " JSON ", true, nil, ModeJSON},
+		{"quiet stays quiet without a terminal", "quiet", false, nil, ModeQuiet},
 	}
 	for _, c := range cases {
 		got, err := Resolve(c.requested, c.tty, env(c.vars))

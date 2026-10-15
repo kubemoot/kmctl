@@ -63,7 +63,7 @@ func TestConversationCommands_HaveOutputAndQuiet(t *testing.T) {
 			t.Fatalf("%s: --output has no completion", name)
 		}
 		modes, directive := complete(cmd, nil, "")
-		if strings.Join(modes, ",") != "full,plain,json" || directive != cobra.ShellCompDirectiveNoFileComp {
+		if strings.Join(modes, ",") != "full,plain,json,quiet" || directive != cobra.ShellCompDirectiveNoFileComp {
 			t.Errorf("%s: --output completes %v (%v)", name, modes, directive)
 		}
 	}
