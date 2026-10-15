@@ -108,8 +108,11 @@ func (m liveModel) header() string {
 	if m.o.Namespace != "" {
 		where += " in " + m.o.Namespace
 	}
-	return styleBold.Render("conversation "+m.o.ConversationID) + "  " +
-		styleDim.Render(fmt.Sprintf("%s | %s", where, formatDuration(end.Sub(m.t.Start))))
+	status := fmt.Sprintf("%s | %s", where, formatDuration(end.Sub(m.t.Start)))
+	if len(m.t.Busy) > 0 && !m.finished {
+		status += " | busy: " + busyText(m.t.Busy)
+	}
+	return styleBold.Render("conversation "+m.o.ConversationID) + "  " + styleDim.Render(status)
 }
 
 // row is one agent: a spinner or its colored result, its step, where it runs,
@@ -196,6 +199,7 @@ func runFull(w io.Writer, stream io.Reader, o Options, extra ...tea.ProgramOptio
 	// closes the stream and cancels its context when this returns, which ends it.
 	go func() {
 		err := discussion.ParseSSE(stream, func(e discussion.Event) bool {
+			o.seen(e)
 			p.Send(eventMsg{e: e, at: o.now()})
 			return discussion.Terminal(e)
 		})

@@ -93,6 +93,37 @@ discussion stream carries: token counts, tool calls, retries, and the
 coordinator's reasons for convening each agent are not in the stream yet, so they
 are left out rather than estimated.
 
+### How long kmctl waits
+
+kmctl waits as long as the crew is working. While anyone on the crew is busy (an
+agent triaging or evaluating, waiting for an accelerator, a model loading, the
+coordinator synthesizing the answer), the discussion gateway sends an `activity`
+event every 15 seconds. `plain` prints it as a `busy:` line, `json` as a line of type
+`activity` with the busy `agents` and the time `at`, and `full` keeps the agents'
+spinners turning and names who is busy in the header:
+
+```
+[  4m37s] busy: compute evaluating on ollama-rig0, obs-advisor triaging
+```
+
+The only default clock is a no-activity clock: `--idle-timeout` (default `5m`) runs
+only while the crew shows no activity and starts again with every event from the
+crew. The gateway's connection heartbeat does not count. `--timeout` (default `0`,
+no cap) is an overall limit for scripts. When either one stops the wait, kmctl
+prints the conversation and thread IDs and the command that reattaches, because
+the crew may still answer:
+
+```
+Error: the crew showed no activity for 5m0s; the discussion may still finish.
+Conversation 6733c361-aa0c-4bde-85c6-e143af23b251, thread 8f0c2a1e
+Reattach: kmctl conversation watch homelab-pilot 6733c361-aa0c-4bde-85c6-e143af23b251 -n crew-homelab-pilot
+```
+
+A gateway that does not send `activity` events yet sends nothing between an
+agent's signals; there the idle clock restarts only on signals, and the 5-minute
+default covers a cold model load followed by a long evaluation. Setting both
+`--idle-timeout 0` and `--timeout 0` waits for as long as the stream stays open.
+
 ## Install
 
 `kmctl` ships as a single static binary with no runtime dependencies. Each

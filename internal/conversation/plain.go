@@ -56,6 +56,7 @@ var plainLines = map[string]func(discussion.Event, Change) string{
 	"thread_found": func(e discussion.Event, _ Change) string { return "thread " + e.ThreadID },
 	"phase":        func(e discussion.Event, c Change) string { return agentLine(e.Agent, phaseText(e, c)) },
 	"finding":      func(e discussion.Event, c Change) string { return agentLine(e.Agent, findingText(c)) },
+	"activity":     func(e discussion.Event, _ Change) string { return "busy: " + busyText(e.Agents) },
 	"synthesis":    func(discussion.Event, Change) string { return "answer ready" },
 	"error":        func(e discussion.Event, _ Change) string { return "error: " + e.Error },
 	"done":         func(discussion.Event, Change) string { return "done" },
@@ -66,6 +67,33 @@ func plainLine(e discussion.Event, c Change) string {
 		return line(e, c)
 	}
 	return ""
+}
+
+// doingTexts words each activity step; a step without an entry is shown with its
+// underscores as spaces.
+var doingTexts = map[string]string{
+	"waiting_for_accelerator": "waiting for an accelerator",
+	"waiting_for_agents":      "waiting for agents",
+}
+
+// busyText is who is busy and on what: "compute evaluating on ollama-rig0,
+// coordinator synthesizing".
+func busyText(agents []discussion.Activity) string {
+	parts := make([]string, 0, len(agents))
+	for _, a := range agents {
+		doing, ok := doingTexts[a.Doing]
+		if !ok {
+			doing = strings.ReplaceAll(a.Doing, "_", " ")
+		}
+		part := a.Agent + " " + doing
+		if a.Model != "" && a.Doing == "waiting_for_accelerator" {
+			part += " for " + a.Model
+		} else if a.GPU != "" {
+			part += " on " + a.GPU
+		}
+		parts = append(parts, part)
+	}
+	return strings.Join(parts, ", ")
 }
 
 func agentLine(agent, text string) string {

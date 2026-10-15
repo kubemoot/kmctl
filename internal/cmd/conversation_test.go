@@ -17,11 +17,18 @@ func TestConversationCommand_Subcommands(t *testing.T) {
 	assertSubcommands(t, cmd, "ask", "watch")
 }
 
-func TestConversationCommands_HaveTimeout(t *testing.T) {
+// The only default clock is the idle one; --timeout is an opt-in overall cap.
+func TestConversationCommands_WaitFlags(t *testing.T) {
 	f := client.NewFactory()
 	for name, cmd := range map[string]*cobra.Command{"ask": newAskCommand(f), "watch": newWatchCommand(f)} {
-		if cmd.Flags().Lookup("timeout") == nil {
-			t.Errorf("%s command has no --timeout flag (would hang forever on a stalled discussion)", name)
+		if idle := cmd.Flags().Lookup("idle-timeout"); idle == nil || idle.DefValue != "5m0s" {
+			t.Errorf("%s: want --idle-timeout defaulting to 5m0s, got %+v", name, idle)
+		}
+		if overall := cmd.Flags().Lookup("timeout"); overall == nil || overall.DefValue != "0s" {
+			t.Errorf("%s: want --timeout defaulting to 0s (no cap), got %+v", name, overall)
+		}
+		if !strings.Contains(cmd.Long, "--idle-timeout") || !strings.Contains(cmd.Long, "kmctl conversation watch") {
+			t.Errorf("%s: help does not explain how long it waits", name)
 		}
 	}
 }

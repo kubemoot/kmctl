@@ -65,6 +65,27 @@ func TestParseSSE_DecodesWaitAndStandAsideFields(t *testing.T) {
 	}
 }
 
+func TestShowsCrewActivity(t *testing.T) {
+	for typ, want := range map[string]bool{
+		"heartbeat": false, "connected": false,
+		"activity": true, "phase": true, "finding": true, "thread_found": true, "synthesis": true, "done": true,
+	} {
+		if got := ShowsCrewActivity(Event{Type: typ}); got != want {
+			t.Errorf("ShowsCrewActivity(%s) = %v, want %v", typ, got, want)
+		}
+	}
+}
+
+func TestParseSSE_DecodesActivity(t *testing.T) {
+	stream := `data: {"type":"activity","at":"2026-10-15T12:00:00Z","agents":[{"agent":"compute","doing":"evaluating","gpu":"g0","since":"2026-10-15T11:59:00Z"}]}` + "\n\n"
+	var got Event
+	_ = ParseSSE(strings.NewReader(stream), func(e Event) bool { got = e; return true })
+	if got.At != "2026-10-15T12:00:00Z" || len(got.Agents) != 1 ||
+		got.Agents[0] != (Activity{Agent: "compute", Doing: "evaluating", GPU: "g0", Since: "2026-10-15T11:59:00Z"}) {
+		t.Errorf("decoded %+v", got)
+	}
+}
+
 func TestServiceName(t *testing.T) {
 	if serviceName("homelab-pilot") != "homelab-pilot-discussion" {
 		t.Errorf("serviceName = %q", serviceName("homelab-pilot"))

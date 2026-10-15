@@ -185,6 +185,15 @@ func FollowUp(crew, namespace, conversationID string) string {
 	return cmd + " --conversation-id " + conversationID
 }
 
+// Reattach is the command that follows the conversation's current turn again.
+func Reattach(crew, namespace, conversationID string) string {
+	cmd := "kmctl conversation watch " + crew + " " + conversationID
+	if namespace != "" {
+		cmd += " -n " + namespace
+	}
+	return cmd
+}
+
 func seconds(d time.Duration) float64 { return float64(millis(d)) / 1000 }
 
 func optionalSeconds(d time.Duration) *float64 {

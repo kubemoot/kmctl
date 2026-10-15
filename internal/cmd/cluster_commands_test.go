@@ -490,21 +490,69 @@ func TestConversationWatch_AgainstCluster(t *testing.T) {
 	}
 }
 
-// A stream that stays open past --timeout ends with the timeout message, not a
-// bare context error.
-func TestConversationWatch_TimesOut(t *testing.T) {
-	s := newFakeAPIServer(t)
+const (
+	busyLine   = `data: {"type":"activity","at":"2026-10-15T12:00:00Z","agents":[{"agent":"compute","doing":"evaluating","gpu":"gpu-0"}]}`
+	reattachC1 = "Reattach: kmctl conversation watch demo c-1 -n team-a"
+)
+
+// streamEvery serves crew demo's c-1 stream: a connected event and the thread, then
+// line every 20ms until the client leaves, or, when last is set, until until passes
+// and last ends the stream. The bound keeps a regression from hanging the test.
+func streamEvery(s *fakeAPIServer, line string, until time.Duration, last string) {
 	s.proxy["demo-discussion/api/v1/discussions/demo/c-1/stream"] = func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = io.WriteString(w, "data: {\"type\":\"connected\"}\n\n")
+		_, _ = io.WriteString(w, "data: {\"type\":\"connected\"}\n\ndata: {\"type\":\"thread_found\",\"threadId\":\"t-1\"}\n\n")
 		w.(http.Flusher).Flush()
-		select { // hold the stream open until kmctl gives up; the bound keeps a regression from hanging the test
-		case <-r.Context().Done():
-		case <-time.After(10 * time.Second):
+		tick := time.NewTicker(20 * time.Millisecond)
+		defer tick.Stop()
+		end := time.After(until)
+		for {
+			select {
+			case <-r.Context().Done():
+				return
+			case <-end:
+				_, _ = io.WriteString(w, last)
+				return
+			case <-tick.C:
+				_, _ = io.WriteString(w, line+"\n\n")
+				w.(http.Flusher).Flush()
+			}
 		}
 	}
-	_, _, err := s.kmctl(t, "conversation", "watch", "demo", "c-1", "--timeout", "200ms")
-	if err == nil || !strings.Contains(err.Error(), "timed out after 200ms waiting for the discussion to finish") {
-		t.Errorf("want the timeout message, got %v", err)
+}
+
+// A crew that keeps reporting activity keeps kmctl waiting past the idle limit
+// until it answers.
+func TestConversationWatch_ActivityKeepsWaiting(t *testing.T) {
+	s := newFakeAPIServer(t)
+	streamEvery(s, busyLine, 600*time.Millisecond, "data: {\"type\":\"synthesis\",\"content\":\"Three nodes.\"}\n\ndata: {\"type\":\"done\"}\n\n")
+	out, _, err := s.kmctl(t, "conversation", "watch", "demo", "c-1", "-o", "plain", "--idle-timeout", "200ms")
+	if err != nil {
+		t.Fatalf("watch gave up while the crew reported activity: %v", err)
 	}
+	assertContains(t, "activity", out, "] busy: compute evaluating on gpu-0", "ANSWER:\nThree nodes.", "] done")
+}
+
+// A stream that carries only connection keep-alives hits the idle limit with the
+// IDs and the command that reattaches.
+func TestConversationWatch_IdleLimit(t *testing.T) {
+	s := newFakeAPIServer(t)
+	streamEvery(s, `data: {"type":"heartbeat"}`, 10*time.Second, "")
+	_, _, err := s.kmctl(t, "conversation", "watch", "demo", "c-1", "--idle-timeout", "200ms")
+	if err == nil {
+		t.Fatal("a silent crew did not hit the idle limit")
+	}
+	assertContains(t, "idle", err.Error(), "the crew showed no activity for 200ms; the discussion may still finish.",
+		"Conversation c-1, thread t-1", reattachC1)
+}
+
+// --timeout caps the wait even while the crew reports activity.
+func TestConversationWatch_TimeoutCaps(t *testing.T) {
+	s := newFakeAPIServer(t)
+	streamEvery(s, busyLine, 10*time.Second, "")
+	_, _, err := s.kmctl(t, "conversation", "watch", "demo", "c-1", "--timeout", "200ms", "--idle-timeout", "1m")
+	if err == nil {
+		t.Fatal("--timeout did not cap the wait")
+	}
+	assertContains(t, "timeout", err.Error(), "stopped waiting after --timeout 200ms", "Conversation c-1, thread t-1", reattachC1)
 }
