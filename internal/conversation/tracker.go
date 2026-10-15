@@ -56,6 +56,8 @@ type Tracker struct {
 	ThreadID    string
 	Answer      string
 	Errors      []string
+	// Busy is who the latest activity event said is working, until the answer.
+	Busy []discussion.Activity
 
 	agents []*Agent
 	byName map[string]*Agent
@@ -82,7 +84,11 @@ var trackers = map[string]func(*Tracker, discussion.Event, time.Time) Change{
 	"thread_found": func(t *Tracker, e discussion.Event, _ time.Time) Change { t.ThreadID = e.ThreadID; return Change{} },
 	"phase":        (*Tracker).applyPhase,
 	"finding":      (*Tracker).applyFinding,
-	"synthesis":    func(t *Tracker, e discussion.Event, _ time.Time) Change { t.Answer = e.Content; return Change{} },
+	"synthesis": func(t *Tracker, e discussion.Event, _ time.Time) Change {
+		t.Answer, t.Busy = e.Content, nil
+		return Change{}
+	},
+	"activity": (*Tracker).applyActivity,
 	"error": func(t *Tracker, e discussion.Event, _ time.Time) Change {
 		t.Errors = append(t.Errors, e.Error)
 		return Change{}
@@ -148,6 +154,22 @@ func applyWaiting(_ *Tracker, a *Agent, e discussion.Event, _ time.Time) Change 
 	setIfPresent(&a.Model, e.Model)
 	a.WaitReason = e.Reason
 	return Change{Agent: a}
+}
+
+// applyActivity records who is busy and fills in the accelerator and model of the
+// agents already shown. Once the answer is in, no one is shown as busy.
+func (t *Tracker) applyActivity(e discussion.Event, _ time.Time) Change {
+	if t.Answer != "" {
+		return Change{}
+	}
+	t.Busy = e.Agents
+	for _, b := range e.Agents {
+		if a, ok := t.byName[b.Agent]; ok {
+			setIfPresent(&a.GPU, b.GPU)
+			setIfPresent(&a.Model, b.Model)
+		}
+	}
+	return Change{}
 }
 
 func (t *Tracker) applyFinding(e discussion.Event, at time.Time) Change {

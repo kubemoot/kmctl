@@ -20,6 +20,14 @@ type Options struct {
 	Start time.Time
 	// Now is the clock; nil means time.Now.
 	Now func() time.Time
+	// OnEvent, when set, sees every event as it arrives, before it is shown.
+	OnEvent func(discussion.Event)
+}
+
+func (o Options) seen(e discussion.Event) {
+	if o.OnEvent != nil {
+		o.OnEvent(e)
+	}
 }
 
 func (o Options) now() time.Time {
@@ -89,6 +97,7 @@ func runSink(stream io.Reader, o Options, s sink) error {
 	}
 	var writeErr error
 	parseErr := discussion.ParseSSE(stream, func(e discussion.Event) bool {
+		o.seen(e)
 		at := o.now()
 		writeErr = s.event(t, e, t.Apply(e, at), at)
 		return writeErr != nil || discussion.Terminal(e)

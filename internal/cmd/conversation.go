@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/kubemoot/kmctl/internal/client"
@@ -54,9 +55,11 @@ Output modes (-o):
 
 full is the default and falls back to plain when stdout is not a terminal or
 NO_COLOR is set. Every mode ends with a summary of how the answer was made and,
-as the last line, the command that asks a follow-up in the same conversation.`,
+as the last line, the command that asks a follow-up in the same conversation.
+` + waitingHelp,
 		Example: `  kmctl conversation ask homelab-pilot "what is failing?" -n crew-homelab-pilot
   kmctl conv ask homelab-pilot "summarize gpu usage" --quiet
+  kmctl conv ask homelab-pilot "list the nodes" -o json --timeout 15m
   kmctl conv ask homelab-pilot "list the nodes" -o json | jq -c 'select(.type == "result")'
   kmctl conv ask homelab-pilot "and their memory?" --conversation-id 6733c361-aa0c-4bde-85c6-e143af23b251`,
 		Args: cobra.ExactArgs(2),
@@ -70,14 +73,14 @@ as the last line, the command that asks a follow-up in the same conversation.`,
 			if err != nil {
 				return err
 			}
-			ctx, cancel := context.WithTimeout(cmd.Context(), sf.timeout)
+			ctx, cancel := sf.overall(cmd.Context())
 			defer cancel()
 			opts.ConversationID, err = discussion.Ask(ctx, rc, opts.Namespace, crew, message, conversationID)
 			if err != nil {
 				return err
 			}
 			opts.Announce = true
-			return followStream(ctx, cmd, rc, opts, sf.timeout)
+			return followStream(ctx, cmd, rc, opts, sf)
 		},
 	}
 	cmd.Flags().StringVar(&conversationID, "conversation-id", "", "Continue an existing conversation (its full ID)")
@@ -91,7 +94,8 @@ func newWatchCommand(f *client.Factory) *cobra.Command {
 		Use:   "watch CREW CONVERSATION_ID",
 		Short: "Live-tail an in-flight conversation",
 		Long: `Follow the discussion of a conversation's current turn until the crew answers.
-The output modes (-o full|plain|json) are the same as for "kmctl conversation ask".`,
+The output modes (-o full|plain|json) are the same as for "kmctl conversation ask".
+` + waitingHelp,
 		Example: `  kmctl conversation watch homelab-pilot 6733c361-aa0c-4bde-85c6-e143af23b251 -n crew-homelab-pilot
   kmctl conv watch homelab-pilot 6733c361-aa0c-4bde-85c6-e143af23b251 -o plain`,
 		Args: cobra.ExactArgs(2),
@@ -105,27 +109,50 @@ The output modes (-o full|plain|json) are the same as for "kmctl conversation as
 			if err != nil {
 				return err
 			}
-			ctx, cancel := context.WithTimeout(cmd.Context(), sf.timeout)
+			ctx, cancel := sf.overall(cmd.Context())
 			defer cancel()
 			opts.ConversationID = id
-			return followStream(ctx, cmd, rc, opts, sf.timeout)
+			return followStream(ctx, cmd, rc, opts, sf)
 		},
 	}
 	sf.register(cmd)
 	return cmd
 }
 
+// waitingHelp says how long the streaming commands wait.
+const waitingHelp = `
+kmctl waits as long as the crew is working. While anyone on the crew is busy (an
+agent triaging or evaluating, waiting for an accelerator, a model loading, the
+coordinator synthesizing) the gateway sends activity events; plain shows them as
+"busy:" lines, json as type "activity", and full in the header. kmctl stops only
+when the crew shows no activity for --idle-timeout (default 5m), or when --timeout
+passes, if you set one. It then prints the conversation and thread IDs and the
+"kmctl conversation watch" command that reattaches; the crew may still answer.`
+
+// defaultIdleTimeout is how long the crew may show no activity before kmctl stops
+// waiting. A gateway that reports activity sends it every 15 seconds while anyone
+// works, so the limit is reached only when the crew has stopped. An older gateway
+// sends nothing between an agent's signals; the limit covers a cold model load
+// followed by a long evaluation there.
+const defaultIdleTimeout = 5 * time.Minute
+
 // streamFlags are the flags shared by the commands that stream a discussion.
 type streamFlags struct {
-	output  string
-	quiet   bool
-	timeout time.Duration
+	output      string
+	quiet       bool
+	timeout     time.Duration
+	idleTimeout time.Duration
+	// after is the idle clock's timer; nil means the wall clock.
+	after conversation.AfterFunc
 }
 
 func (sf *streamFlags) register(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&sf.output, "output", "o", string(conversation.ModeFull), conversation.ModeHelp())
 	cmd.Flags().BoolVarP(&sf.quiet, "quiet", "q", false, "Print only the final answer (the same as -o quiet)")
-	cmd.Flags().DurationVar(&sf.timeout, "timeout", 5*time.Minute, "Max time to wait for the discussion to complete")
+	cmd.Flags().DurationVar(&sf.idleTimeout, "idle-timeout", defaultIdleTimeout,
+		"Stop waiting when the crew shows no activity for this long (0 waits while the stream is open)")
+	cmd.Flags().DurationVar(&sf.timeout, "timeout", 0,
+		"Overall cap on the wait, for scripts (0, the default, means no cap)")
 	_ = cmd.RegisterFlagCompletionFunc("output", func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
 		return conversation.ModeNames(), cobra.ShellCompDirectiveNoFileComp
 	})
@@ -159,21 +186,75 @@ func (sf *streamFlags) requestedOutput(cmd *cobra.Command) (string, error) {
 	return string(conversation.ModeQuiet), nil
 }
 
-// followStream opens the conversation's discussion stream and renders it.
-func followStream(ctx context.Context, cmd *cobra.Command, rc rest.Interface, opts conversation.Options, timeout time.Duration) error {
+// overall is the command's context, capped by --timeout when it is set.
+func (sf *streamFlags) overall(parent context.Context) (context.Context, context.CancelFunc) {
+	if sf.timeout > 0 {
+		return context.WithTimeout(parent, sf.timeout)
+	}
+	return context.WithCancel(parent)
+}
+
+// followStream opens the conversation's discussion stream and renders it. The idle
+// clock ends the stream when the crew shows no activity for --idle-timeout.
+func followStream(ctx context.Context, cmd *cobra.Command, rc rest.Interface, opts conversation.Options, sf streamFlags) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	stream, err := discussion.Stream(ctx, rc, opts.Namespace, opts.Crew, opts.ConversationID)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = stream.Close() }()
-	return streamTimeoutErr(ctx, conversation.Render(cmd.OutOrStdout(), stream, opts), timeout)
+	w := &streamWatch{idle: conversation.NewIdleClock(sf.idleTimeout, sf.after, cancel)}
+	defer w.idle.Stop()
+	opts.OnEvent = w.seen
+	return w.endErr(ctx, conversation.Render(cmd.OutOrStdout(), stream, opts), sf.timeout, opts)
 }
 
-// streamTimeoutErr turns a context-deadline failure into a clear message: the
-// discussion never emitted a terminal event within the timeout.
-func streamTimeoutErr(ctx context.Context, err error, timeout time.Duration) error {
-	if err != nil && (errors.Is(err, context.DeadlineExceeded) || ctx.Err() == context.DeadlineExceeded) {
-		return fmt.Errorf("timed out after %s waiting for the discussion to finish (no 'done' event)", timeout)
+// streamWatch follows a stream's events: it restarts the idle clock and keeps the
+// thread ID for the message kmctl prints when it stops waiting.
+type streamWatch struct {
+	idle *conversation.IdleClock
+
+	mu       sync.Mutex
+	threadID string
+}
+
+func (w *streamWatch) seen(e discussion.Event) {
+	w.idle.Seen(e)
+	if e.Type == "thread_found" {
+		w.mu.Lock()
+		w.threadID = e.ThreadID
+		w.mu.Unlock()
 	}
-	return err
+}
+
+// endErr explains why kmctl stopped waiting: the crew showed no activity for the
+// idle limit, or --timeout passed. Either way the discussion may still finish, so
+// the message names the conversation and thread and how to reattach.
+func (w *streamWatch) endErr(ctx context.Context, err error, timeout time.Duration, o conversation.Options) error {
+	if err == nil {
+		return nil
+	}
+	var why string
+	switch {
+	case w.idle.Fired() && errors.Is(ctx.Err(), context.Canceled):
+		why = fmt.Sprintf("the crew showed no activity for %s", w.idle.Limit())
+	case errors.Is(ctx.Err(), context.DeadlineExceeded):
+		why = fmt.Sprintf("stopped waiting after --timeout %s", timeout)
+	default:
+		return err
+	}
+	w.mu.Lock()
+	thread := w.threadID
+	w.mu.Unlock()
+	return fmt.Errorf("%s; the discussion may still finish.\n%s\nReattach: %s",
+		why, idsText(o.ConversationID, thread), conversation.Reattach(o.Crew, o.Namespace, o.ConversationID))
+}
+
+// idsText names the conversation and, once known, its thread.
+func idsText(conversationID, threadID string) string {
+	if threadID == "" {
+		return "Conversation " + conversationID
+	}
+	return "Conversation " + conversationID + ", thread " + threadID
 }

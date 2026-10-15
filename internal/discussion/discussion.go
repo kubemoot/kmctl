@@ -35,6 +35,21 @@ type Event struct {
 	StoodAside bool   `json:"stood_aside,omitempty"`
 	Model      string `json:"model,omitempty"`
 	Reason     string `json:"reason,omitempty"`
+	// Agents are the busy agents of an activity event, and At when the gateway
+	// took that reading (RFC 3339).
+	Agents []Activity `json:"agents,omitempty"`
+	At     string     `json:"at,omitempty"`
+}
+
+// Activity is one busy agent in an activity event: what it is doing (waking,
+// triaging, evaluating, waiting_for_accelerator, reasoning, waiting_for_agents,
+// synthesizing), where, and since when.
+type Activity struct {
+	Agent string `json:"agent"`
+	Doing string `json:"doing"`
+	GPU   string `json:"gpu,omitempty"`
+	Model string `json:"model,omitempty"`
+	Since string `json:"since,omitempty"`
 }
 
 // Ask starts a turn against a crew and returns the conversationId. A non-empty
@@ -104,6 +119,11 @@ func ParseSSE(r io.Reader, handle func(Event) bool) error {
 	flush()
 	return sc.Err()
 }
+
+// ShowsCrewActivity reports whether an event says the crew is working: every event
+// except the connection's own (connected, and the heartbeat that only keeps the
+// connection open).
+func ShowsCrewActivity(e Event) bool { return e.Type != "heartbeat" && e.Type != "connected" }
 
 // Terminal reports whether an event ends the stream.
 func Terminal(e Event) bool { return e.Type == "done" || e.Type == "error" }
