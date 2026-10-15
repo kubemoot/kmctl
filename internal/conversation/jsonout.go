@@ -72,13 +72,17 @@ func (j *jsonSink) event(t *Tracker, e discussion.Event, c Change, at time.Time)
 	if e.Type == "finding" && c.Agent != nil {
 		out.Artifact = c.Agent.Artifact
 	}
+	if out.Artifact == nil {
+		// jsonEvent.Artifact hides the event's own artifact field of the same name.
+		out.Artifact = artifactOf(e.SignalMeta, "")
+	}
 	return j.enc.Encode(out)
 }
 
 func (j *jsonSink) finish(t *Tracker) error {
 	return j.enc.Encode(jsonResult{
 		SchemaVersion: SchemaVersion, Type: "result", ConversationID: j.o.ConversationID,
-		Answer: t.Answer, Summary: t.Summarize(j.o.since()),
+		Answer: t.Answer, Summary: j.o.summarize(t),
 		Next: FollowUp(j.o.Crew, j.o.Namespace, j.o.ConversationID),
 	})
 }

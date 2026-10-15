@@ -133,3 +133,18 @@ func TestRunFull_RendersToWriter(t *testing.T) {
 		}
 	}
 }
+
+func TestLiveModel_ShowsSubcommitteeAndTokens(t *testing.T) {
+	m := newLiveModel(testOptions(ModeFull))
+	m = feed(m,
+		discussion.Event{Type: "subcommittee", Subcommittee: &discussion.Subcommittee{Members: []discussion.SubcommitteeMember{{Agent: "pilot-k8s", Reason: "pods"}}}},
+		discussion.Event{Type: "finding", Agent: "pilot-k8s", Signal: "agree", Content: "ok",
+			SignalMeta: &discussion.SignalMeta{ModelName: "qwen3:14b", InputTokens: 1200, OutputTokens: 340}},
+	)
+	view := ansi.Strip(m.render())
+	for _, want := range []string{"subcommittee: pilot-k8s (pods)", "1,540 tokens", "qwen3:14b"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("live view missing %q:\n%s", want, view)
+		}
+	}
+}

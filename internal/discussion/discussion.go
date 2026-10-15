@@ -40,6 +40,54 @@ type Event struct {
 	// took that reading (RFC 3339).
 	Agents []Activity `json:"agents,omitempty"`
 	At     string     `json:"at,omitempty"`
+	// Timestamp is when the crew published the message behind the event (RFC 3339);
+	// absent on events from an older gateway and on the gateway's own events.
+	Timestamp string `json:"timestamp,omitempty"`
+	// SignalMeta is the signal metadata of a finding or stand-aside event.
+	*SignalMeta
+	// Subcommittee is the content of a subcommittee event.
+	*Subcommittee
+}
+
+// SignalMeta is how an agent's signal was made: the model, the tokens and inference
+// time of its call, the tools it has enabled, an artifact it spilled, and for a
+// failure, what failed. A gateway older than these fields sends none of them.
+type SignalMeta struct {
+	ModelName    string       `json:"modelName,omitempty"`
+	InputTokens  int64        `json:"inputTokens,omitempty"`
+	OutputTokens int64        `json:"outputTokens,omitempty"`
+	TotalTokens  int64        `json:"totalTokens,omitempty"`
+	InferenceMs  int64        `json:"inferenceMs,omitempty"`
+	ToolsUsed    []string     `json:"toolsUsed,omitempty"`
+	FailureType  string       `json:"failureType,omitempty"`
+	FailedTool   string       `json:"failedTool,omitempty"`
+	FailureCount int64        `json:"failureCount,omitempty"`
+	LastError    string       `json:"lastError,omitempty"`
+	Artifact     *ArtifactRef `json:"artifact,omitempty"`
+}
+
+// ArtifactRef names a contribution an agent spilled to the crew's artifact store.
+type ArtifactRef struct {
+	Key   string `json:"key"`
+	Bytes int64  `json:"bytes,omitempty"`
+}
+
+// Subcommittee is the agents the coordinator convened: from its advisory, with the
+// brief, or from a triage selection, with each agent's reason.
+type Subcommittee struct {
+	Source       string               `json:"source,omitempty"`
+	Members      []SubcommitteeMember `json:"members,omitempty"`
+	AllAgents    bool                 `json:"allAgents,omitempty"`
+	Brief        string               `json:"brief,omitempty"`
+	Confidence   float64              `json:"confidence,omitempty"`
+	Technologies []string             `json:"technologies,omitempty"`
+}
+
+// SubcommitteeMember is one convened agent.
+type SubcommitteeMember struct {
+	Agent      string  `json:"agent"`
+	Reason     string  `json:"reason,omitempty"`
+	Confidence float64 `json:"confidence,omitempty"`
 }
 
 // Activity is one busy agent in an activity event: what it is doing (waking,

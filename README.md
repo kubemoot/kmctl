@@ -34,7 +34,8 @@ kmctl
   delete (KIND NAME | -f ...)  delete Kubemoot resources (kubemoot.ai CRs only)
   crew                         list | get
   agent                        list | get
-  conversation (conv)          ask | watch        (stream a live discussion; -o full|plain|json|quiet)
+  conversation (conv)          ask | watch | list | artifact
+                               (stream a live discussion; -o full|plain|json|quiet)
   fitness                      run | list | get | scenarios | download
   prompt                       list | get         (PromptModules)
   model                        list | get | footprint   (providers + live GPU footprint)
@@ -48,8 +49,8 @@ The UX mirrors `kubectl` / `helm`: the standard kubeconfig, `--context`, and
 strict, quoted YAML subset `kubectl -o kyaml` prints), full `--help`,
 and generated shell completion.
 
-Planned, not yet implemented: `crew status`, `conversation list | get`, and a
-`config` command.
+Planned, not yet implemented: `crew status`, `conversation get`, and a `config`
+command.
 
 ### Conversation output
 
@@ -64,34 +65,61 @@ Planned, not yet implemented: `crew status`, `conversation list | get`, and a
 `full` falls back to `plain` when stdout is not a terminal, `NO_COLOR` is set, or
 `TERM=dumb`. `-o quiet` prints only the answer; `-q` is the same, and `-q` with a different `-o` is an error.
 
-Every mode ends with a short summary right after the answer's own notes (total
-time and time to the first signal, the agents that took part and those that stood
-aside, signals by kind, accelerators, models, and agents that waited for GPU capacity), then
-the command that asks a follow-up in the same conversation:
+Every mode ends with a short summary right after the answer's own notes, then the
+command that asks a follow-up in the same conversation. The summary has the total
+time and time to the first signal, the crew's own time from the thread's start to
+the answer, the subcommittee the coordinator convened (with each agent's reason
+when the coordinator gave one), the agents that took part and those that stood
+aside, signals by kind, tokens in and out, accelerators, models, agents that waited
+for GPU capacity, tool errors, and the command that fetches each attached artifact:
 
 ```
-[   9.0s] pilot-gpu              stood aside: gpu-busy
-[  11.0s] pilot-proxmox          agree (evaluation 3.0s): The cluster has three Proxmox nodes, all online...
-[  12.0s] pilot-metrics          agree (evaluation 2.0s): attached artifact (8.3 KB); its key is in -o json
-[  15.0s] done
+[   3.0s] subcommittee: pilot-metrics (node metrics), pilot-proxmox (proxmox inventory)
+[   8.0s] pilot-gpu              stood aside (qwen3:8b, 419 tokens): not in the subcommittee
+[  10.0s] pilot-proxmox          agree (evaluation 10.4s, qwen3:14b, 5,850 tokens): The cluster has three Proxmox nodes, all online.
+[  11.0s] pilot-metrics          agree (evaluation 12.0s, qwen3:14b, 8,230 tokens): attached artifact (8.3 KB); fetch command below
+[  14.0s] done
 
 ANSWER:
 ...
 
 **How this answer was made**
 
-- Total time (as received by kmctl): 15.0s; first signal after 9.0s
-- Agents: 4 took part (pilot-proxmox, pilot-metrics, pilot-gpu, pilot-storage); 1 stood aside (pilot-gpu)
-- Signals: 2 agree, 1 concern, 1 stand_aside
+- Total time (as received by kmctl): 14.0s; first signal after 8.0s
+- Crew time (thread start to answer, as the crew published): 31.0s
+- Subcommittee: 3 convened (pilot-metrics (node metrics), pilot-proxmox (proxmox inventory), pilot-storage)
+- Signals: 2 agree, 1 failure, 1 stand_aside
+- Tokens: 15,740 in, 2,059 out
+- Models: qwen3:14b, qwen3:8b
+- Tool errors: pilot-storage: zfs_pool_status failed 3 times: connection refused
+- Artifact from pilot-metrics (8.3 KB): `kmctl conversation artifact homelab-pilot crew-homelab-pilot/homelab-pilot/t-42/pilot-metrics/agree-1b2c -n crew-homelab-pilot`
 
 Next: kmctl conversation ask homelab-pilot "<next question>" -n crew-homelab-pilot --conversation-id 6733c361-aa0c-4bde-85c6-e143af23b251
 ```
 
-Times are when kmctl received each event; for `watch` the clock starts when kmctl
-attached, and the summary says so. The summary shows only what the
-discussion stream carries: token counts, tool calls, retries, and the
-coordinator's reasons for convening each agent are not in the stream yet, so they
-are left out rather than estimated.
+The total time is when kmctl received each event; for `watch` the clock starts when
+kmctl attached, and the summary says so. Step durations come from the timestamps
+the crew published when the gateway forwards them (`timeSource` is `published` in
+`-o json`), else from when kmctl received each event (`received`). The summary
+shows only what the stream carries: a gateway older than these fields sends no
+timestamps, tokens, models, subcommittee, or tool errors, and they are left out
+rather than estimated. Retries are not published by the crew, so the summary never
+shows them.
+
+### Short conversation IDs, the conversation list, and artifacts
+
+`kmctl conversation list <crew>` lists the crew's recent conversations, newest
+first, with each one's first question (`-o json|yaml` for scripts). Wherever kmctl
+takes a conversation ID (`--conversation-id` on `ask`, the ID argument of `watch`),
+a unique prefix works, as with git hashes: `--conversation-id 6733c`. An ambiguous
+prefix fails and lists the matches; a prefix that matches nothing says so. Shell
+completion offers the recent conversations with their first questions. A gateway
+that cannot list conversations needs the full ID, and kmctl says so.
+
+`kmctl conversation artifact <crew> <key>` writes an attached artifact to stdout,
+or to a file with `-f`. The coordinator deletes a thread's artifacts soon after the
+thread closes, so fetch them while the crew works on the question or right after
+it answers; after that kmctl reports the artifact as not found.
 
 ### How long kmctl waits
 

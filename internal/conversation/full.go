@@ -93,6 +93,9 @@ func (m liveModel) View() tea.View { return tea.NewView(m.render()) }
 // render is the header and the agent rows.
 func (m liveModel) render() string {
 	lines := []string{m.header()}
+	if sc := m.t.Subcommittee; sc != nil {
+		lines = append(lines, styleDim.Render("subcommittee: "+memberList(sc)))
+	}
 	for _, a := range m.t.Agents() {
 		lines = append(lines, m.row(a))
 	}
@@ -130,6 +133,9 @@ func (m liveModel) row(a *Agent) string {
 	}
 	if d := stepTimes(a); d != "" {
 		parts = append(parts, styleDim.Render(d))
+	}
+	if tokens := tokensText(a.InputTokens + a.OutputTokens); tokens != "" {
+		parts = append(parts, styleDim.Render(tokens))
 	}
 	if text := rowNote(a); text != "" {
 		parts = append(parts, text)
@@ -223,7 +229,7 @@ func runFull(w io.Writer, stream io.Reader, o Options, extra ...tea.ProgramOptio
 // renderClosing renders the answer and the summary as markdown in the given
 // glamour style, followed by the follow-up command.
 func renderClosing(t *Tracker, o Options, style string, width int) string {
-	doc := t.Summarize(o.since()).Markdown()
+	doc := o.summarize(t).Markdown()
 	if t.Answer != "" {
 		doc = strings.TrimRight(t.Answer, "\n") + "\n\n" + doc
 	}
