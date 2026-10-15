@@ -54,37 +54,14 @@ func TestParseSSE_SkipsNonJSON(t *testing.T) {
 	}
 }
 
-func TestRender_Exact(t *testing.T) {
-	cases := map[Event]string{
-		{Type: "connected"}:                    "* connected",
-		{Type: "done"}:                         "* done",
-		{Type: "error", Error: "boom"}:         "ERROR: boom",
-		{Type: "heartbeat"}:                    "",
-		{Type: "synthesis", Content: "hi"}:     "\nANSWER:\nhi",
-		{Type: "thread_found", ThreadID: "t1"}: "* thread t1",
-		{Type: "phase", Agent: "k8s", Status: "mulling", StoodAside: true}:         "  k8s                    mulling (stood aside)",
-		{Type: "finding", Agent: "k8s", Signal: "agree", Content: "first\nsecond"}: "  k8s                    agree: first",
-		{Type: ""}: "",
+func TestParseSSE_DecodesWaitAndStandAsideFields(t *testing.T) {
+	stream := "data: {\"type\":\"phase\",\"agent\":\"k8s\",\"status\":\"waiting\",\"model\":\"qwen3:8b\",\"reason\":\"gpu-busy\"}\n\n"
+	var got Event
+	if err := ParseSSE(strings.NewReader(stream), func(e Event) bool { got = e; return true }); err != nil {
+		t.Fatalf("ParseSSE: %v", err)
 	}
-	for e, want := range cases {
-		if got := Render(e); got != want {
-			t.Errorf("Render(%s) = %q, want %q", e.Type, got, want)
-		}
-	}
-}
-
-func TestRender_Padded(t *testing.T) {
-	phase := Render(Event{Type: "phase", Agent: "k8s", Status: "ready", GPU: "rtx5090"})
-	for _, want := range []string{"k8s", "ready", "[rtx5090]"} {
-		if !strings.Contains(phase, want) {
-			t.Errorf("phase render %q missing %q", phase, want)
-		}
-	}
-	finding := Render(Event{Type: "finding", Agent: "k8s", Signal: "agree", Summary: "3 pods"})
-	for _, want := range []string{"k8s", "agree", "3 pods"} {
-		if !strings.Contains(finding, want) {
-			t.Errorf("finding render %q missing %q", finding, want)
-		}
+	if got.Model != "qwen3:8b" || got.Reason != "gpu-busy" {
+		t.Errorf("model and reason not decoded: %+v", got)
 	}
 }
 

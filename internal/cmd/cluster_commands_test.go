@@ -427,7 +427,21 @@ func TestConversationAsk_AgainstCluster(t *testing.T) {
 	if asked != "how are the pods?" {
 		t.Errorf("gateway got message %q", asked)
 	}
-	assertContains(t, "ask", out, "conversation c-1", "* connected", "demo-workloads", "[gpu-0]", "ANSWER:\nAll pods are Running.", "* done")
+	assertContains(t, "ask", out, "conversation c-1", "] connected", "demo-workloads", "gathering", "ANSWER:\nAll pods are Running.", "] done",
+		"Agents: 1 took part (demo-workloads)", "Accelerators: gpu-0")
+	if !strings.HasSuffix(out, "Next: kmctl conversation ask demo \"<next question>\" -n team-a --conversation-id c-1\n") {
+		t.Errorf("the last line is the follow-up command for the namespace and conversation used:\n%s", out)
+	}
+
+	out, _, err = s.kmctl(t, "conversation", "ask", "demo", "as json", "-o", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertContains(t, "ask -o json", out, `"type":"conversation","conversationId":"c-1","crew":"demo","namespace":"team-a"`, `"type":"result"`, `"answer":"All pods are Running."`)
+
+	if _, _, err = s.kmctl(t, "conversation", "ask", "demo", "hi", "-o", "yaml"); err == nil || !strings.Contains(err.Error(), "unknown output") {
+		t.Errorf("an unknown output mode is an error, got %v", err)
+	}
 
 	out, _, err = s.kmctl(t, "conversation", "ask", "demo", "again", "--quiet")
 	if err != nil || out != "All pods are Running.\n" {
@@ -456,7 +470,7 @@ func TestConversationWatch_AgainstCluster(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertContains(t, "watch", out, "* connected", "ANSWER:", "* done")
+	assertContains(t, "watch", out, "] connected", "ANSWER:", "] done", "--conversation-id c-1")
 	if strings.Contains(out, "conversation c-1") {
 		t.Errorf("watch does not start a turn, so it prints no conversation line:\n%s", out)
 	}

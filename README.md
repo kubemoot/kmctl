@@ -34,7 +34,7 @@ kmctl
   delete (KIND NAME | -f ...)  delete Kubemoot resources (kubemoot.ai CRs only)
   crew                         list | get
   agent                        list | get
-  conversation (conv)          ask | watch        (stream a live discussion)
+  conversation (conv)          ask | watch        (stream a live discussion; -o full|plain|json)
   fitness                      run | list | get | scenarios | download
   prompt                       list | get         (PromptModules)
   model                        list | get | footprint   (providers + live GPU footprint)
@@ -50,6 +50,48 @@ and generated shell completion.
 
 Planned, not yet implemented: `crew status`, `conversation list | get`, and a
 `config` command.
+
+### Conversation output
+
+`kmctl conversation ask` and `kmctl conversation watch` take `-o full|plain|json`:
+
+| Mode | What it shows |
+|------|---------------|
+| `full` (default) | A live view: one row per agent with a spinner while it works, its step, the accelerator it runs on, and how long triage and evaluation took. Each row settles to a colored signal (agree, concern, block, failure, stand aside). The answer is rendered as markdown. |
+| `plain` | One line per event with the time since the turn began, no color or animation, for logs, CI, and screen readers. The answer is raw markdown. |
+| `json` | Newline-delimited JSON: a `conversation` line, one line per event with `elapsedMs` and any step duration, and a final `result` line with `answer`, `summary`, and `next`. Every line carries `schemaVersion` (1). |
+
+`full` falls back to `plain` when stdout is not a terminal, `NO_COLOR` is set, or
+`TERM=dumb`. `-q/--quiet` prints only the answer in any mode.
+
+Every mode ends with a short summary right after the answer's own notes (total
+time and time to the first signal, the agents that took part and those that stood
+aside, signals by kind, accelerators, models, and agents that waited for GPU capacity), then
+the command that asks a follow-up in the same conversation:
+
+```
+[   9.0s] pilot-gpu              stood aside: gpu-busy
+[  11.0s] pilot-proxmox          agree (evaluation 3.0s): The cluster has three Proxmox nodes, all online...
+[  12.0s] pilot-metrics          agree (evaluation 2.0s): attached artifact (8.3 KB); its key is in -o json
+[  15.0s] done
+
+ANSWER:
+...
+
+**How this answer was made**
+
+- Total time (as received by kmctl): 15.0s; first signal after 9.0s
+- Agents: 4 took part (pilot-proxmox, pilot-metrics, pilot-gpu, pilot-storage); 1 stood aside (pilot-gpu)
+- Signals: 2 agree, 1 concern, 1 stand_aside
+
+Next: kmctl conversation ask homelab-pilot "<next question>" -n crew-homelab-pilot --conversation-id 6733c361-aa0c-4bde-85c6-e143af23b251
+```
+
+Times are when kmctl received each event; for `watch` the clock starts when kmctl
+attached, and the summary says so. The summary shows only what the
+discussion stream carries: token counts, tool calls, retries, and the
+coordinator's reasons for convening each agent are not in the stream yet, so they
+are left out rather than estimated.
 
 ## Install
 
