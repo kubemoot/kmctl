@@ -17,10 +17,11 @@ const (
 	ModeFull  Mode = "full"
 	ModePlain Mode = "plain"
 	ModeJSON  Mode = "json"
+	ModeQuiet Mode = "quiet"
 )
 
 // Modes lists the output modes, default first.
-var Modes = []Mode{ModeFull, ModePlain, ModeJSON}
+var Modes = []Mode{ModeFull, ModePlain, ModeJSON, ModeQuiet}
 
 // ModeNames lists the output modes by name, default first.
 func ModeNames() []string {
@@ -44,7 +45,7 @@ func Resolve(requested string, tty bool, getenv func(string) string) (Mode, erro
 		m = ModeFull
 	}
 	switch m {
-	case ModePlain, ModeJSON:
+	case ModePlain, ModeJSON, ModeQuiet:
 		return m, nil
 	case ModeFull:
 		if !tty || getenv("NO_COLOR") != "" || getenv("TERM") == "dumb" {

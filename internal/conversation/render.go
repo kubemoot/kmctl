@@ -10,9 +10,7 @@ import (
 
 // Options says how to show one conversation's discussion stream.
 type Options struct {
-	Mode Mode
-	// Quiet prints only the answer, whatever the mode.
-	Quiet          bool
+	Mode           Mode
 	Crew           string
 	Namespace      string
 	ConversationID string
@@ -56,10 +54,9 @@ type sink interface {
 // Render reads the discussion stream until a terminal event or its end and writes
 // it to w in the mode o asks for.
 func Render(w io.Writer, stream io.Reader, o Options) error {
-	if o.Quiet {
-		return runSink(stream, o, quietSink{w: w})
-	}
 	switch o.Mode {
+	case ModeQuiet:
+		return runSink(stream, o, quietSink{w: w})
 	case ModeJSON:
 		return runSink(stream, o, newJSONSink(w, o))
 	case ModeFull:

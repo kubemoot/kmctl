@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/kubemoot/kmctl/internal/client"
@@ -49,11 +50,11 @@ Output modes (-o):
          markdown
   json   newline-delimited JSON: a conversation line, one line per event, and a
          final result line with the answer and the summary
+  quiet  only the answer (-q is the same as -o quiet)
 
 full is the default and falls back to plain when stdout is not a terminal or
 NO_COLOR is set. Every mode ends with a summary of how the answer was made and,
-as the last line, the command that asks a follow-up in the same conversation.
---quiet prints only the answer.`,
+as the last line, the command that asks a follow-up in the same conversation.`,
 		Example: `  kmctl conversation ask homelab-pilot "what is failing?" -n crew-homelab-pilot
   kmctl conv ask homelab-pilot "summarize gpu usage" --quiet
   kmctl conv ask homelab-pilot "list the nodes" -o json | jq -c 'select(.type == "result")'
@@ -123,7 +124,7 @@ type streamFlags struct {
 
 func (sf *streamFlags) register(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&sf.output, "output", "o", string(conversation.ModeFull), conversation.ModeHelp())
-	cmd.Flags().BoolVarP(&sf.quiet, "quiet", "q", false, "Print only the final answer (in any output mode, including json)")
+	cmd.Flags().BoolVarP(&sf.quiet, "quiet", "q", false, "Print only the final answer (the same as -o quiet)")
 	cmd.Flags().DurationVar(&sf.timeout, "timeout", 5*time.Minute, "Max time to wait for the discussion to complete")
 	_ = cmd.RegisterFlagCompletionFunc("output", func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
 		return conversation.ModeNames(), cobra.ShellCompDirectiveNoFileComp
@@ -133,13 +134,29 @@ func (sf *streamFlags) register(cmd *cobra.Command) {
 // options resolves the output mode for this command's stdout and starts the
 // turn's clock.
 func (sf *streamFlags) options(cmd *cobra.Command, f *client.Factory, crew string) (conversation.Options, error) {
-	mode, err := conversation.Resolve(sf.output, conversation.IsTerminal(cmd.OutOrStdout()), os.Getenv)
+	requested, err := sf.requestedOutput(cmd)
+	if err != nil {
+		return conversation.Options{}, err
+	}
+	mode, err := conversation.Resolve(requested, conversation.IsTerminal(cmd.OutOrStdout()), os.Getenv)
 	if err != nil {
 		return conversation.Options{}, err
 	}
 	return conversation.Options{
-		Mode: mode, Quiet: sf.quiet, Crew: crew, Namespace: f.Namespace(), Start: time.Now(),
+		Mode: mode, Crew: crew, Namespace: f.Namespace(), Start: time.Now(),
 	}, nil
+}
+
+// requestedOutput is the output mode asked for: -q means -o quiet, and -q with
+// a different -o is an error rather than a silent choice.
+func (sf *streamFlags) requestedOutput(cmd *cobra.Command) (string, error) {
+	if !sf.quiet {
+		return sf.output, nil
+	}
+	if cmd.Flags().Changed("output") && !strings.EqualFold(strings.TrimSpace(sf.output), string(conversation.ModeQuiet)) {
+		return "", fmt.Errorf("-q is the same as -o quiet and cannot be combined with -o %s", sf.output)
+	}
+	return string(conversation.ModeQuiet), nil
 }
 
 // followStream opens the conversation's discussion stream and renders it.
