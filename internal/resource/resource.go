@@ -100,8 +100,10 @@ var (
 			{"TYPE", "spec.type"},
 			{"ENDPOINT", "spec.endpoint"},
 			{"READY", fieldStatusReady},
+			{"CALIBRATION", "status.calibration.phase"},
 			{"AGE", fieldMetadataCreationTimestamp},
 		},
+		Details: RenderCalibration,
 	}
 	Model = Kind{
 		Plural:   "models",
