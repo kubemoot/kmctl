@@ -140,8 +140,8 @@ func scenarioRow(m map[string]any) suiteRow {
 		failed:     orZero(intField(m, "failed")),
 		errs:       orZero(intField(m, "errored")),
 	}
-	if ms, ok := m["meanDurationMs"].(int64); ok && ms > 0 {
-		row.meanDuration = (time.Duration(ms) * time.Millisecond).Round(time.Second).String()
+	if ms, ok := positiveInt(m, "meanDurationMs"); ok {
+		row.meanDuration = formatMillis(ms, time.Second)
 	}
 	return row
 }
@@ -153,21 +153,6 @@ func renderSuiteRows(w io.Writer, rows []suiteRow) error {
 			orNone(r.errs), orNone(r.meanDuration), orNone(r.score), r.reason})
 	}
 	return writeTable(w, []string{"SCENARIO", "ITERATIONS", "PASSED", "FAILED", "ERRORED", "MEAN DURATION", "SCORE", "REASON"}, cells)
-}
-
-// stringField reads a string field, "" when absent or not a string.
-func stringField(m map[string]any, key string) string {
-	s, _ := m[key].(string)
-	return s
-}
-
-// intField reads an integer field as text, "" when absent. The dynamic client
-// decodes JSON integers as int64.
-func intField(m map[string]any, key string) string {
-	if v, ok := m[key].(int64); ok {
-		return fmt.Sprintf("%d", v)
-	}
-	return ""
 }
 
 // orZero renders an absent count or score as 0, so a field the operator left out

@@ -2,6 +2,7 @@ package resource
 
 import (
 	"bytes"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -46,35 +47,78 @@ func TestRenderCalibration(t *testing.T) {
 }
 
 func TestRenderCalibrationWithoutResults(t *testing.T) {
-	var b bytes.Buffer
-	if err := RenderCalibration(&b, map[string]any{"status": map[string]any{}}); err != nil || b.Len() != 0 {
-		t.Errorf("an uncalibrated provider printed %q, err %v", b.String(), err)
+	cases := []struct {
+		name string
+		obj  map[string]any
+		want string
+	}{
+		{"not calibrated", map[string]any{"status": map[string]any{}}, ""},
+		{"no models yet", map[string]any{"status": map[string]any{"calibration": map[string]any{"phase": "Calibrating"}}},
+			"Calibration: Calibrating"},
+		{"no phase", map[string]any{"status": map[string]any{"calibration": map[string]any{}}}, "Calibration: " + none},
+		{"unreadable", map[string]any{"status": map[string]any{"calibration": "garbled"}}, ""},
 	}
-	starting := map[string]any{"status": map[string]any{"calibration": map[string]any{"phase": "Calibrating"}}}
-	if err := RenderCalibration(&b, starting); err != nil || strings.TrimSpace(b.String()) != "Calibration: Calibrating" {
-		t.Errorf("a calibration with no models printed %q, err %v", b.String(), err)
-	}
-	b.Reset()
-	empty := map[string]any{"status": map[string]any{"calibration": map[string]any{}}}
-	if err := RenderCalibration(&b, empty); err != nil || !strings.Contains(b.String(), "Calibration: "+none) {
-		t.Errorf("a calibration with no phase printed %q, err %v", b.String(), err)
+	for _, c := range cases {
+		var b bytes.Buffer
+		if err := RenderCalibration(&b, c.obj); err != nil || strings.TrimSpace(b.String()) != c.want {
+			t.Errorf("%s: printed %q, err %v", c.name, b.String(), err)
+		}
 	}
 }
 
-func TestCalibrationRowReasons(t *testing.T) {
-	noReason := calibrationRow(map[string]any{"model": "m", "fits": false})
-	if noReason[len(noReason)-1] != "does not fit" {
-		t.Errorf("a model that does not fit and has no reason: %v", noReason)
+// Every row keeps its column count, and unexpected values read as <none>, never a
+// measured "no" or a wrong number.
+func TestCalibrationRowUnexpectedInputs(t *testing.T) {
+	cases := []struct {
+		name string
+		m    map[string]any
+		want []string
+	}{
+		{"fits missing", map[string]any{"model": "m", "loadMs": int64(3000)},
+			[]string{"m", none, "3s", none, none, none, none, ""}},
+		{"fits not a bool", map[string]any{"model": "m", "fits": "yes"},
+			[]string{"m", none, none, none, none, none, none, ""}},
+		{"plain int and float64 numbers", map[string]any{"model": "m", "fits": true, "loadMs": 2500,
+			"generateTokensPerSecond": float64(50), "residentMiB": int64(800)},
+			[]string{"m", "yes", "2.5s", "50 tok/s", none, none, "800 MiB", ""}},
+		{"zero, negative, and wrong-typed numbers", map[string]any{"model": "m", "fits": true, "loadMs": "3000",
+			"generateTokensPerSecond": int64(0), "promptTokensPerSecond": int64(-4)},
+			[]string{"m", "yes", none, none, none, none, none, ""}},
+		{"parallel requests without their speed", map[string]any{"model": "m", "fits": true,
+			"parallelRequests": int64(2)}, []string{"m", "yes", none, none, none, none, none, ""}},
+		{"parallel speed without the request count", map[string]any{"model": "m", "fits": true,
+			"parallelGenerateTokensPerSecond": int64(200)}, []string{"m", "yes", none, none, none, none, none, ""}},
+		{"a very short load", map[string]any{"model": "m", "fits": true, "loadMs": int64(20)},
+			[]string{"m", "yes", "100ms", none, none, none, none, ""}},
+		{"does not fit, measured memory kept", map[string]any{"model": "m", "fits": false, "residentMiB": int64(27771)},
+			[]string{"m", "no", none, none, none, none, "27771 MiB", "does not fit"}},
+		{"fits, with a reason", map[string]any{"model": "m", "fits": true, "reason": "parallel batch failed"},
+			[]string{"m", "yes", none, none, none, none, none, "parallel batch failed"}},
 	}
-	partly := calibrationRow(map[string]any{"model": "m", "fits": true, "reason": "parallel batch failed"})
-	if partly[len(partly)-1] != "parallel batch failed" {
-		t.Errorf("a model that fits keeps its reason: %v", partly)
+	for _, c := range cases {
+		if got := calibrationRow(c.m); strings.Join(got, "|") != strings.Join(c.want, "|") {
+			t.Errorf("%s:\n got %v\nwant %v", c.name, got, c.want)
+		}
 	}
+}
+
+// A writer that accepts the summary but fails on the table.
+type failAfter struct{ left int }
+
+func (f *failAfter) Write(p []byte) (int, error) {
+	if f.left <= 0 {
+		return 0, errors.New("closed")
+	}
+	f.left--
+	return len(p), nil
 }
 
 func TestRenderCalibrationWriteError(t *testing.T) {
 	if err := RenderCalibration(failingWriter{}, calibratedProvider()); err == nil {
-		t.Error("a write error must be returned")
+		t.Error("a write error on the summary must be returned")
+	}
+	if err := RenderCalibration(&failAfter{left: 2}, calibratedProvider()); err == nil {
+		t.Error("a write error on the table must be returned")
 	}
 }
 
