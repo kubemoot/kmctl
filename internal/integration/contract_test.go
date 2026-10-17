@@ -116,6 +116,22 @@ func TestContract_SuiteResults(t *testing.T) {
 	}
 }
 
+// TestContract_Calibration asserts every ModelProvider status field `kmctl model get`
+// reads for its calibration section exists in the CRD schema.
+func TestContract_Calibration(t *testing.T) {
+	dir := crdDir(t)
+	crd := loadCRD(t, dir, "kubemoot.ai_modelproviders.yaml")
+	schema := versionSchema(crd, resource.ModelProvider.GVR().Version)
+	if schema == nil {
+		t.Fatal("modelprovider: no openAPI schema for version")
+	}
+	for _, path := range resource.CalibrationPaths {
+		if !schemaHasPath(schema, strings.Split(path, ".")) {
+			t.Errorf("modelprovider: calibration path %q not found in CRD schema - drift?", path)
+		}
+	}
+}
+
 func servesVersion(crd apiext.CustomResourceDefinition, version string) bool {
 	for _, v := range crd.Spec.Versions {
 		if v.Name == version && v.Served {

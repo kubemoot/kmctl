@@ -38,7 +38,7 @@ kmctl
                                (stream a live discussion; -o full|plain|json|quiet)
   fitness                      run | list | get | scenarios | download
   prompt                       list | get         (PromptModules)
-  model                        list | get | footprint   (providers + live GPU footprint)
+  model                        list | get | footprint   (providers and their calibration + live GPU footprint)
   version                      print the kmctl version (--short for just the number)
   completion                   generate shell completion (bash, zsh, fish, powershell)
   help                         help about any command
@@ -51,6 +51,21 @@ and generated shell completion.
 
 Planned, not yet implemented: `crew status`, `conversation get`, and a `config`
 command.
+
+### Model providers
+
+`kmctl model list` shows each ModelProvider's calibration phase (`Calibrating`,
+`Calibrated`, `Waiting`, `Failed`). `kmctl model get NAME` adds what calibration
+measured, one row per model:
+
+```
+Calibration: Calibrated, measured 3 of 3 models, engine 0.34.4, completed 2026-10-17T03:37:10Z
+
+MODEL      FITS  LOAD   GENERATE   PROMPT       PARALLEL       MEMORY    REASON
+qwen3:14b  yes   2.5s   86 tok/s   6313 tok/s   2 x 162 tok/s  13839 MiB
+qwen3:32b  no    29.5s  <none>     <none>       <none>         <none>    spills to the CPU: 22265 of 27771 MiB on the accelerator
+qwen3:8b   yes   3.1s   152 tok/s  11748 tok/s  2 x 241 tok/s  9475 MiB
+```
 
 ### Conversation output
 
