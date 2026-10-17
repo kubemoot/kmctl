@@ -76,34 +76,35 @@ func calibrationRows(cal map[string]any) [][]string {
 		}
 		rows = append(rows, calibrationRow(m))
 	}
-	sort.Slice(rows, func(i, j int) bool { return rows[i][0] < rows[j][0] })
+	sort.SliceStable(rows, func(i, j int) bool { return rows[i][0] < rows[j][0] })
 	return rows
 }
 
+// calibrationRow is one model's measurements. A model that does not fit keeps what
+// was measured before it was found not to (load time, memory) and its reason; a
+// row without fits reads <none>, never a measured "no".
 func calibrationRow(m map[string]any) []string {
-	fits, _ := m["fits"].(bool)
-	if !fits {
-		return []string{stringField(m, "model"), "no", loadTime(m), none, none, none, none, notFitting(m)}
+	fits, known := boolField(m, "fits")
+	row := []string{
+		stringField(m, "model"), yesNo(fits, known), loadTime(m),
+		tokensPerSecond(m, "generateTokensPerSecond"), tokensPerSecond(m, "promptTokensPerSecond"),
+		parallelSpeed(m), mebibytes(m, "residentMiB"), stringField(m, "reason"),
 	}
-	return []string{
-		stringField(m, "model"), "yes", loadTime(m), tokensPerSecond(m, "generateTokensPerSecond"),
-		tokensPerSecond(m, "promptTokensPerSecond"), parallelSpeed(m), mebibytes(m, "residentMiB"),
-		stringField(m, "reason"),
+	if known && !fits && row[7] == "" {
+		row[7] = "does not fit"
 	}
+	return row
 }
 
-// notFitting is the reason a model does not fit, or a plain statement when calibration gave none.
-func notFitting(m map[string]any) string {
-	if reason := stringField(m, "reason"); reason != "" {
-		return reason
+func yesNo(value, known bool) string {
+	switch {
+	case !known:
+		return none
+	case value:
+		return "yes"
+	default:
+		return "no"
 	}
-	return "does not fit"
-}
-
-// positiveInt reads an integer field that is above zero.
-func positiveInt(m map[string]any, key string) (int64, bool) {
-	v, ok := m[key].(int64)
-	return v, ok && v > 0
 }
 
 func loadTime(m map[string]any) string {
@@ -111,7 +112,7 @@ func loadTime(m map[string]any) string {
 	if !ok {
 		return none
 	}
-	return (time.Duration(ms) * time.Millisecond).Round(100 * time.Millisecond).String()
+	return formatMillis(ms, 100*time.Millisecond)
 }
 
 func tokensPerSecond(m map[string]any, key string) string {

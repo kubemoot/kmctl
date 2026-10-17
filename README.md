@@ -54,9 +54,8 @@ command.
 
 ### Model providers
 
-`kmctl model list` shows each ModelProvider's calibration phase (`Calibrating`,
-`Calibrated`, `Waiting`, `Failed`). `kmctl model get NAME` adds what calibration
-measured, one row per model:
+`kmctl model list` shows each ModelProvider's calibration phase.
+`kmctl model get NAME` adds what calibration measured, one row per model:
 
 ```
 Calibration: Calibrated, measured 3 of 3 models, engine 0.34.4, completed 2026-10-17T03:37:10Z
