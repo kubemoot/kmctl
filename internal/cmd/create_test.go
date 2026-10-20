@@ -12,50 +12,12 @@ import (
 	"github.com/kubemoot/kmctl/internal/scaffold"
 )
 
-func TestWarnIfNoModels(t *testing.T) {
-	// No servers -> warn, naming the consequence (Unschedulable), cause, and remedy.
-	var buf bytes.Buffer
-	warnIfNoModels(&buf, scaffold.Options{Name: "demo", Members: 2, ModelFamily: "qwen", OutputDir: "."})
-	out := buf.String()
-	if !strings.Contains(out, "no Models were generated") || !strings.Contains(out, "Unschedulable") {
-		t.Fatalf("want a no-Models warning naming Unschedulable, got %q", out)
-	}
-	if !strings.Contains(out, "no model servers") {
-		t.Fatalf("want the no-servers cause named, got %q", out)
-	}
-
-	// Servers + a known family -> Models generated -> no warning.
-	buf.Reset()
-	warnIfNoModels(&buf, scaffold.Options{Name: "demo", Members: 2, ModelFamily: "qwen", Servers: []string{"ollama-gpu"}, OutputDir: "."})
-	if buf.String() != "" {
-		t.Fatalf("expected no warning when Models are generated, got %q", buf.String())
-	}
-
-	// Servers present but no family (the --no-input-without--model-family case) ->
-	// still no Models -> warn, naming the family cause.
-	buf.Reset()
-	warnIfNoModels(&buf, scaffold.Options{Name: "demo", Members: 2, Servers: []string{"ollama-gpu"}, OutputDir: "."})
-	if !strings.Contains(buf.String(), "no model family") {
-		t.Fatalf("want the no-family cause named, got %q", buf.String())
-	}
-
-	// Servers and a family both set, but the family has no built-in sizes -> still
-	// no Models -> warn, naming that specific (default-branch) cause.
-	buf.Reset()
-	warnIfNoModels(&buf, scaffold.Options{Name: "demo", Members: 2, ModelFamily: "no-such-family", Servers: []string{"ollama-gpu"}, OutputDir: "."})
-	if !strings.Contains(buf.String(), "no built-in sizes") {
-		t.Fatalf("want the no-built-in-sizes cause named, got %q", buf.String())
-	}
-}
-
 // fakePrompter records calls and returns canned answers, or err from every prompt.
 type fakePrompter struct {
-	textVal  string
-	intVal   int
-	multiVal []string
-	selVal   string
-	err      error
-	called   bool
+	textVal string
+	intVal  int
+	err     error
+	called  bool
 }
 
 func (f *fakePrompter) Text(string, string) (string, error) {
@@ -63,14 +25,6 @@ func (f *fakePrompter) Text(string, string) (string, error) {
 	return f.textVal, f.err
 }
 func (f *fakePrompter) Int(string, int) (int, error) { f.called = true; return f.intVal, f.err }
-func (f *fakePrompter) MultiSelect(string, []string) ([]string, error) {
-	f.called = true
-	return f.multiVal, f.err
-}
-func (f *fakePrompter) SelectOrOther(string, []string) (string, error) {
-	f.called = true
-	return f.selVal, f.err
-}
 
 func changedSet(names ...string) func(string) bool {
 	set := map[string]bool{}
@@ -83,7 +37,7 @@ func changedSet(names ...string) func(string) bool {
 func TestGather_NoInputKeepsTheMembersDefault(t *testing.T) {
 	opts := scaffold.Options{Name: "demo", Members: 1}
 	fp := &fakePrompter{intVal: 4}
-	if err := gather(&opts, changedSet(), true, []string{"ollama-gpu"}, fp); err != nil {
+	if err := gather(&opts, changedSet(), true, fp); err != nil {
 		t.Fatalf("gather: %v", err)
 	}
 	if fp.called {
@@ -95,10 +49,10 @@ func TestGather_NoInputKeepsTheMembersDefault(t *testing.T) {
 }
 
 func TestGather_FlagsProvided_NoPrompting(t *testing.T) {
-	opts := scaffold.Options{Name: "demo", Members: 4, ModelFamily: "qwen", Servers: []string{"p"}}
+	opts := scaffold.Options{Name: "demo", Members: 4}
 	fp := &fakePrompter{}
-	// All three inputs marked as set via flags -> prompter must not be called.
-	if err := gather(&opts, changedSet("display-name", "members", "servers", "model-family"), false, nil, fp); err != nil {
+	// Both inputs marked as set via flags -> prompter must not be called.
+	if err := gather(&opts, changedSet("display-name", "members"), false, fp); err != nil {
 		t.Fatalf("gather: %v", err)
 	}
 	if fp.called {
@@ -111,11 +65,11 @@ func TestGather_FlagsProvided_NoPrompting(t *testing.T) {
 
 func TestGather_PromptsFillMissing(t *testing.T) {
 	opts := scaffold.Options{Name: "demo"}
-	fp := &fakePrompter{textVal: "  Demo Crew ", intVal: 5, multiVal: []string{"ollama-gpu"}, selVal: "gemma"}
-	if err := gather(&opts, changedSet(), false, []string{"ollama-gpu", "ollama-rig1"}, fp); err != nil {
+	fp := &fakePrompter{textVal: "  Demo Crew ", intVal: 5}
+	if err := gather(&opts, changedSet(), false, fp); err != nil {
 		t.Fatalf("gather: %v", err)
 	}
-	if opts.DisplayName != "Demo Crew" || opts.Members != 5 || opts.ModelFamily != "gemma" || len(opts.Servers) != 1 {
+	if opts.DisplayName != "Demo Crew" || opts.Members != 5 {
 		t.Errorf("prompted values not applied: %+v", opts)
 	}
 }
@@ -130,8 +84,8 @@ func TestCreateCommand_RequiresName(t *testing.T) {
 
 // TestCreateCommand_ScaffoldsAndHints exercises the create RunE success path:
 // scaffold files are written and the apply next-step hint is printed. Kept
-// hermetic by pointing KUBECONFIG at an absent file so server discovery fails
-// closed (nil) and the test never reaches a real cluster.
+// hermetic by pointing KUBECONFIG at an absent file so the catalog check fails
+// closed (no warning) and the test never reaches a real cluster.
 func TestCreateCommand_ScaffoldsAndHints(t *testing.T) {
 	t.Setenv("KUBECONFIG", t.TempDir()+"/absent-kubeconfig")
 	dir := t.TempDir()
@@ -139,7 +93,7 @@ func TestCreateCommand_ScaffoldsAndHints(t *testing.T) {
 	var out, errBuf bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&errBuf)
-	cmd.SetArgs([]string{"demo", "--no-input", "--members", "2", "--model-family", "qwen", "-o", dir})
+	cmd.SetArgs([]string{"demo", "--no-input", "--members", "2", "-o", dir})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -197,42 +151,43 @@ func TestExplicitNamespace(t *testing.T) {
 // Interactive gathering asks only for what no flag set, and stops at a prompt error.
 func TestGather_AsksOnlyForUnsetInputs(t *testing.T) {
 	opts := scaffold.Options{Name: "demo", Members: 2}
-	fp := &fakePrompter{intVal: 4, selVal: "llama"}
-	if err := gather(&opts, changedSet("members", "display-name"), false, nil, fp); err != nil {
+	fp := &fakePrompter{textVal: "Demo", intVal: 4}
+	if err := gather(&opts, changedSet("members"), false, fp); err != nil {
 		t.Fatalf("gather: %v", err)
 	}
-	if opts.Members != 2 || opts.ModelFamily != "llama" || opts.Servers != nil {
-		t.Errorf("want members kept, family asked, servers skipped with none discovered: %+v", opts)
+	if opts.Members != 2 || opts.DisplayName != "Demo" {
+		t.Errorf("want members kept and the display name asked: %+v", opts)
 	}
 	failing := &fakePrompter{err: errors.New("interrupted")}
-	if err := gather(&opts, changedSet(), false, []string{"p"}, failing); err == nil || err.Error() != "interrupted" {
+	if err := gather(&opts, changedSet(), false, failing); err == nil || err.Error() != "interrupted" {
 		t.Errorf("want the prompt error, got %v", err)
 	}
 }
 
-// --servers names the ModelServers the generated Models bind to with serverRef;
-// the removed --providers flag is an unknown flag.
-func TestCreateCommand_ServersFlag(t *testing.T) {
+// The flags that fed Model objects are gone: a crew ships no models and names no
+// model server, so --servers, --model-family, and the older --providers are
+// unknown flags, and no models.yaml is written.
+func TestCreateCommand_NoModelFlags(t *testing.T) {
 	t.Setenv("KUBECONFIG", t.TempDir()+"/absent-kubeconfig")
-	run := func(flag string) (string, error) {
-		dir := t.TempDir()
+	for _, flag := range []string{"--servers", "--model-family", "--providers"} {
 		cmd := newCreateCommand(client.NewFactory())
 		cmd.SetOut(&bytes.Buffer{})
 		cmd.SetErr(&bytes.Buffer{})
-		cmd.SetArgs([]string{"demo", "--no-input", "--model-family", "qwen", flag, "gpu-a", "-o", dir})
-		err := cmd.Execute()
-		return dir, err
+		cmd.SetArgs([]string{"demo", "--no-input", flag, "x", "-o", t.TempDir()})
+		if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "unknown flag: "+flag) {
+			t.Errorf("want %s rejected as an unknown flag, got %v", flag, err)
+		}
 	}
-	dir, err := run("--servers")
-	if err != nil {
-		t.Fatalf("create --servers: %v", err)
+	dir := t.TempDir()
+	cmd := newCreateCommand(client.NewFactory())
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"demo", "--no-input", "-o", dir})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("create: %v", err)
 	}
-	models, err := os.ReadFile(filepath.Join(dir, "demo", "models.yaml"))
-	if err != nil || !strings.Contains(string(models), `serverRef: "gpu-a"`) {
-		t.Errorf("want Models bound with serverRef gpu-a, got %q (%v)", models, err)
-	}
-	if _, err := run("--providers"); err == nil || !strings.Contains(err.Error(), "unknown flag: --providers") {
-		t.Errorf("want --providers rejected as an unknown flag, got %v", err)
+	if _, err := os.Stat(filepath.Join(dir, "demo", "models.yaml")); !os.IsNotExist(err) {
+		t.Errorf("a crew ships no models.yaml: %v", err)
 	}
 }
 
@@ -264,7 +219,7 @@ func TestCreateCommand_ChartHintsHelm(t *testing.T) {
 	var out, errBuf bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&errBuf)
-	cmd.SetArgs([]string{"demo", "--chart", "--no-input", "--members", "1", "--model-family", "qwen", "-o", dir})
+	cmd.SetArgs([]string{"demo", "--chart", "--no-input", "--members", "1", "-o", dir})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -338,7 +293,7 @@ func TestCreateCommand_DisplayNameDefaultsToName(t *testing.T) {
 
 func TestAskDisplayName_PassesThePromptError(t *testing.T) {
 	opts := scaffold.Options{Name: "demo"}
-	if err := askDisplayName(&opts, nil, &fakePrompter{err: errors.New("interrupted")}); err == nil {
+	if err := askDisplayName(&opts, &fakePrompter{err: errors.New("interrupted")}); err == nil {
 		t.Fatal("want the prompt error")
 	}
 	if opts.DisplayName != "" {

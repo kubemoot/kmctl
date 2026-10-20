@@ -27,30 +27,33 @@ metadata:
 spec:
   crewRef: "[[ .Name ]]"
   archetypeRef: consent-3
-  # Per-capability quality bias in [0,1]: lower -> speed-lean, higher -> quality-lean.
-  # Agents never name a model; the scheduler matches Models by capability label.
+  # The crew names no model and no model server. These rules state what it needs,
+  # and the scheduler matches them against the cluster's model catalog, so the crew
+  # installs unchanged on any cluster with a model that can call tools. See the
+  # catalog with: kmctl model list
+  #
+  # qualityBias leans each agent between speed (0) and quality (1) by the
+  # capabilities it declares: the scheduler favors larger models (label
+  # kubemoot.ai/size) for a higher bias. It applies to a rule that states no
+  # preference of its own: mulling below.
   qualityBias:
     reasoning: "0.7"
     tool-calling: "0.3"
     default: "0.4"
   rules:
+    # Mulling, where the specialists do the work: any model that can call tools,
+    # ranked by qualityBias.
     - phase: mulling
       require:
         matchLabels:
           capability/tool-calling: "true"
+    # Triage, the quick check of whether a question is for this agent: any model
+    # that can call tools, favoring the one the cluster measured fastest.
     - phase: triage
       require:
         matchLabels:
           capability/tool-calling: "true"
-[[- if .HasFamily ]]
-  # Preferred model family chosen at scaffold time: [[ .ModelFamily ]].
-  # To pin it, label your Models (e.g. model/family: [[ .ModelFamily ]]) and add
-  # that label under require.matchLabels above.
-[[- end ]]
-[[- if .Servers ]]
-  # Servers selected at scaffold time:[[ range .Servers ]] [[ . ]][[ end ]].
-  # Server allow-listing is a tune-up; by default agents use any ready server.
-[[- end ]]
+      preferFaster: 50
 `
 
 const agentsTemplate = `apiVersion: kubemoot.ai/v1alpha1
@@ -468,50 +471,6 @@ roleRef:
   name: [[ .Name ]]-kubernetes-mcp
 `
 
-const modelsTemplate = `# Model CRs for the crew. The scheduler binds agents to these just-in-time, so a
-# crew needs at least one Model in its namespace to run a discussion. Each Model
-# binds a model name to a ModelServer and is labeled by capability + latencyClass.
-# These are starting defaults for the chosen family; edit model names/VRAM to match.
-[[- if .HasModels ]]
-[[- range .Models ]]
----
-apiVersion: kubemoot.ai/v1alpha1
-kind: Model
-metadata:
-  name: [[ .Name ]]
-  labels:
-    kubemoot.ai/crew: [[ $.Name ]]
-    family: "[[ .Family ]]"
-    params: "[[ .Params ]]"
-    latencyClass: "[[ .LatencyClass ]]"
-    contextWindow: "[[ .ContextWindow ]]"
-    capability/tool-calling: "true"
-    capability/reasoning: "true"
-spec:
-  model: "[[ .Model ]]"
-  serverRef: "[[ .ServerRef ]]"
-  vramMib: [[ .VRAMMiB ]]
-[[- end ]]
-[[- else ]]
-# No Models were generated (no servers selected, or an unrecognized model family).
-# Without Models the crew comes Ready but cannot run a discussion. Add at least one,
-# pointing serverRef at one of your ModelServer CRs (kmctl model list):
-#
-#   apiVersion: kubemoot.ai/v1alpha1
-#   kind: Model
-#   metadata:
-#     name: [[ .Name ]]-default
-#     labels:
-#       capability/tool-calling: "true"
-#       capability/reasoning: "true"
-#       latencyClass: "low"
-#   spec:
-#     model: "qwen3:8b"
-#     serverRef: "<your-modelserver>"
-#     vramMib: 5120
-[[- end ]]
-`
-
 // fitnessScenariosHeader opens the ConfigMap that deploys the crew's fitness scenarios
 // with it, so a live crew carries its tests. CrewForge lists and runs the scenarios from
 // it, by the kubemoot.ai/crew and kubemoot.ai/fitness-kind=scenarios labels. A ConfigMap
@@ -747,12 +706,11 @@ same question: the answer now ends with that line.
 
 - ` + "`templates/crew.yaml`" + `: the Crew and its CrewSchedulingPolicy.
 - ` + "`templates/agents.yaml`" + `: the coordinator and the specialists. Agents declare capabilities,
-  never a model; the policy binds Models to them.
+  never a model.
 - ` + "`templates/promptmodules.yaml`" + `: every prompt, in ADL.
 - ` + "`templates/tools.yaml`" + `: the Kubernetes MCP server, read-only, and the MCP gateway the agents reach it through.
 - ` + "`templates/rbac.yaml`" + `: the read-only Role the tool server runs with. Set ` + mdClusterWide + ` in
   ` + "`values.yaml`" + ` to let it read every namespace.
-- ` + "`templates/models.yaml`" + `: the Models the scheduler binds agents to.
 - ` + "`fitness/fitness.yaml`" + `: the fitness suite, outside ` + "`templates/`" + ` so installing does not start a run.
 - ` + "`templates/fitness-scenarios.yaml`" + `: a ConfigMap built from ` + "`fitness/`" + `, so the deployed crew carries
   its tests; CrewForge runs them from the live crew.
@@ -760,22 +718,27 @@ same question: the answer now ends with that line.
 
 - ` + "`crew.yaml`" + `: the Crew and its CrewSchedulingPolicy.
 - ` + "`agents.yaml`" + `: the coordinator and the specialists. Agents declare capabilities, never a
-  model; the policy binds Models to them.
+  model.
 - ` + "`promptmodules.yaml`" + `: every prompt, in ADL.
 - ` + "`tools.yaml`" + `: the Kubernetes MCP server, read-only, and the MCP gateway the agents reach it through.
 - ` + "`access/rbac.yaml`" + `: the read-only Role the tool server runs with (apply it with kubectl).
 - ` + "`access/fitness-scenarios.yaml`" + `: the fitness scenarios as a ConfigMap, so the deployed crew carries
   its tests (apply it with kubectl).
-- ` + "`models.yaml`" + `: the Models the scheduler binds agents to.
 - ` + "`fitness/fitness.yaml`" + `: the fitness suite.
 [[- end ]]
-[[- if .HasFamily ]]
 
-Model family: ` + "`[[ .ModelFamily ]]`" + `.
-[[- end ]]
-[[- if .Servers ]]
-Model servers:[[ range .Servers ]] ` + "`[[ . ]]`" + `[[ end ]].
-[[- end ]]
+## Where its models come from
+
+The crew ships no models and names no model server. Its CrewSchedulingPolicy, in
+` + "`[[ if .Chart ]]templates/[[ end ]]crew.yaml`" + `, states what it needs: every phase requires a model that can call
+tools; mulling then leans on ` + "`qualityBias`" + ` (larger models for reasoning) and triage favors the
+model measured fastest. The scheduler matches those rules against the cluster's model
+catalog, which the cluster owner keeps, so the same crew runs on any cluster that has at
+least one model that can call tools. See the catalog, and whether it has one:
+
+` + fenceBash + `
+kmctl model list
+` + "```" + `
 
 ## What it can read
 [[ if .Chart ]]

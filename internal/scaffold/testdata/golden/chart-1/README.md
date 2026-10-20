@@ -58,18 +58,27 @@ same question: the answer now ends with that line.
 
 - `templates/crew.yaml`: the Crew and its CrewSchedulingPolicy.
 - `templates/agents.yaml`: the coordinator and the specialists. Agents declare capabilities,
-  never a model; the policy binds Models to them.
+  never a model.
 - `templates/promptmodules.yaml`: every prompt, in ADL.
 - `templates/tools.yaml`: the Kubernetes MCP server, read-only, and the MCP gateway the agents reach it through.
 - `templates/rbac.yaml`: the read-only Role the tool server runs with. Set `access.clusterWide: true` in
   `values.yaml` to let it read every namespace.
-- `templates/models.yaml`: the Models the scheduler binds agents to.
 - `fitness/fitness.yaml`: the fitness suite, outside `templates/` so installing does not start a run.
 - `templates/fitness-scenarios.yaml`: a ConfigMap built from `fitness/`, so the deployed crew carries
   its tests; CrewForge runs them from the live crew.
 
-Model family: `qwen`.
-Model servers: `ollama`.
+## Where its models come from
+
+The crew ships no models and names no model server. Its CrewSchedulingPolicy, in
+`templates/crew.yaml`, states what it needs: every phase requires a model that can call
+tools; mulling then leans on `qualityBias` (larger models for reasoning) and triage favors the
+model measured fastest. The scheduler matches those rules against the cluster's model
+catalog, which the cluster owner keeps, so the same crew runs on any cluster that has at
+least one model that can call tools. See the catalog, and whether it has one:
+
+```bash
+kmctl model list
+```
 
 ## What it can read
 

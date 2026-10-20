@@ -3,7 +3,6 @@ package cmd
 import (
 	"errors"
 	"io"
-	"slices"
 	"strings"
 	"testing"
 
@@ -66,51 +65,13 @@ func TestHuhPrompterInt(t *testing.T) {
 	}
 }
 
-func TestHuhPrompterMultiSelect(t *testing.T) {
-	options := []string{"ollama-gpu", "ollama-cpu", "ollama-big"}
-	got, err := typed("1", "3", "0").MultiSelect("Servers:", options)
-	if err != nil || !slices.Equal(got, []string{"ollama-gpu", "ollama-big"}) {
-		t.Fatalf("toggle 1 and 3: got %v, %v", got, err)
-	}
-	got, err = typed("2", "2", "0").MultiSelect("Servers:", options)
-	if err != nil || len(got) != 0 {
-		t.Fatalf("toggling 2 twice leaves nothing selected: got %v, %v", got, err)
-	}
-	got, err = typed("9", "-1", "0").MultiSelect("Servers:", options)
-	if err != nil || len(got) != 0 {
-		t.Fatalf("out-of-range answers are re-asked, not selected: got %v, %v", got, err)
-	}
-}
-
-func TestHuhPrompterSelectOrOther(t *testing.T) {
-	options := []string{"qwen", "gemma"}
-	cases := []struct {
-		name  string
-		lines []string
-		want  string
-	}{
-		{"offered option", []string{"2"}, "gemma"},
-		{"empty answer takes the first option", []string{""}, "qwen"},
-		{"other asks for a name and trims it", []string{"3", "  llama  "}, "llama"},
-		{"other with no name", []string{"3", ""}, ""},
-		{"skip", []string{"4"}, ""},
-		{"out of range is re-asked", []string{"0", "5", "1"}, "qwen"},
-	}
-	for _, c := range cases {
-		got, err := typed(c.lines...).SelectOrOther("Family:", options)
-		if err != nil || got != c.want {
-			t.Errorf("%s: got %q, %v; want %q", c.name, got, err, c.want)
-		}
-	}
-}
-
 func TestGatherWithHuhPrompter(t *testing.T) {
 	opts := scaffold.Options{Name: "demo", Members: 1}
-	p := typed("Demo Crew", "3", "2", "0", "1")
-	if err := gather(&opts, changedSet(), false, []string{"ollama-gpu", "ollama-cpu"}, p); err != nil {
+	p := typed("Demo Crew", "3")
+	if err := gather(&opts, changedSet(), false, p); err != nil {
 		t.Fatal(err)
 	}
-	if opts.DisplayName != "Demo Crew" || opts.Members != 3 || !slices.Equal(opts.Servers, []string{"ollama-cpu"}) || opts.ModelFamily != scaffold.KnownModelFamilies[0] {
+	if opts.DisplayName != "Demo Crew" || opts.Members != 3 {
 		t.Fatalf("unexpected options: %+v", opts)
 	}
 }
@@ -129,11 +90,5 @@ func TestHuhPrompterFailingTerminal(t *testing.T) {
 	}
 	if got, err := p.Int("How many?", 1); err == nil || got != 0 {
 		t.Errorf("Int: want 0 and an error, got %d, %v", got, err)
-	}
-	if got, err := p.MultiSelect("Servers:", []string{"ollama-gpu"}); err == nil {
-		t.Errorf("MultiSelect: want an error, got %v", got)
-	}
-	if got, err := p.SelectOrOther("Family:", []string{"qwen"}); err == nil || got != "" {
-		t.Errorf("SelectOrOther: want no choice and an error, got %q, %v", got, err)
 	}
 }

@@ -16,7 +16,7 @@ const calibratedServerJSON = `{"apiVersion":"kubemoot.ai/v1alpha1","kind":"Model
 "parallelRequests":2,"parallelGenerateTokensPerSecond":241,"residentMiB":9475},
 {"model":"qwen3:32b","fits":false,"loadMs":29527,"reason":"spills to the CPU"}]}}}`
 
-func TestModelGetPrintsCalibrationFromStatus(t *testing.T) {
+func TestModelServerGetPrintsCalibrationFromStatus(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/apis/kubemoot.ai/v1alpha1/namespaces/team-a/modelservers/gpu-a" {
 			http.NotFound(w, r)
@@ -31,9 +31,9 @@ func TestModelGetPrintsCalibrationFromStatus(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"get", "gpu-a"})
+	cmd.SetArgs([]string{"server", "get", "gpu-a"})
 	if err := cmd.Execute(); err != nil {
-		t.Fatalf("model get: %v\n%s", err, out.String())
+		t.Fatalf("model server get: %v\n%s", err, out.String())
 	}
 	for _, want := range []string{"CALIBRATION", "Calibrated", "Calibration: Calibrated, measured 2 of 2 models, engine 0.34.4",
 		"qwen3:8b", "152 tok/s", "2 x 241 tok/s", "qwen3:32b", "29.5s", "spills to the CPU"} {

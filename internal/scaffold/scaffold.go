@@ -3,7 +3,9 @@
 // namespace. It reads that namespace through one Kubernetes MCP server with a
 // read-only Role, so it answers on any cluster with no configuration, and its
 // fitness suite uses the crew's own pods as ground truth. Agents declare
-// capabilities, never a model; a CrewSchedulingPolicy binds Models by them.
+// capabilities, never a model. The crew ships no Model objects and names no
+// model server: its CrewSchedulingPolicy states what the crew needs, and the
+// scheduler matches it against the cluster's model catalog.
 package scaffold
 
 import (
@@ -15,19 +17,14 @@ import (
 	"text/template"
 )
 
-// KnownModelFamilies are offered in the interactive picker (plus free entry / skip).
-var KnownModelFamilies = []string{"qwen", "gemma", "llama", "mistral"}
-
 // Options is the resolved input to the generator (from flags or prompts).
 type Options struct {
-	Name        string   // technical crew name, a DNS-1123 label: the Kubernetes name of the crew's objects
-	DisplayName string   // the name people read, any one line of text; "" means Name
-	Members     int      // specialists beside the coordinator, 1 to MaxMembers
-	Namespace   string   // bundle only: the namespace the RBAC binds and the prompts name; default crew-<Name>
-	Servers     []string // allowed model servers (recorded in the policy + README)
-	ModelFamily string   // "" means skip / define later
-	OutputDir   string   // directory to write into
-	Chart       bool     // lay the crew out as a Helm chart (Chart.yaml, templates/, fitness/)
+	Name        string // technical crew name, a DNS-1123 label: the Kubernetes name of the crew's objects
+	DisplayName string // the name people read, any one line of text; "" means Name
+	Members     int    // specialists beside the coordinator, 1 to MaxMembers
+	Namespace   string // bundle only: the namespace the RBAC binds and the prompts name; default crew-<Name>
+	OutputDir   string // directory to write into
+	Chart       bool   // lay the crew out as a Helm chart (Chart.yaml, templates/, fitness/)
 }
 
 // Validate checks the options before generation.
@@ -69,51 +66,6 @@ const helmNamespace = "{{ .Release.Namespace }}"
 // namespace with, the release the reference crews run. Bump it here.
 const kubernetesMCPImage = "quay.io/containers/kubernetes_mcp_server:v0.0.63"
 
-// modelSize is a built-in default for a model family. A crew needs Model CRs in
-// its namespace (the scheduler binds agents to them just-in-time); without them a
-// crew comes Ready but cannot run a discussion. These are sane starting defaults
-// to edit, not a claim about any cluster's GPUs.
-type modelSize struct {
-	Model         string
-	Params        string
-	LatencyClass  string
-	ContextWindow string
-	VRAMMiB       int
-}
-
-// modelFamilies maps a family to a small low/medium/high ladder.
-var modelFamilies = map[string][]modelSize{
-	"qwen": {
-		{"qwen3:8b", "8b", "low", "40960", 5120},
-		{"qwen3:14b", "14b", "medium", "40960", 10240},
-		{"qwen3:32b", "32b", "high", "40960", 20480},
-	},
-	"gemma": {
-		{"gemma3:4b", "4b", "low", "8192", 4096},
-		{"gemma3:12b", "12b", "medium", "8192", 9216},
-		{"gemma3:27b", "27b", "high", "8192", 18432},
-	},
-	"llama": {
-		{"llama3.1:8b", "8b", "low", "131072", 5120},
-		{"llama3.3:70b", "70b", "high", "131072", 43008},
-	},
-	"mistral": {
-		{"mistral:7b", "7b", "low", "32768", 4608},
-		{"mistral-small:24b", "24b", "high", "32768", 15360},
-	},
-}
-
-type modelCR struct {
-	Name          string
-	Model         string
-	ServerRef     string
-	Family        string
-	Params        string
-	LatencyClass  string
-	ContextWindow string
-	VRAMMiB       int
-}
-
 type templateData struct {
 	Name               string
 	DisplayName        string // the display name as a YAML scalar, for Chart.yaml
@@ -127,11 +79,6 @@ type templateData struct {
 	TargetNS           string          // the namespace the README installs into
 	Rules              string          // the read-only RBAC rules
 	KubernetesMCPImage string          // the tool server image
-	Servers            []string
-	ModelFamily        string
-	HasFamily          bool
-	Models             []modelCR
-	HasModels          bool
 	Chart              bool
 	Widen              string // how a namespaced crew gets read-only cluster-wide access, for its prompts
 	Fitness            string // the rendered fitness suite, which a bundle's scenarios ConfigMap holds
@@ -145,14 +92,10 @@ func (o Options) data() templateData {
 		CrewDisplayName:    quoted(shown, o.Chart),
 		Title:              o.Name + " crew",
 		Renamed:            shown != o.Name,
-		Servers:            o.Servers,
-		ModelFamily:        o.ModelFamily,
-		HasFamily:          o.ModelFamily != "",
 		Chart:              o.Chart,
 		TargetNS:           o.TargetNamespace(),
 		Rules:              rbacRules,
 		KubernetesMCPImage: kubernetesMCPImage,
-		Models:             o.models(),
 		Agents:             o.agents(),
 	}
 	d.NS = d.TargetNS
@@ -169,46 +112,16 @@ func (o Options) data() templateData {
 		d.Has[a.Key] = true
 	}
 	d.HasReviewer = d.Has[reviewer.Key]
-	d.HasModels = len(d.Models) > 0
 	return d
 }
 
 // agents is the crew's specialists, or none when Members is out of range
-// (Generate validates first; ModelCount does not need them).
+// (Generate validates first).
 func (o Options) agents() []agent {
 	if o.Members < 1 || o.Members > MaxMembers {
 		return nil
 	}
 	return crewAgents(o.Name, o.Members)
-}
-
-// models is a Model per (family size x server), so the scheduler has something to bind.
-func (o Options) models() []modelCR {
-	family := strings.ToLower(o.ModelFamily)
-	var out []modelCR
-	for _, size := range modelFamilies[family] {
-		for _, server := range o.Servers {
-			out = append(out, modelCR{
-				Name:          fmt.Sprintf("%s-%s-%s", family, size.Params, server),
-				Model:         size.Model,
-				ServerRef:     server,
-				Family:        family,
-				Params:        size.Params,
-				LatencyClass:  size.LatencyClass,
-				ContextWindow: size.ContextWindow,
-				VRAMMiB:       size.VRAMMiB,
-			})
-		}
-	}
-	return out
-}
-
-// ModelCount reports how many Model CRs the scaffold will generate for these
-// options (one per family-size x server). Zero means the crew will apply Ready
-// but be Unschedulable - no Models for the scheduler to bind agents to - until
-// Models are added to models.yaml. Callers (kmctl create) should warn on zero.
-func (o Options) ModelCount() int {
-	return len(o.models())
 }
 
 // Generate returns a map of relative filename -> rendered content.
@@ -244,7 +157,6 @@ func layout(chart bool) map[string]string {
 		"crew.yaml":          crewTemplate,
 		"agents.yaml":        agentsTemplate,
 		"promptmodules.yaml": promptModulesTemplate,
-		"models.yaml":        modelsTemplate,
 		"tools.yaml":         toolsTemplate,
 	}
 	out := map[string]string{
