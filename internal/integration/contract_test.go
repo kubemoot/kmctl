@@ -132,6 +132,42 @@ func TestContract_Calibration(t *testing.T) {
 	}
 }
 
+// TestContract_Catalog asserts every ModelServer status field `kmctl model list`
+// and the `kmctl create` catalog check read exists in the CRD schema.
+func TestContract_Catalog(t *testing.T) {
+	dir := crdDir(t)
+	crd := loadCRD(t, dir, "kubemoot.ai_modelservers.yaml")
+	schema := versionSchema(crd, resource.ModelServer.GVR().Version)
+	if schema == nil {
+		t.Fatal("modelserver: no openAPI schema for version")
+	}
+	for _, path := range resource.CatalogPaths {
+		if !schemaHasPath(schema, strings.Split(path, ".")) {
+			t.Errorf("modelserver: catalog path %q not found in CRD schema - drift?", path)
+		}
+	}
+}
+
+// TestContract_ModelAdd asserts the Model fields `kmctl model add` writes exist,
+// and that its check of --parameters is the CRD's own pattern.
+func TestContract_ModelAdd(t *testing.T) {
+	dir := crdDir(t)
+	crd := loadCRD(t, dir, "kubemoot.ai_models.yaml")
+	schema := versionSchema(crd, resource.Model.GVR().Version)
+	if schema == nil {
+		t.Fatal("model: no openAPI schema for version")
+	}
+	for _, path := range resource.ModelAddPaths {
+		if !schemaHasPath(schema, strings.Split(path, ".")) {
+			t.Errorf("model: path %q not found in CRD schema - drift?", path)
+		}
+	}
+	params := schema.Properties["spec"].Properties["parameters"]
+	if params.Pattern != resource.ParameterCountPattern {
+		t.Errorf("model: spec.parameters pattern is %q in the CRD, kmctl checks %q", params.Pattern, resource.ParameterCountPattern)
+	}
+}
+
 func servesVersion(crd apiext.CustomResourceDefinition, version string) bool {
 	for _, v := range crd.Spec.Versions {
 		if v.Name == version && v.Served {

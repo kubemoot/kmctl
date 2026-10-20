@@ -38,5 +38,13 @@ func TestModelCommand_Subcommands(t *testing.T) {
 	if cmd.Use != "model" {
 		t.Errorf("Use = %q, want %q", cmd.Use, "model")
 	}
-	assertSubcommands(t, cmd, "list", "get", "footprint")
+	assertSubcommands(t, cmd, "list", "add", "server", "footprint")
+	for _, c := range cmd.Commands() {
+		if c.Name() == "get" {
+			t.Error("model get is now model server get")
+		}
+		if c.Name() == "server" {
+			assertSubcommands(t, c, "list", "get")
+		}
+	}
 }

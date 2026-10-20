@@ -177,17 +177,17 @@ type scaffoldCase struct {
 }
 
 var (
-	bundleSteps = []string{"apply", "conversation ask", "crew get", "fitness get", "fitness run"}
-	chartSteps  = []string{"conversation ask", "crew get", "fitness get", "fitness run"}
+	bundleSteps = []string{"apply", "conversation ask", "crew get", "fitness get", "fitness run", "model list"}
+	chartSteps  = []string{"conversation ask", "crew get", "fitness get", "fitness run", "model list"}
 )
 
 // scaffoldCases cover every branch of the templates that can name a command:
-// bundle and chart, one and five specialists, no Models, a custom namespace.
+// bundle and chart, one and five specialists, a custom namespace.
 var scaffoldCases = map[string]scaffoldCase{
-	"bundle-1":    {scaffold.Options{Name: "hello", Members: 1, ModelFamily: "qwen", Servers: []string{"ollama"}}, bundleSteps},
-	"bundle-5-ns": {scaffold.Options{Name: "hello", Members: 5, ModelFamily: "qwen", Servers: []string{"ollama"}, Namespace: "team-a"}, bundleSteps},
+	"bundle-1":    {scaffold.Options{Name: "hello", Members: 1}, bundleSteps},
+	"bundle-5-ns": {scaffold.Options{Name: "hello", Members: 5, Namespace: "team-a"}, bundleSteps},
 	"bundle-bare": {scaffold.Options{Name: "hello", Members: 1}, bundleSteps},
-	"chart-1":     {scaffold.Options{Name: "hello", Members: 1, ModelFamily: "qwen", Servers: []string{"ollama"}, Chart: true}, chartSteps},
+	"chart-1":     {scaffold.Options{Name: "hello", Members: 1, Chart: true}, chartSteps},
 	"chart-5":     {scaffold.Options{Name: "hello", Members: 5, Chart: true}, chartSteps},
 }
 

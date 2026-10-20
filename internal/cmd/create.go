@@ -18,16 +18,12 @@ import (
 type prompter interface {
 	Text(label, def string) (string, error)
 	Int(label string, def int) (int, error)
-	MultiSelect(label string, options []string) ([]string, error)
-	SelectOrOther(label string, options []string) (string, error)
 }
 
 func newCreateCommand(f *client.Factory) *cobra.Command {
 	var (
 		members     int
 		displayName string
-		servers     []string
-		modelFamily string
 		noInput     bool
 		outputDir   string
 		chart       bool
@@ -38,12 +34,18 @@ func newCreateCommand(f *client.Factory) *cobra.Command {
 		Long: `Create scaffolds the starter crew (the helm-create analog): a read-only guide
 to its own Kubernetes namespace that works on any cluster with no configuration.
 It has a coordinator, one to five specialists, one Kubernetes MCP server in
-read-only mode with a read-only Role, ADL prompt modules, Models for the chosen
-family, and a fitness suite that uses the crew's own pods as ground truth.
+read-only mode with a read-only Role, ADL prompt modules, a scheduling policy, and
+a fitness suite that uses the crew's own pods as ground truth.
 
 Specialists, in the order --members adds them:
 ` + specialistHelp() + `
-Agents declare capabilities, never a model; the scheduling policy binds Models.
+The crew ships no models and names no model server. Agents declare capabilities,
+and the CrewSchedulingPolicy states what the crew needs: every phase requires a
+model that can call tools, mulling ranks models by qualityBias, and triage favors
+the model measured fastest. The scheduler matches it against the cluster's model
+catalog, so the crew installs unchanged on any cluster with a model that can call
+tools. Create reads the current cluster's catalog and warns when it has none
+(kmctl model list shows it).
 
 NAME is the crew's technical name: lowercase letters, digits and hyphens, at
 most ` + strconv.Itoa(scaffold.MaxNameLength) + ` characters; it becomes the Kubernetes name of the crew's objects.
@@ -55,30 +57,22 @@ Inputs not given as flags are prompted for interactively. With --no-input nothin
 is prompted, and --members defaults to 1. A bundle (no --chart) is applied to the
 namespace given by -n, or crew-NAME.`,
 		Example: `  kmctl create demo
-  kmctl create demo --chart --members 5 --model-family qwen --no-input
+  kmctl create demo --chart --members 5 --no-input
   kmctl create homelab-health-guide --display-name "Homelab Health Guide"
   kmctl create demo -o ./crews
-  kmctl create demo --members 2 --model-family qwen --no-input -n team-a`,
+  kmctl create demo --members 2 --no-input -n team-a`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts := scaffold.Options{
 				Name:        args[0],
 				DisplayName: displayName,
 				Members:     members,
-				Servers:     servers,
-				ModelFamily: modelFamily,
 				OutputDir:   outputDir,
 				Chart:       chart,
 				Namespace:   explicitNamespace(f),
 			}
-			discovered := discoverServers(cmd.Context(), f)
-			if err := gather(&opts, cmd.Flags().Changed, noInput, discovered, &huhPrompter{}); err != nil {
+			if err := gather(&opts, cmd.Flags().Changed, noInput, &huhPrompter{}); err != nil {
 				return err
-			}
-			// Default to all discovered servers so the scaffold can generate Models
-			// (a crew needs Models to run); the generated models.yaml is editable.
-			if len(opts.Servers) == 0 {
-				opts.Servers = discovered
 			}
 			written, err := scaffold.Write(opts)
 			if err != nil {
@@ -96,14 +90,12 @@ namespace given by -n, or crew-NAME.`,
 			if _, err := fmt.Fprintf(out, "\nNext: %s\n", nextStep(opts)); err != nil {
 				return err
 			}
-			warnIfNoModels(cmd.ErrOrStderr(), opts)
+			warnAboutCatalog(cmd.Context(), f, cmd.ErrOrStderr())
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&displayName, "display-name", "", "The name people read, any one line of text (default NAME; prompted if unset)")
 	cmd.Flags().IntVar(&members, "members", 1, fmt.Sprintf("Specialists beside the coordinator, 1 to %d (prompted if unset)", scaffold.MaxMembers))
-	cmd.Flags().StringSliceVar(&servers, "servers", nil, "Model servers the crew may use (prompted if unset)")
-	cmd.Flags().StringVar(&modelFamily, "model-family", "", "Preferred model family, e.g. qwen (prompted if unset)")
 	cmd.Flags().BoolVar(&noInput, "no-input", false, "Never prompt; unset inputs take their defaults")
 	cmd.Flags().StringVarP(&outputDir, "output", "o", ".", "Directory to write the scaffold into")
 	cmd.Flags().BoolVar(&chart, "chart", false, "Lay the crew out as a Helm chart (Chart.yaml, templates/, fitness/)")
@@ -147,31 +139,29 @@ func specialistHelp() string {
 }
 
 // gather fills any input not provided as a flag, prompting unless noInput.
-func gather(opts *scaffold.Options, changed func(string) bool, noInput bool, discovered []string, p prompter) error {
+func gather(opts *scaffold.Options, changed func(string) bool, noInput bool, p prompter) error {
 	if noInput {
 		return nil
 	}
 	steps := []struct {
 		flag string
-		ask  func(*scaffold.Options, []string, prompter) error
+		ask  func(*scaffold.Options, prompter) error
 	}{
 		{"display-name", askDisplayName},
 		{"members", askMembers},
-		{"servers", askServers},
-		{"model-family", askFamily},
 	}
 	for _, s := range steps {
 		if changed(s.flag) {
 			continue
 		}
-		if err := s.ask(opts, discovered, p); err != nil {
+		if err := s.ask(opts, p); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func askDisplayName(opts *scaffold.Options, _ []string, p prompter) error {
+func askDisplayName(opts *scaffold.Options, p prompter) error {
 	name, err := p.Text("Display name, the name people read (any text):", opts.Name)
 	if err == nil {
 		opts.DisplayName = strings.TrimSpace(name)
@@ -179,7 +169,7 @@ func askDisplayName(opts *scaffold.Options, _ []string, p prompter) error {
 	return err
 }
 
-func askMembers(opts *scaffold.Options, _ []string, p prompter) error {
+func askMembers(opts *scaffold.Options, p prompter) error {
 	n, err := p.Int(fmt.Sprintf("How many specialists beside the coordinator (1-%d)?", scaffold.MaxMembers), 1)
 	if err == nil {
 		opts.Members = n
@@ -187,63 +177,17 @@ func askMembers(opts *scaffold.Options, _ []string, p prompter) error {
 	return err
 }
 
-// askServers offers the discovered servers; with none discovered there is nothing to pick.
-func askServers(opts *scaffold.Options, discovered []string, p prompter) error {
-	if len(discovered) == 0 {
-		return nil
-	}
-	label := fmt.Sprintf("%d model servers discovered - select those this crew may use:", len(discovered))
-	sel, err := p.MultiSelect(label, discovered)
-	if err == nil {
-		opts.Servers = sel
-	}
-	return err
-}
-
-func askFamily(opts *scaffold.Options, _ []string, p prompter) error {
-	fam, err := p.SelectOrOther("Which LLM model family to start with?", scaffold.KnownModelFamilies)
-	if err == nil {
-		opts.ModelFamily = fam
-	}
-	return err
-}
-
-// warnIfNoModels prints a warning when the scaffold generated no Model CRs, so the
-// empty (commented-only) models.yaml is never silent: such a crew applies Ready but
-// is Unschedulable until Models are added. Names the cause + the remedy.
-func warnIfNoModels(w io.Writer, opts scaffold.Options) {
-	if opts.ModelCount() > 0 {
-		return
-	}
-	var cause string
-	switch {
-	case len(opts.Servers) == 0:
-		cause = "no model servers were discovered or selected"
-	case opts.ModelFamily == "":
-		cause = "no model family was set (--model-family)"
-	default:
-		cause = fmt.Sprintf("model family %q has no built-in sizes", opts.ModelFamily)
-	}
-	// Best-effort warning to stderr; a write failure here is not worth failing on.
-	_, _ = fmt.Fprintf(w,
-		"\nwarning: no Models were generated (%s); models.yaml has only commented placeholders.\n"+
-			"The crew will apply Ready but be Unschedulable until you add Models - run `kmctl model list`\n"+
-			"to see available servers, then add Model CRs to %s/%s/models.yaml.\n",
-		cause, opts.OutputDir, opts.Name)
-}
-
-func discoverServers(ctx context.Context, f *client.Factory) []string {
+// warnAboutCatalog warns when the current cluster's model catalog has no model
+// that can call tools, which the scaffolded crew requires. Scaffolding needs no
+// cluster, so a cluster that cannot be read gets no warning.
+func warnAboutCatalog(ctx context.Context, f *client.Factory, w io.Writer) {
 	dc, err := f.Dynamic()
 	if err != nil {
-		return nil
+		return
 	}
-	list, err := resource.List(ctx, dc, resource.ModelServer, "", true)
+	cat, err := resource.ReadCatalog(ctx, dc, "")
 	if err != nil {
-		return nil
+		return
 	}
-	names := make([]string, 0, len(list.Items))
-	for i := range list.Items {
-		names = append(names, list.Items[i].GetName())
-	}
-	return names
+	warnIfNoToolCalling(w, cat, "")
 }

@@ -36,7 +36,7 @@ func generated(t *testing.T, o Options) map[string][]unstructured.Unstructured {
 }
 
 func bundle(members int) Options {
-	return Options{Name: "demo", Members: members, ModelFamily: "qwen", Servers: []string{"ollama-gpu"}}
+	return Options{Name: "demo", Members: members}
 }
 
 func all(p map[string][]unstructured.Unstructured) []unstructured.Unstructured {
@@ -95,7 +95,7 @@ func TestGenerate_EverySizeIsAWholeCrew(t *testing.T) {
 				t.Errorf("agents = %v, want %v", got, order[:n+1])
 			}
 			counts := map[string]int{"Crew": 1, "CrewSchedulingPolicy": 1, "MCPServer": 1, "MCPGateway": 1, "CrewFitnessSuite": 1,
-				"ServiceAccount": 1, "Role": 1, "RoleBinding": 1, "Model": 3, "PromptModule": 5 + n}
+				"ServiceAccount": 1, "Role": 1, "RoleBinding": 1, "Model": 0, "ModelServer": 0, "PromptModule": 5 + n}
 			for kind, want := range counts {
 				if got := len(ofKind(p, kind)); got != want {
 					t.Errorf("%s count = %d, want %d", kind, got, want)
@@ -166,9 +166,12 @@ func envValue(a *unstructured.Unstructured, name string) string {
 	return ""
 }
 
+// modelFamilies are common model families; no generated prompt names one.
+var modelFamilies = []string{"qwen", "gemma", "llama", "mistral"}
+
 // Agents declare capabilities and never name a model or a family, in the spec
-// or in a prompt; the scheduler binds Models.
-func TestGenerate_NoModelNamedOutsideModels(t *testing.T) {
+// or in a prompt; the scheduler picks models from the cluster's catalog.
+func TestGenerate_NoModelNamed(t *testing.T) {
 	p := generated(t, bundle(MaxMembers))
 	for _, a := range ofKind(p, "Agent") {
 		if len(strs(&a, "spec", "capabilities")) == 0 {
@@ -179,7 +182,7 @@ func TestGenerate_NoModelNamedOutsideModels(t *testing.T) {
 		}
 	}
 	for _, m := range ofKind(p, "PromptModule") {
-		for _, family := range KnownModelFamilies {
+		for _, family := range modelFamilies {
 			if strings.Contains(strings.ToLower(str(&m, "spec", "content")), family) {
 				t.Errorf("PromptModule %q names the model family %q", m.GetName(), family)
 			}
@@ -393,24 +396,6 @@ func TestGenerate_NamespaceByForm(t *testing.T) {
 	}
 }
 
-func TestModelCount(t *testing.T) {
-	cases := []struct {
-		o    Options
-		want int
-	}{
-		{Options{ModelFamily: "qwen", Servers: []string{"a", "b"}}, 6},
-		{Options{ModelFamily: "qwen"}, 0},
-		{Options{Servers: []string{"a"}}, 0},
-		{Options{ModelFamily: "nope", Servers: []string{"a"}}, 0},
-		{Options{ModelFamily: "Gemma", Servers: []string{"a"}}, 3},
-	}
-	for _, c := range cases {
-		if got := c.o.ModelCount(); got != c.want {
-			t.Errorf("%+v: ModelCount = %d, want %d", c.o, got, c.want)
-		}
-	}
-}
-
 func flatAndChart(t *testing.T, members int) (map[string]string, map[string]string) {
 	t.Helper()
 	o := bundle(members)
@@ -583,7 +568,7 @@ func bundleData() templateData { return bundle(1).data() }
 // prompts and the RBAC differ: Helm supplies both.
 func TestGenerate_ChartLayoutKeepsTheManifests(t *testing.T) {
 	flat, chart := flatAndChart(t, MaxMembers)
-	for _, name := range []string{"crew.yaml", "agents.yaml", "models.yaml", "tools.yaml"} {
+	for _, name := range []string{"crew.yaml", "agents.yaml", "tools.yaml"} {
 		if chart["templates/"+name] != flat[name] {
 			t.Errorf("templates/%s differs from the bundle's %s", name, name)
 		}
@@ -670,8 +655,11 @@ func TestWrite_ChartCreatesItsFolders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Write: %v", err)
 	}
-	if len(written) != 11 {
-		t.Errorf("want 11 files, got %d: %v", len(written), written)
+	if len(written) != 10 {
+		t.Errorf("want 10 files, got %d: %v", len(written), written)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "demo", "templates", "models.yaml")); !os.IsNotExist(err) {
+		t.Errorf("a crew ships no models.yaml: %v", err)
 	}
 	for _, rel := range []string{"Chart.yaml", "templates/agents.yaml", "templates/rbac.yaml", "templates/fitness-scenarios.yaml", "fitness/fitness.yaml"} {
 		if _, err := os.Stat(filepath.Join(dir, "demo", filepath.FromSlash(rel))); err != nil {
@@ -729,4 +717,75 @@ func scenariosConfigMap(t *testing.T, text, crew string) configMap {
 		t.Errorf("ConfigMap %s labels %v: want <crew>-fitness, kubemoot.ai/crew, and kubemoot.ai/fitness-kind=scenarios", objs[0].GetName(), cm.labels)
 	}
 	return cm
+}
+
+// The policy states needs only: both phases require a model that can call tools;
+// mulling ranks by qualityBias (no preference of its own) and triage favors the
+// faster model. It names no model, no model server, and no latencyClass, so the
+// crew installs on any cluster whose catalog has a tool-calling model.
+func TestGenerate_PolicyStatesNeedsOnly(t *testing.T) {
+	for _, chart := range []bool{false, true} {
+		o := bundle(2)
+		o.Chart = chart
+		files, err := Generate(o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for name, content := range files {
+			for _, banned := range []string{"latencyClass", "serverRef", "providerRef", "kind: Model\n", "kind: ModelServer"} {
+				if strings.Contains(content, banned) {
+					t.Errorf("chart=%v: %s holds %q", chart, name, banned)
+				}
+			}
+		}
+		policies := ofKind(generated(t, o), "CrewSchedulingPolicy")
+		if len(policies) != 1 {
+			t.Fatalf("chart=%v: want one CrewSchedulingPolicy, got %d", chart, len(policies))
+		}
+		assertPolicyRules(t, &policies[0])
+	}
+}
+
+// rulesByPhase is a policy's rules keyed by phase.
+func rulesByPhase(policy *unstructured.Unstructured) map[string]map[string]any {
+	rules, _, _ := unstructured.NestedSlice(policy.Object, "spec", "rules")
+	byPhase := map[string]map[string]any{}
+	for _, r := range rules {
+		rule := r.(map[string]any)
+		byPhase[rule["phase"].(string)] = rule
+	}
+	return byPhase
+}
+
+func assertPolicyRules(t *testing.T, policy *unstructured.Unstructured) {
+	t.Helper()
+	if bias, _, _ := unstructured.NestedStringMap(policy.Object, "spec", "qualityBias"); bias["default"] == "" {
+		t.Error("the policy needs a qualityBias with a default")
+	}
+	byPhase := rulesByPhase(policy)
+	if len(byPhase) != 2 || byPhase["mulling"] == nil || byPhase["triage"] == nil {
+		t.Fatalf("want rules for mulling and triage, got %v", byPhase)
+	}
+	for phase, rule := range byPhase {
+		assertRequiresToolCallingOnly(t, phase, rule)
+	}
+	if _, ok := byPhase["mulling"]["preferFaster"]; ok {
+		t.Error("mulling must not set preferFaster: that would switch its qualityBias off")
+	}
+	if got := fmt.Sprint(byPhase["triage"]["preferFaster"]); got != "50" {
+		t.Errorf("triage preferFaster = %s, want 50", got)
+	}
+}
+
+// assertRequiresToolCallingOnly checks a rule requires tool-calling and states no
+// prefer list.
+func assertRequiresToolCallingOnly(t *testing.T, phase string, rule map[string]any) {
+	t.Helper()
+	labels, _, _ := unstructured.NestedStringMap(rule, "require", "matchLabels")
+	if !maps.Equal(labels, map[string]string{"capability/tool-calling": "true"}) {
+		t.Errorf("%s: want require tool-calling only, got %v", phase, labels)
+	}
+	if _, ok := rule["prefer"]; ok {
+		t.Errorf("%s: a prefer list switches qualityBias off; the scaffold sets none", phase)
+	}
 }

@@ -38,7 +38,8 @@ kmctl
                                (stream a live discussion; -o full|plain|json|quiet)
   fitness                      run | list | get | scenarios | download
   prompt                       list | get         (PromptModules)
-  model                        list | get | footprint   (model servers and their calibration + live GPU footprint)
+  model                        list | add | server (list | get) | footprint
+                               (the cluster's model catalog, model servers and their calibration)
   version                      print the kmctl version (--short for just the number)
   completion                   generate shell completion (bash, zsh, fish, powershell)
   help                         help about any command
@@ -52,10 +53,52 @@ and generated shell completion.
 Planned, not yet implemented: `crew status`, `conversation get`, and a `config`
 command.
 
+### Crews ship no models
+
+A crew made by `kmctl create` ships no Model objects and names no model server. Its
+CrewSchedulingPolicy states what the crew needs: every phase requires a model that can
+call tools (`capability/tool-calling: "true"`), mulling ranks the allowed models by
+`qualityBias` (which reads the `kubemoot.ai/size` label: small, medium, large), and
+triage sets `preferFaster` to favor the model calibration measured fastest. The
+scheduler matches those rules against the cluster's model catalog, so the same crew
+installs on any cluster that has at least one model that can call tools. `kmctl create`
+reads the current cluster's catalog and warns when it has none; scaffolding itself needs
+no cluster.
+
+### The model catalog
+
+`kmctl model list` shows the cluster's model catalog, one row per model per model
+server, as each ModelServer reports it in `status.models`. It reads every namespace, or
+only the one `-n` names, and `-o yaml|json|kyaml` prints the entries as a list:
+
+```
+MODEL      SERVER      SIZE     ABILITIES               CONTEXT   PRESENT
+qwen3:14b  vllm-gpu    medium   tool-calling            40960     yes
+qwen3:8b   ollama-gpu  small    reasoning,tool-calling  40960     yes
+```
+
+`SIZE` is `unknown` until the parameter count is known; `PRESENT` is `no` for a model
+the cluster owner asked for that the model server does not have yet. When no model can
+call tools, `kmctl model list` (and `kmctl create`) warns that crews requiring one stay
+Unschedulable.
+
+Cluster owners add a model with `kmctl model add`, which writes a Model into the
+namespace of the model server `--model-server` names. The Model is named
+`<server>-<model>`, with a short hash added when the model name holds characters a
+Kubernetes name cannot (`qwen3:14b`), so adding it again updates it. Without `-n`,
+the model server must be in exactly one namespace. On an Ollama model server the
+operator downloads the model; for a vLLM model server, declare what the server cannot
+report:
+
+```bash
+kmctl model add qwen3:14b --model-server ollama-gpu
+kmctl model add qwen3-14b --model-server vllm-gpu --parameters 14B --capabilities tool-calling,reasoning
+```
+
 ### Model servers
 
-`kmctl model list` shows each ModelServer's calibration phase.
-`kmctl model get NAME` adds what calibration measured, one row per model:
+`kmctl model server list` shows each ModelServer's calibration phase.
+`kmctl model server get NAME` adds what calibration measured, one row per model:
 
 ```
 Calibration: Calibrated, measured 3 of 3 models, engine 0.34.4, completed 2026-10-17T03:37:10Z

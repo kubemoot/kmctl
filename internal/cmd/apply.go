@@ -94,22 +94,30 @@ func applyObject(ctx context.Context, dyn dynamic.Interface, mapper meta.RESTMap
 			obj.SetNamespace(ns)
 		}
 	}
-	ri := scopedResource(dyn, mapping, ns)
+	applied, err := serverSideApply(ctx, scopedResource(dyn, mapping, ns), &obj, ao)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(w, "%s/%s applied%s\n", strings.ToLower(gvk.Kind), applied.GetName(), dryRunSuffix(ao.dryRun))
+	return err
+}
+
+// serverSideApply applies obj as kmctl's field manager, as a dry run or forcing
+// ownership of conflicting fields when ao says so.
+func serverSideApply(ctx context.Context, ri dynamic.ResourceInterface, obj *unstructured.Unstructured, ao applyOpts) (*unstructured.Unstructured, error) {
 	opts := metav1.ApplyOptions{FieldManager: "kmctl", Force: ao.force}
 	if ao.dryRun {
 		opts.DryRun = []string{metav1.DryRunAll}
 	}
-	applied, err := ri.Apply(ctx, obj.GetName(), &obj, opts)
-	if err != nil {
-		return err
-	}
+	return ri.Apply(ctx, obj.GetName(), obj, opts)
+}
 
-	suffix := ""
-	if ao.dryRun {
-		suffix = " (dry run)"
+// dryRunSuffix marks an applied line as a dry run.
+func dryRunSuffix(dryRun bool) string {
+	if dryRun {
+		return " (dry run)"
 	}
-	_, err = fmt.Fprintf(w, "%s/%s applied%s\n", strings.ToLower(gvk.Kind), applied.GetName(), suffix)
-	return err
+	return ""
 }
 
 // scopedResource returns the namespaced or cluster-scoped dynamic client for a
