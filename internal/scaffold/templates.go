@@ -47,9 +47,9 @@ spec:
   # To pin it, label your Models (e.g. model/family: [[ .ModelFamily ]]) and add
   # that label under require.matchLabels above.
 [[- end ]]
-[[- if .Providers ]]
-  # Providers selected at scaffold time:[[ range .Providers ]] [[ . ]][[ end ]].
-  # Provider allow-listing is a tune-up; by default agents use any ready provider.
+[[- if .Servers ]]
+  # Servers selected at scaffold time:[[ range .Servers ]] [[ . ]][[ end ]].
+  # Server allow-listing is a tune-up; by default agents use any ready server.
 [[- end ]]
 `
 
@@ -470,7 +470,7 @@ roleRef:
 
 const modelsTemplate = `# Model CRs for the crew. The scheduler binds agents to these just-in-time, so a
 # crew needs at least one Model in its namespace to run a discussion. Each Model
-# binds a model name to a ModelProvider and is labeled by capability + latencyClass.
+# binds a model name to a ModelServer and is labeled by capability + latencyClass.
 # These are starting defaults for the chosen family; edit model names/VRAM to match.
 [[- if .HasModels ]]
 [[- range .Models ]]
@@ -489,13 +489,13 @@ metadata:
     capability/reasoning: "true"
 spec:
   model: "[[ .Model ]]"
-  providerRef: "[[ .ProviderRef ]]"
+  serverRef: "[[ .ServerRef ]]"
   vramMib: [[ .VRAMMiB ]]
 [[- end ]]
 [[- else ]]
-# No Models were generated (no providers selected, or an unrecognized model family).
+# No Models were generated (no servers selected, or an unrecognized model family).
 # Without Models the crew comes Ready but cannot run a discussion. Add at least one,
-# pointing providerRef at one of your ModelProvider CRs (kmctl model list):
+# pointing serverRef at one of your ModelServer CRs (kmctl model list):
 #
 #   apiVersion: kubemoot.ai/v1alpha1
 #   kind: Model
@@ -507,7 +507,7 @@ spec:
 #       latencyClass: "low"
 #   spec:
 #     model: "qwen3:8b"
-#     providerRef: "<your-modelprovider>"
+#     serverRef: "<your-modelserver>"
 #     vramMib: 5120
 [[- end ]]
 `
@@ -773,8 +773,8 @@ same question: the answer now ends with that line.
 
 Model family: ` + "`[[ .ModelFamily ]]`" + `.
 [[- end ]]
-[[- if .Providers ]]
-Model providers:[[ range .Providers ]] ` + "`[[ . ]]`" + `[[ end ]].
+[[- if .Servers ]]
+Model servers:[[ range .Servers ]] ` + "`[[ . ]]`" + `[[ end ]].
 [[- end ]]
 
 ## What it can read

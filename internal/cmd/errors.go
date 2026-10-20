@@ -108,7 +108,7 @@ var kindNouns = map[string]kindNoun{
 	"crews":             {"crew", "crew"},
 	"agents":            {"agent", "agent"},
 	"promptmodules":     {"prompt module", "prompt"},
-	"modelproviders":    {"model provider", "model"},
+	"modelservers":      {"model server", "model"},
 	"crewfitnesssuites": {"fitness suite", "fitness"},
 }
 

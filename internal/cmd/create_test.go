@@ -13,36 +13,36 @@ import (
 )
 
 func TestWarnIfNoModels(t *testing.T) {
-	// No providers -> warn, naming the consequence (Unschedulable), cause, and remedy.
+	// No servers -> warn, naming the consequence (Unschedulable), cause, and remedy.
 	var buf bytes.Buffer
 	warnIfNoModels(&buf, scaffold.Options{Name: "demo", Members: 2, ModelFamily: "qwen", OutputDir: "."})
 	out := buf.String()
 	if !strings.Contains(out, "no Models were generated") || !strings.Contains(out, "Unschedulable") {
 		t.Fatalf("want a no-Models warning naming Unschedulable, got %q", out)
 	}
-	if !strings.Contains(out, "no model providers") {
-		t.Fatalf("want the no-providers cause named, got %q", out)
+	if !strings.Contains(out, "no model servers") {
+		t.Fatalf("want the no-servers cause named, got %q", out)
 	}
 
-	// Providers + a known family -> Models generated -> no warning.
+	// Servers + a known family -> Models generated -> no warning.
 	buf.Reset()
-	warnIfNoModels(&buf, scaffold.Options{Name: "demo", Members: 2, ModelFamily: "qwen", Providers: []string{"ollama-gpu"}, OutputDir: "."})
+	warnIfNoModels(&buf, scaffold.Options{Name: "demo", Members: 2, ModelFamily: "qwen", Servers: []string{"ollama-gpu"}, OutputDir: "."})
 	if buf.String() != "" {
 		t.Fatalf("expected no warning when Models are generated, got %q", buf.String())
 	}
 
-	// Providers present but no family (the --no-input-without--model-family case) ->
+	// Servers present but no family (the --no-input-without--model-family case) ->
 	// still no Models -> warn, naming the family cause.
 	buf.Reset()
-	warnIfNoModels(&buf, scaffold.Options{Name: "demo", Members: 2, Providers: []string{"ollama-gpu"}, OutputDir: "."})
+	warnIfNoModels(&buf, scaffold.Options{Name: "demo", Members: 2, Servers: []string{"ollama-gpu"}, OutputDir: "."})
 	if !strings.Contains(buf.String(), "no model family") {
 		t.Fatalf("want the no-family cause named, got %q", buf.String())
 	}
 
-	// Providers and a family both set, but the family has no built-in sizes -> still
+	// Servers and a family both set, but the family has no built-in sizes -> still
 	// no Models -> warn, naming that specific (default-branch) cause.
 	buf.Reset()
-	warnIfNoModels(&buf, scaffold.Options{Name: "demo", Members: 2, ModelFamily: "no-such-family", Providers: []string{"ollama-gpu"}, OutputDir: "."})
+	warnIfNoModels(&buf, scaffold.Options{Name: "demo", Members: 2, ModelFamily: "no-such-family", Servers: []string{"ollama-gpu"}, OutputDir: "."})
 	if !strings.Contains(buf.String(), "no built-in sizes") {
 		t.Fatalf("want the no-built-in-sizes cause named, got %q", buf.String())
 	}
@@ -95,10 +95,10 @@ func TestGather_NoInputKeepsTheMembersDefault(t *testing.T) {
 }
 
 func TestGather_FlagsProvided_NoPrompting(t *testing.T) {
-	opts := scaffold.Options{Name: "demo", Members: 4, ModelFamily: "qwen", Providers: []string{"p"}}
+	opts := scaffold.Options{Name: "demo", Members: 4, ModelFamily: "qwen", Servers: []string{"p"}}
 	fp := &fakePrompter{}
 	// All three inputs marked as set via flags -> prompter must not be called.
-	if err := gather(&opts, changedSet("display-name", "members", "providers", "model-family"), false, nil, fp); err != nil {
+	if err := gather(&opts, changedSet("display-name", "members", "servers", "model-family"), false, nil, fp); err != nil {
 		t.Fatalf("gather: %v", err)
 	}
 	if fp.called {
@@ -115,7 +115,7 @@ func TestGather_PromptsFillMissing(t *testing.T) {
 	if err := gather(&opts, changedSet(), false, []string{"ollama-gpu", "ollama-rig1"}, fp); err != nil {
 		t.Fatalf("gather: %v", err)
 	}
-	if opts.DisplayName != "Demo Crew" || opts.Members != 5 || opts.ModelFamily != "gemma" || len(opts.Providers) != 1 {
+	if opts.DisplayName != "Demo Crew" || opts.Members != 5 || opts.ModelFamily != "gemma" || len(opts.Servers) != 1 {
 		t.Errorf("prompted values not applied: %+v", opts)
 	}
 }
@@ -130,7 +130,7 @@ func TestCreateCommand_RequiresName(t *testing.T) {
 
 // TestCreateCommand_ScaffoldsAndHints exercises the create RunE success path:
 // scaffold files are written and the apply next-step hint is printed. Kept
-// hermetic by pointing KUBECONFIG at an absent file so provider discovery fails
+// hermetic by pointing KUBECONFIG at an absent file so server discovery fails
 // closed (nil) and the test never reaches a real cluster.
 func TestCreateCommand_ScaffoldsAndHints(t *testing.T) {
 	t.Setenv("KUBECONFIG", t.TempDir()+"/absent-kubeconfig")
@@ -201,12 +201,38 @@ func TestGather_AsksOnlyForUnsetInputs(t *testing.T) {
 	if err := gather(&opts, changedSet("members", "display-name"), false, nil, fp); err != nil {
 		t.Fatalf("gather: %v", err)
 	}
-	if opts.Members != 2 || opts.ModelFamily != "llama" || opts.Providers != nil {
-		t.Errorf("want members kept, family asked, providers skipped with none discovered: %+v", opts)
+	if opts.Members != 2 || opts.ModelFamily != "llama" || opts.Servers != nil {
+		t.Errorf("want members kept, family asked, servers skipped with none discovered: %+v", opts)
 	}
 	failing := &fakePrompter{err: errors.New("interrupted")}
 	if err := gather(&opts, changedSet(), false, []string{"p"}, failing); err == nil || err.Error() != "interrupted" {
 		t.Errorf("want the prompt error, got %v", err)
+	}
+}
+
+// --servers names the ModelServers the generated Models bind to with serverRef;
+// the removed --providers flag is an unknown flag.
+func TestCreateCommand_ServersFlag(t *testing.T) {
+	t.Setenv("KUBECONFIG", t.TempDir()+"/absent-kubeconfig")
+	run := func(flag string) (string, error) {
+		dir := t.TempDir()
+		cmd := newCreateCommand(client.NewFactory())
+		cmd.SetOut(&bytes.Buffer{})
+		cmd.SetErr(&bytes.Buffer{})
+		cmd.SetArgs([]string{"demo", "--no-input", "--model-family", "qwen", flag, "gpu-a", "-o", dir})
+		err := cmd.Execute()
+		return dir, err
+	}
+	dir, err := run("--servers")
+	if err != nil {
+		t.Fatalf("create --servers: %v", err)
+	}
+	models, err := os.ReadFile(filepath.Join(dir, "demo", "models.yaml"))
+	if err != nil || !strings.Contains(string(models), `serverRef: "gpu-a"`) {
+		t.Errorf("want Models bound with serverRef gpu-a, got %q (%v)", models, err)
+	}
+	if _, err := run("--providers"); err == nil || !strings.Contains(err.Error(), "unknown flag: --providers") {
+		t.Errorf("want --providers rejected as an unknown flag, got %v", err)
 	}
 }
 

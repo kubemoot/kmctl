@@ -19,7 +19,7 @@ func TestKind_GVR(t *testing.T) {
 	}
 	wantResource := map[*Kind]string{
 		&PromptModule:     "promptmodules",
-		&ModelProvider:    "modelproviders",
+		&ModelServer:      "modelservers",
 		&Model:            "models",
 		&CrewFitnessSuite: "crewfitnesssuites",
 		&CrewFitness:      "crewfitnesses",

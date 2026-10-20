@@ -184,10 +184,10 @@ var (
 // scaffoldCases cover every branch of the templates that can name a command:
 // bundle and chart, one and five specialists, no Models, a custom namespace.
 var scaffoldCases = map[string]scaffoldCase{
-	"bundle-1":    {scaffold.Options{Name: "hello", Members: 1, ModelFamily: "qwen", Providers: []string{"ollama"}}, bundleSteps},
-	"bundle-5-ns": {scaffold.Options{Name: "hello", Members: 5, ModelFamily: "qwen", Providers: []string{"ollama"}, Namespace: "team-a"}, bundleSteps},
+	"bundle-1":    {scaffold.Options{Name: "hello", Members: 1, ModelFamily: "qwen", Servers: []string{"ollama"}}, bundleSteps},
+	"bundle-5-ns": {scaffold.Options{Name: "hello", Members: 5, ModelFamily: "qwen", Servers: []string{"ollama"}, Namespace: "team-a"}, bundleSteps},
 	"bundle-bare": {scaffold.Options{Name: "hello", Members: 1}, bundleSteps},
-	"chart-1":     {scaffold.Options{Name: "hello", Members: 1, ModelFamily: "qwen", Providers: []string{"ollama"}, Chart: true}, chartSteps},
+	"chart-1":     {scaffold.Options{Name: "hello", Members: 1, ModelFamily: "qwen", Servers: []string{"ollama"}, Chart: true}, chartSteps},
 	"chart-5":     {scaffold.Options{Name: "hello", Members: 5, Chart: true}, chartSteps},
 }
 
@@ -333,7 +333,7 @@ func TestKmctlInvocationsExtraction(t *testing.T) {
 	text := strings.Join([]string{
 		"Scaffolded by `kmctl create`: a guide.",
 		"description: \"scaffolded by kmctl create.\"",
-		"# pointing at a provider (kmctl model list):",
+		"# pointing at a server (kmctl model list):",
 		"```bash",
 		"kmctl conversation ask hello \"What is up? Tell me.\" -n ns   # comment",
 		"$ kmctl apply -n ns -f . && kmctl crew get hello; echo done",

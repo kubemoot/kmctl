@@ -92,9 +92,9 @@ var (
 			{"AGE", fieldMetadataCreationTimestamp},
 		},
 	}
-	ModelProvider = Kind{
-		Plural:   "modelproviders",
-		Singular: "modelprovider",
+	ModelServer = Kind{
+		Plural:   "modelservers",
+		Singular: "modelserver",
 		Columns: []Column{
 			{"NAME", fieldMetadataName},
 			{"TYPE", "spec.type"},
@@ -110,7 +110,7 @@ var (
 		Singular: "model",
 		Columns: []Column{
 			{"NAME", fieldMetadataName},
-			{"PROVIDER", "spec.providerRef"},
+			{"SERVER", "spec.serverRef"},
 			{"MODEL", "spec.model"},
 			{"STATE", "status.state"},
 			{"SIZE", "status.modelInfo.size"},

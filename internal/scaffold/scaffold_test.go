@@ -36,7 +36,7 @@ func generated(t *testing.T, o Options) map[string][]unstructured.Unstructured {
 }
 
 func bundle(members int) Options {
-	return Options{Name: "demo", Members: members, ModelFamily: "qwen", Providers: []string{"ollama-gpu"}}
+	return Options{Name: "demo", Members: members, ModelFamily: "qwen", Servers: []string{"ollama-gpu"}}
 }
 
 func all(p map[string][]unstructured.Unstructured) []unstructured.Unstructured {
@@ -398,11 +398,11 @@ func TestModelCount(t *testing.T) {
 		o    Options
 		want int
 	}{
-		{Options{ModelFamily: "qwen", Providers: []string{"a", "b"}}, 6},
+		{Options{ModelFamily: "qwen", Servers: []string{"a", "b"}}, 6},
 		{Options{ModelFamily: "qwen"}, 0},
-		{Options{Providers: []string{"a"}}, 0},
-		{Options{ModelFamily: "nope", Providers: []string{"a"}}, 0},
-		{Options{ModelFamily: "Gemma", Providers: []string{"a"}}, 3},
+		{Options{Servers: []string{"a"}}, 0},
+		{Options{ModelFamily: "nope", Servers: []string{"a"}}, 0},
+		{Options{ModelFamily: "Gemma", Servers: []string{"a"}}, 3},
 	}
 	for _, c := range cases {
 		if got := c.o.ModelCount(); got != c.want {

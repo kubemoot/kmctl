@@ -15,11 +15,11 @@ import (
 func fakeDynamic(objs ...runtime.Object) *dynamicfake.FakeDynamicClient {
 	scheme := runtime.NewScheme()
 	listKinds := map[schema.GroupVersionResource]string{
-		Crew.GVR():          "CrewList",
-		Agent.GVR():         "AgentList",
-		PromptModule.GVR():  "PromptModuleList",
-		ModelProvider.GVR(): "ModelProviderList",
-		Model.GVR():         "ModelList",
+		Crew.GVR():         "CrewList",
+		Agent.GVR():        "AgentList",
+		PromptModule.GVR(): "PromptModuleList",
+		ModelServer.GVR():  "ModelServerList",
+		Model.GVR():        "ModelList",
 	}
 	return dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, listKinds, objs...)
 }

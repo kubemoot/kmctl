@@ -41,7 +41,7 @@ var kubemootKinds = map[string]string{
 	"crews":             "Crew",
 	"agents":            "Agent",
 	"promptmodules":     "PromptModule",
-	"modelproviders":    "ModelProvider",
+	"modelservers":      "ModelServer",
 	"models":            "Model",
 	"crewfitnesssuites": "CrewFitnessSuite",
 	"crewfitnesses":     "CrewFitness",
