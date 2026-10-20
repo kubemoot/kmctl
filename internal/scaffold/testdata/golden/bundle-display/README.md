@@ -75,7 +75,7 @@ same question: the answer now ends with that line.
 - `fitness/fitness.yaml`: the fitness suite.
 
 Model family: `qwen`.
-Model providers: `ollama`.
+Model servers: `ollama`.
 
 ## What it can read
 

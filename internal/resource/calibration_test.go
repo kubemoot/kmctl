@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func calibratedProvider() map[string]any {
+func calibratedServer() map[string]any {
 	return map[string]any{"status": map[string]any{"calibration": map[string]any{
 		"phase": "Calibrated", "message": "measured 2 of 2 models", "engineVersion": "0.34.4",
 		"completedAt": "2026-10-17T03:37:10Z",
@@ -25,7 +25,7 @@ func calibratedProvider() map[string]any {
 
 func TestRenderCalibration(t *testing.T) {
 	var b bytes.Buffer
-	if err := RenderCalibration(&b, calibratedProvider()); err != nil {
+	if err := RenderCalibration(&b, calibratedServer()); err != nil {
 		t.Fatal(err)
 	}
 	got := b.String()
@@ -114,23 +114,23 @@ func (f *failAfter) Write(p []byte) (int, error) {
 }
 
 func TestRenderCalibrationWriteError(t *testing.T) {
-	if err := RenderCalibration(failingWriter{}, calibratedProvider()); err == nil {
+	if err := RenderCalibration(failingWriter{}, calibratedServer()); err == nil {
 		t.Error("a write error on the summary must be returned")
 	}
-	if err := RenderCalibration(&failAfter{left: 2}, calibratedProvider()); err == nil {
+	if err := RenderCalibration(&failAfter{left: 2}, calibratedServer()); err == nil {
 		t.Error("a write error on the table must be returned")
 	}
 }
 
-func TestModelProviderKindShowsCalibration(t *testing.T) {
+func TestModelServerKindShowsCalibration(t *testing.T) {
 	headers := map[string]string{}
-	for _, c := range ModelProvider.Columns {
+	for _, c := range ModelServer.Columns {
 		headers[c.Header] = c.Path
 	}
 	if headers["CALIBRATION"] != "status.calibration.phase" {
-		t.Errorf("modelprovider columns = %v", headers)
+		t.Errorf("modelserver columns = %v", headers)
 	}
-	if ModelProvider.Details == nil {
-		t.Error("a provider's get prints its calibration")
+	if ModelServer.Details == nil {
+		t.Error("a server's get prints its calibration")
 	}
 }

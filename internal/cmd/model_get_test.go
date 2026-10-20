@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-const calibratedProviderJSON = `{"apiVersion":"kubemoot.ai/v1alpha1","kind":"ModelProvider",
+const calibratedServerJSON = `{"apiVersion":"kubemoot.ai/v1alpha1","kind":"ModelServer",
 "metadata":{"name":"gpu-a","namespace":"team-a","creationTimestamp":"2026-10-01T10:00:00Z"},
 "spec":{"type":"ollama","endpoint":"http://ollama:11434"},
 "status":{"ready":true,"calibration":{"phase":"Calibrated","message":"measured 2 of 2 models","engineVersion":"0.34.4",
@@ -18,12 +18,12 @@ const calibratedProviderJSON = `{"apiVersion":"kubemoot.ai/v1alpha1","kind":"Mod
 
 func TestModelGetPrintsCalibrationFromStatus(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/apis/kubemoot.ai/v1alpha1/namespaces/team-a/modelproviders/gpu-a" {
+		if r.URL.Path != "/apis/kubemoot.ai/v1alpha1/namespaces/team-a/modelservers/gpu-a" {
 			http.NotFound(w, r)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(calibratedProviderJSON))
+		_, _ = w.Write([]byte(calibratedServerJSON))
 	}))
 	t.Cleanup(srv.Close)
 

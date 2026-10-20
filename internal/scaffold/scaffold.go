@@ -24,7 +24,7 @@ type Options struct {
 	DisplayName string   // the name people read, any one line of text; "" means Name
 	Members     int      // specialists beside the coordinator, 1 to MaxMembers
 	Namespace   string   // bundle only: the namespace the RBAC binds and the prompts name; default crew-<Name>
-	Providers   []string // allowed model providers (recorded in the policy + README)
+	Servers     []string // allowed model servers (recorded in the policy + README)
 	ModelFamily string   // "" means skip / define later
 	OutputDir   string   // directory to write into
 	Chart       bool     // lay the crew out as a Helm chart (Chart.yaml, templates/, fitness/)
@@ -106,7 +106,7 @@ var modelFamilies = map[string][]modelSize{
 type modelCR struct {
 	Name          string
 	Model         string
-	ProviderRef   string
+	ServerRef     string
 	Family        string
 	Params        string
 	LatencyClass  string
@@ -127,7 +127,7 @@ type templateData struct {
 	TargetNS           string          // the namespace the README installs into
 	Rules              string          // the read-only RBAC rules
 	KubernetesMCPImage string          // the tool server image
-	Providers          []string
+	Servers            []string
 	ModelFamily        string
 	HasFamily          bool
 	Models             []modelCR
@@ -145,7 +145,7 @@ func (o Options) data() templateData {
 		CrewDisplayName:    quoted(shown, o.Chart),
 		Title:              o.Name + " crew",
 		Renamed:            shown != o.Name,
-		Providers:          o.Providers,
+		Servers:            o.Servers,
 		ModelFamily:        o.ModelFamily,
 		HasFamily:          o.ModelFamily != "",
 		Chart:              o.Chart,
@@ -182,16 +182,16 @@ func (o Options) agents() []agent {
 	return crewAgents(o.Name, o.Members)
 }
 
-// models is a Model per (family size x provider), so the scheduler has something to bind.
+// models is a Model per (family size x server), so the scheduler has something to bind.
 func (o Options) models() []modelCR {
 	family := strings.ToLower(o.ModelFamily)
 	var out []modelCR
 	for _, size := range modelFamilies[family] {
-		for _, p := range o.Providers {
+		for _, server := range o.Servers {
 			out = append(out, modelCR{
-				Name:          fmt.Sprintf("%s-%s-%s", family, size.Params, p),
+				Name:          fmt.Sprintf("%s-%s-%s", family, size.Params, server),
 				Model:         size.Model,
-				ProviderRef:   p,
+				ServerRef:     server,
 				Family:        family,
 				Params:        size.Params,
 				LatencyClass:  size.LatencyClass,
@@ -204,7 +204,7 @@ func (o Options) models() []modelCR {
 }
 
 // ModelCount reports how many Model CRs the scaffold will generate for these
-// options (one per family-size x provider). Zero means the crew will apply Ready
+// options (one per family-size x server). Zero means the crew will apply Ready
 // but be Unschedulable - no Models for the scheduler to bind agents to - until
 // Models are added to models.yaml. Callers (kmctl create) should warn on zero.
 func (o Options) ModelCount() int {

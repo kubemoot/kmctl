@@ -26,7 +26,7 @@ func newCreateCommand(f *client.Factory) *cobra.Command {
 	var (
 		members     int
 		displayName string
-		providers   []string
+		servers     []string
 		modelFamily string
 		noInput     bool
 		outputDir   string
@@ -65,20 +65,20 @@ namespace given by -n, or crew-NAME.`,
 				Name:        args[0],
 				DisplayName: displayName,
 				Members:     members,
-				Providers:   providers,
+				Servers:     servers,
 				ModelFamily: modelFamily,
 				OutputDir:   outputDir,
 				Chart:       chart,
 				Namespace:   explicitNamespace(f),
 			}
-			discovered := discoverProviders(cmd.Context(), f)
+			discovered := discoverServers(cmd.Context(), f)
 			if err := gather(&opts, cmd.Flags().Changed, noInput, discovered, &huhPrompter{}); err != nil {
 				return err
 			}
-			// Default to all discovered providers so the scaffold can generate Models
+			// Default to all discovered servers so the scaffold can generate Models
 			// (a crew needs Models to run); the generated models.yaml is editable.
-			if len(opts.Providers) == 0 {
-				opts.Providers = discovered
+			if len(opts.Servers) == 0 {
+				opts.Servers = discovered
 			}
 			written, err := scaffold.Write(opts)
 			if err != nil {
@@ -102,7 +102,7 @@ namespace given by -n, or crew-NAME.`,
 	}
 	cmd.Flags().StringVar(&displayName, "display-name", "", "The name people read, any one line of text (default NAME; prompted if unset)")
 	cmd.Flags().IntVar(&members, "members", 1, fmt.Sprintf("Specialists beside the coordinator, 1 to %d (prompted if unset)", scaffold.MaxMembers))
-	cmd.Flags().StringSliceVar(&providers, "providers", nil, "Model providers the crew may use (prompted if unset)")
+	cmd.Flags().StringSliceVar(&servers, "servers", nil, "Model servers the crew may use (prompted if unset)")
 	cmd.Flags().StringVar(&modelFamily, "model-family", "", "Preferred model family, e.g. qwen (prompted if unset)")
 	cmd.Flags().BoolVar(&noInput, "no-input", false, "Never prompt; unset inputs take their defaults")
 	cmd.Flags().StringVarP(&outputDir, "output", "o", ".", "Directory to write the scaffold into")
@@ -157,7 +157,7 @@ func gather(opts *scaffold.Options, changed func(string) bool, noInput bool, dis
 	}{
 		{"display-name", askDisplayName},
 		{"members", askMembers},
-		{"providers", askProviders},
+		{"servers", askServers},
 		{"model-family", askFamily},
 	}
 	for _, s := range steps {
@@ -187,15 +187,15 @@ func askMembers(opts *scaffold.Options, _ []string, p prompter) error {
 	return err
 }
 
-// askProviders offers the discovered providers; with none discovered there is nothing to pick.
-func askProviders(opts *scaffold.Options, discovered []string, p prompter) error {
+// askServers offers the discovered servers; with none discovered there is nothing to pick.
+func askServers(opts *scaffold.Options, discovered []string, p prompter) error {
 	if len(discovered) == 0 {
 		return nil
 	}
-	label := fmt.Sprintf("%d LLM providers (ollama) discovered - select those this crew may use:", len(discovered))
+	label := fmt.Sprintf("%d model servers discovered - select those this crew may use:", len(discovered))
 	sel, err := p.MultiSelect(label, discovered)
 	if err == nil {
-		opts.Providers = sel
+		opts.Servers = sel
 	}
 	return err
 }
@@ -217,8 +217,8 @@ func warnIfNoModels(w io.Writer, opts scaffold.Options) {
 	}
 	var cause string
 	switch {
-	case len(opts.Providers) == 0:
-		cause = "no model providers were discovered or selected"
+	case len(opts.Servers) == 0:
+		cause = "no model servers were discovered or selected"
 	case opts.ModelFamily == "":
 		cause = "no model family was set (--model-family)"
 	default:
@@ -228,16 +228,16 @@ func warnIfNoModels(w io.Writer, opts scaffold.Options) {
 	_, _ = fmt.Fprintf(w,
 		"\nwarning: no Models were generated (%s); models.yaml has only commented placeholders.\n"+
 			"The crew will apply Ready but be Unschedulable until you add Models - run `kmctl model list`\n"+
-			"to see available providers, then add Model CRs to %s/%s/models.yaml.\n",
+			"to see available servers, then add Model CRs to %s/%s/models.yaml.\n",
 		cause, opts.OutputDir, opts.Name)
 }
 
-func discoverProviders(ctx context.Context, f *client.Factory) []string {
+func discoverServers(ctx context.Context, f *client.Factory) []string {
 	dc, err := f.Dynamic()
 	if err != nil {
 		return nil
 	}
-	list, err := resource.List(ctx, dc, resource.ModelProvider, "", true)
+	list, err := resource.List(ctx, dc, resource.ModelServer, "", true)
 	if err != nil {
 		return nil
 	}

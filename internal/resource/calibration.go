@@ -11,7 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
-// CalibrationPaths are the ModelProvider status fields RenderCalibration reads;
+// CalibrationPaths are the ModelServer status fields RenderCalibration reads;
 // add a path here with every field it starts using. The Tier 2 contract test
 // checks each one against the CRD schema.
 var CalibrationPaths = []string{
@@ -30,9 +30,9 @@ var CalibrationPaths = []string{
 	"status.calibration.models.parallelGenerateTokensPerSecond",
 }
 
-// RenderCalibration writes what calibration recorded on a ModelProvider after its
+// RenderCalibration writes what calibration recorded on a ModelServer after its
 // summary row: the phase line, then one row per model. It writes nothing when the
-// provider has not been calibrated.
+// server has not been calibrated.
 func RenderCalibration(w io.Writer, obj map[string]any) error {
 	cal, ok, _ := unstructured.NestedMap(obj, "status", "calibration")
 	if !ok {

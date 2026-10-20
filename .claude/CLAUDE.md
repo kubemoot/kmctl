@@ -23,7 +23,7 @@ ASSERT use Cobra + genericclioptions; global flags --kubeconfig, --context, -n/-
 ASSERT every command has a short + long description and runnable Examples in --help
 ASSERT shell completion (bash/zsh/fish/powershell) stays enabled (Cobra built-in completion command)
 ASSERT live discussion/fitness streaming is over HTTP/SSE using the active kubectl context + credentials - NEVER client-side NATS
-ASSERT loosely bound - no homelab topology baked in; discover providers/models/namespaces from the cluster at runtime
+ASSERT loosely bound - no homelab topology baked in; discover model servers/models/namespaces from the cluster at runtime
 
 # Quality and tests
 
