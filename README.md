@@ -34,7 +34,7 @@ kmctl
   delete (KIND NAME | -f ...)  delete Kubemoot resources (kubemoot.ai CRs only)
   crew                         list | get
   agent                        list | get
-  conversation (conv)          ask | watch | list | artifact
+  conversation (conv)          ask | watch | list | placements | artifact
                                (stream a live discussion; -o full|plain|json|quiet)
   fitness                      run | list | get | scenarios | download
   prompt                       list | get         (PromptModules)
@@ -178,6 +178,55 @@ or to a file with `-f`. The coordinator deletes a thread's artifacts soon after 
 thread closes, so fetch them while the crew works on the question or right after
 it answers; after that kmctl reports the artifact as not found.
 
+### Placement decisions
+
+`kmctl conversation placements <crew> <conversation-id>` shows where the scheduler
+placed each model call of the conversation's latest turn and why. It reads the
+receipt the crew's coordinator puts on the turn's closing message, so it needs a
+discussion gateway that forwards the receipt on the closing event. A turn that has
+closed replays from the discussion stream, which keeps about a day of discussions;
+for a turn still running the command waits until it closes, on the same terms as
+`watch`: `--idle-timeout` (default `5m`) and `--timeout` (default `0`, no cap), described
+under "How long kmctl waits". When the wait ends or the stream is cut before the
+turn closes, kmctl prints the conversation and thread IDs and the `kmctl conversation
+watch` command that reattaches. If the stream holds more than one closed thread for
+the turn, the receipt of the latest one is used.
+
+```
+#   AGENT                   PHASE        PLACEMENT                     POLICY      PREDICTED   ACTUAL   ERROR
+1   coordinator             advisory     qwen3:14b@ollama-gpu          learned     2.9s        3.4s     +500ms (15%)
+2   obs-metrics             triage       qwen3:8b@ollama-cpu           shadow      -           31.0s    -
+3   kubernetes-specialist   evaluation   qwen3:14b@ollama-gpu (cold)   algorithm   11.4s       13.8s    +2.4s (17%)
+
+[1] coordinator advisory on qwen3:14b@ollama-gpu
+    reason: predicted 2.9s (wait 0.0, load 0.0, prompt 0.6, generate 2.3)
+    alternatives:
+      ollama-cpu  predicted 61.0s  (warm, starts now)
+...
+
+3 calls: 1 algorithm, 1 learned, 1 shadow. Mean absolute error 1.4s over the 2 calls with a measured error.
+```
+
+One row per call, in the order the calls were sent. The policy says who placed the
+call: `learned` (chosen from predicted completion time), `algorithm` (the
+hand-written placement), or `shadow` (the algorithm placed it while the learned
+policy only recorded what it would have chosen). `(cold)` marks a call whose model
+was not loaded when it was placed. ERROR is the measured time minus the predicted
+time, positive when the call took longer than predicted, with its size relative to
+the measured time; a call with no prediction shows `-`, and a call that failed
+shows `failed` under ACTUAL. Below the table, each call gives the reason for its
+placement, the predicted and measured time to the first token when the receipt has
+them, and the other servers the scheduler weighed, with their predicted times and
+whether the model was loaded there and a slot was free. The last line counts the
+calls per policy and gives the mean absolute error over the calls that have a
+measured error.
+
+`-o json`, `-o yaml`, or `-o kyaml` print `conversationId`, `crew`, `calls` (the
+calls exactly as the receipt carried them), and `summary` (the counts and the
+mean absolute error). A receipt without placement calls (agents older than this
+feature do not report them) prints one line saying so, and `calls` is an empty list
+in the structured formats. A turn that closed without a receipt says that instead.
+
 ### How long kmctl waits
 
 kmctl waits as long as the crew is working. While anyone on the crew is busy (an
@@ -190,6 +239,8 @@ spinners turning and names who is busy in the header:
 ```
 [  4m37s] busy: compute evaluating on ollama-rig0, obs-advisor triaging
 ```
+
+`kmctl conversation placements` waits the same way.
 
 The only default clock is a no-activity clock: `--idle-timeout` (default `5m`) runs
 only while the crew shows no activity and starts again with every event from the

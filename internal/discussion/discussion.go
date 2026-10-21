@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -43,6 +44,9 @@ type Event struct {
 	// Timestamp is when the crew published the message behind the event (RFC 3339);
 	// absent on events from an older gateway and on the gateway's own events.
 	Timestamp string `json:"timestamp,omitempty"`
+	// Receipt is the thread's receipt (the bus contract's DiscussionReceipt) on the
+	// done event of a gateway that forwards it; kept as the gateway sent it.
+	Receipt json.RawMessage `json:"receipt,omitempty"`
 	// SignalMeta is the signal metadata of a finding or stand-aside event.
 	*SignalMeta
 	// Subcommittee is the content of a subcommittee event.
@@ -176,3 +180,75 @@ func ShowsCrewActivity(e Event) bool { return e.Type != "heartbeat" && e.Type !=
 
 // Terminal reports whether an event ends the stream.
 func Terminal(e Event) bool { return e.Type == "done" || e.Type == "error" }
+
+// ErrNoClose means the discussion stream ended before the thread closed.
+var ErrNoClose = errors.New("the discussion stream ended before the thread closed")
+
+// ErrStreamReported means the gateway sent an error event.
+var ErrStreamReported = errors.New("the discussion stream reported an error")
+
+// reportedErr is ErrStreamReported with the gateway's message, when it gave one.
+func reportedErr(message string) error {
+	if message == "" {
+		return ErrStreamReported
+	}
+	return fmt.Errorf("%w: %s", ErrStreamReported, message)
+}
+
+// Closed is what a discussion stream says about the turn's closing thread.
+type Closed struct {
+	// ThreadID is the last thread the stream announced, "" when it announced none.
+	ThreadID string
+	// Receipt is the receipt on the closing event of the latest thread, nil when that
+	// event carries none or no thread closed.
+	Receipt json.RawMessage
+	// Done is set once a thread has closed.
+	Done bool
+}
+
+// FetchReceipt follows a conversation's discussion stream to its end and returns what
+// it says about the closing thread. A turn that already closed replays from the
+// discussion stream, which keeps about a day of discussions. onEvent, when set, sees
+// every event as it arrives. On an error the Closed value still names the thread
+// seen so far.
+func FetchReceipt(ctx context.Context, rc rest.Interface, namespace, crew, conversationID string, onEvent func(Event)) (Closed, error) {
+	stream, err := Stream(ctx, rc, namespace, crew, conversationID)
+	if err != nil {
+		return Closed{}, err
+	}
+	defer func() { _ = stream.Close() }()
+	return ReceiptFromStream(stream, onEvent)
+}
+
+// ReceiptFromStream reads an SSE stream to its end. The receipt is that of the latest
+// thread: a done event sets it, and a later thread_found (the coordinator starting the
+// turn's thread again) clears it until that thread closes. A stream that is cut after
+// a thread closed still returns that thread's receipt.
+func ReceiptFromStream(r io.Reader, onEvent func(Event)) (Closed, error) {
+	var c Closed
+	var failure *string
+	err := ParseSSE(r, func(e Event) bool {
+		if onEvent != nil {
+			onEvent(e)
+		}
+		switch e.Type {
+		case "thread_found":
+			c = Closed{ThreadID: e.ThreadID}
+		case "done":
+			c.Done, c.Receipt = true, e.Receipt
+		case "error":
+			failure = &e.Error
+			return true
+		}
+		return false
+	})
+	switch {
+	case failure != nil:
+		return c, reportedErr(*failure)
+	case c.Done:
+		return c, nil
+	case err != nil:
+		return c, err
+	}
+	return c, ErrNoClose
+}
