@@ -1,0 +1,58 @@
+{
+  "startedAt": 1792000000000,
+  "settledAt": 1792000042000,
+  "totalMs": 42000,
+  "firstSignalMs": 18000,
+  "phasesMs": { "advisory": 3000, "selection": 6000, "evaluation": 36000, "synthesis": 42000 },
+  "consensus": { "convened": 3, "agree": 2, "concern": 0, "block": 0, "standAside": 1, "failure": 0 },
+  "tokens": { "in": 9100, "out": 1200, "agentsIn": 7800, "agentsOut": 900, "coordinatorIn": 1300, "coordinatorOut": 300 },
+  "agents": [
+    { "agent": "kubernetes-specialist", "signal": "agree", "atMs": 18000, "models": ["qwen3:14b@ollama-gpu"], "inputTokens": 4100, "outputTokens": 520, "inferenceMs": 9800, "waitMs": 0, "reason": "Pods are healthy." }
+  ],
+  "placements": [ { "place": "qwen3:14b@ollama-gpu", "agents": 1 } ],
+  "calls": [
+    {
+      "agent": "coordinator",
+      "phase": "advisory",
+      "kind": "simple",
+      "at": 1792000000500,
+      "model": "qwen3:14b",
+      "server": "ollama-gpu",
+      "coldStart": false,
+      "policy": "learned",
+      "reason": "predicted 2.9s (wait 0.0, load 0.0, prompt 0.6, generate 2.3)",
+      "alternatives": [
+        { "server": "ollama-cpu", "warm": true, "startsNow": true,
+          "predicted": { "waitMs": 0, "loadMs": 0, "promptMs": 4100, "generateMs": 56900, "totalMs": 61000 } }
+      ],
+      "predicted": { "waitMs": 0, "loadMs": 0, "promptMs": 600, "firstTokenMs": 600, "generateMs": 2300, "totalMs": 2900 },
+      "actual": { "ok": true, "waitMs": 0, "firstTokenMs": 700, "totalMs": 3400, "inputTokens": 640, "outputTokens": 190, "requests": 1 },
+      "error": { "totalAbsMs": 500, "totalRelative": 0.147, "totalSignedMs": 500, "firstTokenAbsMs": 100, "firstTokenRelative": 0.143 }
+    },
+    {
+      "agent": "kubernetes-specialist",
+      "phase": "evaluation",
+      "kind": "tool-turn",
+      "at": 1792000009000,
+      "model": "qwen3:14b",
+      "server": "ollama-gpu",
+      "coldStart": true,
+      "policy": "algorithm",
+      "reason": "cold-load fits 14000 <= 32605",
+      "predicted": { "waitMs": 0, "loadMs": 7000, "promptMs": 2100, "generateMs": 2300, "totalMs": 11400 },
+      "actual": { "ok": true, "waitMs": 4200, "totalMs": 13800, "inputTokens": 4100, "outputTokens": 260, "requests": 3 },
+      "error": { "totalAbsMs": 2400, "totalRelative": 0.174, "totalSignedMs": 2400 }
+    },
+    {
+      "agent": "obs-metrics",
+      "phase": "triage",
+      "kind": "triage",
+      "at": 1792000004000,
+      "model": "qwen3:8b",
+      "server": "ollama-cpu",
+      "policy": "shadow",
+      "reason": "algorithm: warm, slot 1/1; learned would choose qwen3:8b@ollama-gpu (predicted 1.2s)",
+      "actual": { "ok": true, "totalMs": 31000, "inputTokens": 360, "outputTokens": 148, "requests": 1 }
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 package discussion
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -89,5 +90,59 @@ func TestParseSSE_DecodesActivity(t *testing.T) {
 func TestServiceName(t *testing.T) {
 	if ServiceName("homelab-pilot") != "homelab-pilot-discussion" {
 		t.Errorf("ServiceName = %q", ServiceName("homelab-pilot"))
+	}
+}
+
+func sse(events ...string) *strings.Reader {
+	return strings.NewReader("data: " + strings.Join(events, "\n\ndata: ") + "\n\n")
+}
+
+func TestReceiptFromStream(t *testing.T) {
+	got, err := ReceiptFromStream(sse(`{"type":"connected"}`, `{"type":"thread_found","threadId":"t1"}`,
+		`{"type":"done","receipt":{"calls":[{"model":"m"}]}}`), nil)
+	if err != nil || !got.Done || got.ThreadID != "t1" || string(got.Receipt) != `{"calls":[{"model":"m"}]}` {
+		t.Fatalf("got %+v, %v", got, err)
+	}
+	got, err = ReceiptFromStream(sse(`{"type":"thread_found","threadId":"t1"}`, `{"type":"done"}`), nil)
+	if err != nil || !got.Done || got.Receipt != nil {
+		t.Errorf("a done event without a receipt: %+v, %v", got, err)
+	}
+}
+
+// Of two closed threads in one stream, the later thread's receipt is used; a thread
+// announced after a close, and not yet closed, leaves no receipt.
+func TestReceiptFromStream_LatestThreadWins(t *testing.T) {
+	two := sse(`{"type":"thread_found","threadId":"t1"}`, `{"type":"done","receipt":{"totalMs":1}}`,
+		`{"type":"thread_found","threadId":"t2"}`, `{"type":"done","receipt":{"totalMs":2}}`)
+	got, err := ReceiptFromStream(two, nil)
+	if err != nil || got.ThreadID != "t2" || string(got.Receipt) != `{"totalMs":2}` {
+		t.Fatalf("two closes: %+v, %v", got, err)
+	}
+	open := sse(`{"type":"thread_found","threadId":"t1"}`, `{"type":"done","receipt":{"totalMs":1}}`, `{"type":"thread_found","threadId":"t2"}`)
+	if got, err := ReceiptFromStream(open, nil); !errors.Is(err, ErrNoClose) || got.ThreadID != "t2" || got.Receipt != nil {
+		t.Errorf("second thread still open: %+v, %v", got, err)
+	}
+}
+
+func TestReceiptFromStream_Failures(t *testing.T) {
+	_, err := ReceiptFromStream(sse(`{"type":"connected"}`), nil)
+	if !errors.Is(err, ErrNoClose) {
+		t.Errorf("a stream that ends before done: %v", err)
+	}
+	_, err = ReceiptFromStream(sse(`{"type":"error","error":"boom"}`), nil)
+	if !errors.Is(err, ErrStreamReported) || errors.Is(err, ErrNoClose) || !strings.Contains(err.Error(), "boom") {
+		t.Errorf("an error event: %v", err)
+	}
+	_, err = ReceiptFromStream(sse(`{"type":"error"}`), nil)
+	if !errors.Is(err, ErrStreamReported) || errors.Is(err, ErrNoClose) {
+		t.Errorf("an error event without a message is still a reported error: %v", err)
+	}
+}
+
+func TestReceiptFromStream_ShowsEveryEvent(t *testing.T) {
+	var types []string
+	_, _ = ReceiptFromStream(sse(`{"type":"connected"}`, `{"type":"done"}`), func(e Event) { types = append(types, e.Type) })
+	if strings.Join(types, ",") != "connected,done" {
+		t.Errorf("onEvent saw %v", types)
 	}
 }

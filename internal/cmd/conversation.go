@@ -35,7 +35,7 @@ A conversation ID can be shortened to any unique prefix, as with git hashes, whe
 the crew's gateway lists conversations ("kmctl conversation list").`,
 		Args: cobra.NoArgs,
 	}
-	cmd.AddCommand(newAskCommand(f), newWatchCommand(f), newConversationListCommand(f), newConversationArtifactCommand(f))
+	cmd.AddCommand(newAskCommand(f), newWatchCommand(f), newConversationListCommand(f), newConversationPlacementsCommand(f), newConversationArtifactCommand(f))
 	return cmd
 }
 
@@ -169,13 +169,18 @@ type streamFlags struct {
 func (sf *streamFlags) register(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&sf.output, "output", "o", string(conversation.ModeFull), conversation.ModeHelp())
 	cmd.Flags().BoolVarP(&sf.quiet, "quiet", "q", false, "Print only the final answer (the same as -o quiet)")
+	sf.registerWaiting(cmd)
+	_ = cmd.RegisterFlagCompletionFunc("output", func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
+		return conversation.ModeNames(), cobra.ShellCompDirectiveNoFileComp
+	})
+}
+
+// registerWaiting adds the flags that say how long to wait for the crew.
+func (sf *streamFlags) registerWaiting(cmd *cobra.Command) {
 	cmd.Flags().DurationVar(&sf.idleTimeout, "idle-timeout", defaultIdleTimeout,
 		"Stop waiting when the crew shows no activity for this long (0 waits while the stream is open)")
 	cmd.Flags().DurationVar(&sf.timeout, "timeout", 0,
 		"Overall cap on the wait, for scripts (0, the default, means no cap)")
-	_ = cmd.RegisterFlagCompletionFunc("output", func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
-		return conversation.ModeNames(), cobra.ShellCompDirectiveNoFileComp
-	})
 }
 
 // options resolves the output mode for this command's stdout and starts the
