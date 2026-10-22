@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/kubemoot/kmctl/internal/client"
 	"k8s.io/client-go/rest"
@@ -106,9 +107,11 @@ type Activity struct {
 }
 
 // Ask starts a turn against a crew and returns the conversationId. A non-empty
-// conversationID continues an existing conversation.
+// conversationID continues an existing conversation. The question carries this
+// machine's time zone and local date and time, so the crew's tools use the date of
+// the person asking, not the date where the crew runs.
 func Ask(ctx context.Context, rc rest.Interface, namespace, crew, message, conversationID string) (string, error) {
-	body, err := json.Marshal(map[string]string{"message": message, "conversationId": conversationID})
+	body, err := json.Marshal(askBody(message, conversationID, CurrentRequester(time.Now())))
 	if err != nil {
 		return "", err
 	}

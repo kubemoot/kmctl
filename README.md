@@ -163,6 +163,10 @@ timestamps, tokens, models, subcommittee, or tool errors, and they are left out
 rather than estimated. Retries are not published by the crew, so the summary never
 shows them.
 
+### Your date and time zone
+
+`kmctl conversation ask` sends this machine's IANA time zone and local date and time with each question (`timeZone` and `localDateTime` in the request to the crew's discussion gateway). The crew's tools use them for "today", "recent", and "upcoming", so the answer follows your date even when the cluster runs in another time zone. kmctl reads the zone from `TZ`, then `/etc/localtime`, then `/etc/timezone`. When none names a known zone, kmctl sends the local date and time alone, and a crew without either falls back to its configured default zone.
+
 ### Short conversation IDs, the conversation list, and artifacts
 
 `kmctl conversation list <crew>` lists the crew's recent conversations, newest
