@@ -348,6 +348,28 @@ spec:
 	}
 	assertContains(t, "run -f", out, "crewfitnesssuite/starter applied", "Completed")
 
+	// A manifest with its own namespace: run follows the suite there, not in -n.
+	other := writeManifest(t, `apiVersion: kubemoot.ai/v1alpha1
+kind: CrewFitnessSuite
+metadata:
+  name: elsewhere
+  namespace: crew-other
+spec:
+  crewRef: demo
+`)
+	out, _, err = s.kmctl(t, "fitness", "run", "-f", other)
+	if err != nil {
+		t.Fatalf("a manifest namespace other than the context's must be followed: %v", err)
+	}
+	assertContains(t, "run -f with namespace", out, "crewfitnesssuite/elsewhere applied", "Completed")
+
+	// A manifest without a namespace: run waits in -n, where it applied.
+	out, _, err = s.kmctl(t, "fitness", "run", "-f", suite, "-n", "team-b")
+	if err != nil {
+		t.Fatalf("a manifest without a namespace follows -n: %v", err)
+	}
+	assertContains(t, "run -f with -n", out, "Completed")
+
 	cases := map[string]struct {
 		args []string
 		want string
