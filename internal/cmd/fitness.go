@@ -115,7 +115,8 @@ Cancelled when the suite is stopped), printing progress. The deferred judge scor
 the run after that: when run returns while the judge is still scoring, it says so,
 and kmctl fitness get shows the judge's progress and scores from the suite's status.
 The exit code reflects timeouts and API errors only, not the suite's result. Name an
-existing suite, or apply one from a manifest with -f.
+existing suite, or apply one from a manifest with -f; run then waits in the
+namespace the manifest was applied to (its own, else -n, else the kubeconfig default).
 With --scenario NAME, only that one scenario runs: a single CrewFitness is created
 from the suite's matching script, useful for iterating on one scenario.`,
 		Example: `  kmctl fitness run demo-starter
@@ -127,11 +128,11 @@ from the suite's matching script, useful for iterating on one scenario.`,
 			if err != nil {
 				return err
 			}
-			suiteName, err := resolveRunSuite(cmd, f, dc, args, filename)
+			suiteName, ns, err := resolveRunSuite(cmd, f, dc, args, filename)
 			if err != nil {
 				return err
 			}
-			run := fitnessRun{dc: dc, ns: f.Namespace(), w: cmd.OutOrStdout(), timeout: timeout}
+			run := fitnessRun{dc: dc, ns: ns, w: cmd.OutOrStdout(), timeout: timeout}
 			if scenario == "" {
 				return run.suite(cmd.Context(), suiteName)
 			}
@@ -185,39 +186,54 @@ func (r fitnessRun) scenario(ctx context.Context, suiteName, scenario string) er
 	return err
 }
 
-// resolveRunSuite returns the suite name to run: from -f (apply the manifest and
-// use the CrewFitnessSuite it contains) or from the SUITE argument.
-func resolveRunSuite(cmd *cobra.Command, f *client.Factory, dc dynamic.Interface, args []string, filename string) (string, error) {
+// resolveRunSuite returns the suite name and namespace to run: from -f (apply the
+// manifest and use the CrewFitnessSuite it contains, in the namespace it was
+// applied to) or from the SUITE argument (in the -n / kubeconfig namespace).
+func resolveRunSuite(cmd *cobra.Command, f *client.Factory, dc dynamic.Interface, args []string, filename string) (name, ns string, err error) {
 	if filename == "" {
 		if len(args) != 1 {
-			return "", fmt.Errorf("provide a SUITE name or -f FILE")
+			return "", "", fmt.Errorf("provide a SUITE name or -f FILE")
 		}
-		return args[0], nil
+		return args[0], f.Namespace(), nil
 	}
 	if len(args) > 0 {
-		return "", fmt.Errorf("provide either a SUITE name or -f, not both")
+		return "", "", fmt.Errorf("provide either a SUITE name or -f, not both")
 	}
+	suite, err := applyRunManifest(cmd, f, dc, filename)
+	if err != nil {
+		return "", "", err
+	}
+	ns = suite.GetNamespace()
+	if ns == "" {
+		ns = f.Namespace()
+	}
+	return suite.GetName(), ns, nil
+}
+
+// applyRunManifest applies every object in the manifest and returns its
+// CrewFitnessSuite.
+func applyRunManifest(cmd *cobra.Command, f *client.Factory, dc dynamic.Interface, filename string) (*unstructured.Unstructured, error) {
 	mapper, err := f.RESTMapper()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	objs, err := manifest.FromPath(filename, cmd.InOrStdin())
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	name := ""
+	var suite *unstructured.Unstructured
 	for i := range objs {
 		if err := applyObject(cmd.Context(), dc, mapper, objs[i], applyOpts{defaultNS: f.Namespace()}, cmd.OutOrStdout()); err != nil {
-			return "", err
+			return nil, err
 		}
 		if objs[i].GetKind() == "CrewFitnessSuite" {
-			name = objs[i].GetName()
+			suite = &objs[i]
 		}
 	}
-	if name == "" {
-		return "", fmt.Errorf("no CrewFitnessSuite found in %q", filename)
+	if suite == nil {
+		return nil, fmt.Errorf("no CrewFitnessSuite found in %q", filename)
 	}
-	return name, nil
+	return suite, nil
 }
 
 // scriptTestRefs returns the testRef of each script in a suite.
