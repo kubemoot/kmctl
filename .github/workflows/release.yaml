@@ -11,6 +11,12 @@ on:
   repository_dispatch:
     types: [kubemoot-published]
 
+# One candidate build at a time: a dispatch and a push close together would otherwise both
+# compute the next rc.N from the same tags and race to push the tag.
+concurrency:
+  group: release-candidate
+  cancel-in-progress: false
+
 permissions:
   contents: read
 
