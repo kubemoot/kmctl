@@ -1,7 +1,8 @@
 # Testing strategy
 
 kmctl is a thin client over Kubemoot's Kubernetes CRDs (via the dynamic client, no
-compile-time dependency on the operator's Go types). The risk that comes with that
+compile-time dependency on the operator's CRD Go types; `memory export` imports only
+the operator's public crew-memory packages). The risk that comes with that
 freedom is **drift**: if Kubemoot's CRDs change, kmctl can break silently. The testing
 tiers below are designed around that risk and around one hard constraint:
 

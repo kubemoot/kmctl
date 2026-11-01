@@ -37,6 +37,7 @@ kmctl
   conversation (conv)          ask | watch | list | placements | artifact
                                (stream a live discussion; -o full|plain|json|quiet)
   fitness                      run | list | get | scenarios | download
+  memory                       export             (a crew's memory in the OMPI interchange format)
   prompt                       list | get         (PromptModules)
   model                        list | add | server (list | get) | footprint
                                (the cluster's model catalog, model servers and their calibration)
@@ -263,6 +264,30 @@ A gateway that does not send `activity` events yet sends nothing between an
 agent's signals; there the idle clock restarts only on signals, and the 5-minute
 default covers a cold model load followed by a long evaluation. Setting both
 `--idle-timeout 0` and `--timeout 0` waits for as long as the stream stays open.
+
+### Exporting a crew's memory
+
+`kmctl memory export <crew> [-n <namespace>] [-o <dir>] [--markdown]` writes a crew's
+long-term memory in the interchange format of the Open Memory Protocol Initiative (OMPI)
+exchange-and-runtime working spec v0.2: `manifest.json` and one JSON memory object per
+fact under `memories/`, plus with `--markdown` the runtime form as Markdown files under
+`markdown/`. The directory (default `./<crew>-memory`) must not exist or be empty, every
+document is checked against the schema before anything is written, and the write is
+atomic.
+
+```
+kmctl memory export homelab-pilot -n crew-homelab-pilot -o ./pilot-memory --markdown
+```
+
+The mapping is the Kubemoot operator's own, imported from the `operator/pkg/crewmemory/ompi`
+package, so the operator's `ompi-export` and kmctl write the same files. The command only
+reads: it lists keys and gets values in the `kubemoot_crew_memory` NATS bucket and never
+writes or deletes a fact. NATS is not behind the API server's service proxy, so kmctl
+opens a port-forward to a ready pod of the NATS Service with your kubeconfig credentials
+(it needs `get` on services, `list` on pods and `create` on pods/portforward in the NATS
+namespace; `--nats-namespace` and `--nats-service` default to `nats`). Pass `--nats-url`
+(and `--creds`) to use a server you already reach. An unreachable server is an error, never
+an empty export. The files hold text the agents wrote; treat them as data.
 
 ### Errors
 

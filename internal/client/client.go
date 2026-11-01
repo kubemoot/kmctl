@@ -1,7 +1,8 @@
 // Package client wires the standard kubeconfig flags and builds Kubernetes
 // clients for kmctl. kmctl talks to Kubemoot's CRDs through the dynamic client
 // (by GroupVersionResource), so it needs no compile-time dependency on the
-// operator's Go types and stays buildable standalone.
+// operator's Go types for the CRDs and stays buildable standalone. (The memory export
+// imports only the operator's public crew-memory packages.)
 package client
 
 import (
