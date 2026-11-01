@@ -9,7 +9,7 @@ require (
 	charm.land/huh/v2 v2.0.3
 	charm.land/lipgloss/v2 v2.0.5
 	github.com/charmbracelet/x/ansi v0.11.9
-	github.com/kubemoot/kubemoot/operator v0.0.0-20261101053315-d4642513bbba
+	github.com/kubemoot/kubemoot/operator v0.0.0-20261101134101-d42eb752fee2
 	github.com/nats-io/nats.go v1.55.0
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/term v0.47.0

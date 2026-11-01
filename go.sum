@@ -150,8 +150,8 @@ github.com/json-iterator/go v1.1.12 h1:PV8peI4a0ysnczrg+LtxykD8LfKY9ML6u2jnxaEnr
 github.com/json-iterator/go v1.1.12/go.mod h1:e30LSqwooZae/UwlEbR2852Gd8hjQvJoHmT4TnhNGBo=
 github.com/klauspost/compress v1.20.1 h1:T7kKElXUMXrUJ2E9QhQhxFtcK5rPyLdsGZvdbLMPdiQ=
 github.com/klauspost/compress v1.20.1/go.mod h1:LUdAzn7YLVvxLpc7y3V1m40wESHTgc1422pwwBSKYuI=
-github.com/kubemoot/kubemoot/operator v0.0.0-20261101053315-d4642513bbba h1:NnVBIYmYG1qUGBRTL1r1oAHvXGJSCXcWjz3oK/MNYsY=
-github.com/kubemoot/kubemoot/operator v0.0.0-20261101053315-d4642513bbba/go.mod h1:dC/3MF/0LHRrPXOWKeYp22G71hEuUYGTC46zgiPahPI=
+github.com/kubemoot/kubemoot/operator v0.0.0-20261101134101-d42eb752fee2 h1:2SoBErvC/D1Zh9QPUN+Jd5C3gMkHdxne8fc3Ga0G26M=
+github.com/kubemoot/kubemoot/operator v0.0.0-20261101134101-d42eb752fee2/go.mod h1:dC/3MF/0LHRrPXOWKeYp22G71hEuUYGTC46zgiPahPI=
 github.com/liggitt/tabwriter v0.0.0-20181228230101-89fcab3d43de h1:9TO3cAIGXtEhnIaL+V+BEER86oLrvS+kWobKpbJuye0=
 github.com/liggitt/tabwriter v0.0.0-20181228230101-89fcab3d43de/go.mod h1:zAbeS9B/r2mtpb6U+EI2rYA5OAXxsYw6wTamcNW+zcE=
 github.com/lucasb-eyer/go-colorful v1.4.1 h1:1EO+WB73+EH8EVbzlrG3KLAfEypQWVHIBqlTf+2hNss=
