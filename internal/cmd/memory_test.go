@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -106,6 +107,15 @@ func TestMemoryExportValidatesAgainstTheSchema(t *testing.T) {
 	}
 	if err := ompi.ValidateMemory(memory); err != nil {
 		t.Errorf("memory object does not validate: %v", err)
+	}
+	var obj struct {
+		Scope []string `json:"scope"`
+	}
+	if err := json.Unmarshal(memory, &obj); err != nil {
+		t.Fatal(err)
+	}
+	if len(obj.Scope) != 1 || obj.Scope[0] != "crew:crew-demo/demo" {
+		t.Errorf("scope = %v, want [crew:crew-demo/demo]", obj.Scope)
 	}
 }
 
