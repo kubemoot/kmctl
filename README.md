@@ -28,7 +28,7 @@ BASE="https://github.com/kubemoot/kmctl/releases/download/v${V}"
 cd "$(mktemp -d)" \
   && curl -fsSLO "${BASE}/kmctl_${V}_${OS}_${ARCH}.tar.gz" \
   && curl -fsSLO "${BASE}/checksums.txt" \
-  && grep " kmctl_${V}_${OS}_${ARCH}.tar.gz\$" checksums.txt | shasum -a 256 -c - \
+  && grep " kmctl_${V}_${OS}_${ARCH}.tar.gz\$" checksums.txt | if command -v sha256sum >/dev/null; then sha256sum -c -; else shasum -a 256 -c -; fi \
   && tar xzf "kmctl_${V}_${OS}_${ARCH}.tar.gz" kmctl \
   && sudo install kmctl /usr/local/bin/
 kmctl version
@@ -36,19 +36,22 @@ kmctl version
 
 ### Windows
 
-In PowerShell:
+In PowerShell, in a new empty folder. The checksum is checked before the archive is extracted, and the command stops if it differs:
 
 ```powershell
 $V = (Invoke-RestMethod https://api.github.com/repos/kubemoot/kmctl/releases/latest).tag_name.TrimStart('v')
 $Arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'amd64' }
-Invoke-WebRequest "https://github.com/kubemoot/kmctl/releases/download/v$V/kmctl_${V}_windows_$Arch.zip" -OutFile kmctl.zip
-Expand-Archive kmctl.zip -DestinationPath .
+$Zip = "kmctl_${V}_windows_$Arch.zip"
+$Base = "https://github.com/kubemoot/kmctl/releases/download/v$V"
+Invoke-WebRequest "$Base/$Zip" -OutFile $Zip
+Invoke-WebRequest "$Base/checksums.txt" -OutFile checksums.txt
+$Want = ((Get-Content checksums.txt | Where-Object { $_ -match ('\s' + [regex]::Escape($Zip) + '$') }) -split '\s+')[0]
+if ((Get-FileHash $Zip -Algorithm SHA256).Hash -ne $Want) { throw "checksum mismatch for $Zip" }
+Expand-Archive $Zip -DestinationPath .
 .\kmctl.exe version
 ```
 
-Move `kmctl.exe` to a folder on your `PATH`. To check it, compare
-`(Get-FileHash kmctl.zip).Hash` with the line for the same file in the release's
-`checksums.txt`.
+Then move `kmctl.exe` to a folder on your `PATH`.
 
 ### Verify the signature
 
@@ -56,7 +59,10 @@ Releases are signed without a stored key. With [cosign](https://docs.sigstore.de
 run this in the directory the Linux and macOS commands left you in:
 
 ```bash
-curl -fsSLO "${BASE}/checksums.txt.sigstore.json" && cosign verify-blob checksums.txt --bundle checksums.txt.sigstore.json --certificate-identity https://github.com/kubemoot/kmctl/.github/workflows/publish-release.yaml@refs/heads/main --certificate-oidc-issuer https://token.actions.githubusercontent.com
+curl -fsSLO "${BASE}/checksums.txt.sigstore.json" && cosign verify-blob checksums.txt \
+  --bundle checksums.txt.sigstore.json \
+  --certificate-identity-regexp '^https://github.com/kubemoot/kmctl/\.github/workflows/publish-release\.yaml@' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
 A verified `checksums.txt` vouches for every archive in it. The release also carries
@@ -72,6 +78,10 @@ kmctl status                 # is the cluster reachable and is Kubemoot installe
 kmctl version                # kmctl's version and the cluster's Kubemoot release
 kmctl create demo            # scaffold a starter crew in ./demo
 ```
+
+Shell completion for bash, zsh, fish, and PowerShell comes from `kmctl completion <shell>`;
+the [user guide](https://kubemoot.org/docs/user-guides/kmctl/#shell-completion) shows how
+to install it for each shell.
 
 ## Documentation
 
