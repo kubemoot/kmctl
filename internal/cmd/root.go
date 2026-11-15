@@ -45,7 +45,7 @@ kmctl is early. Commands are added as the tool grows.`,
 	f.ConfigFlags.AddFlags(root.PersistentFlags())
 	root.PersistentFlags().BoolP(verboseFlag, "v", false, "Print the underlying error after the message (KMCTL_DEBUG=1 does the same)")
 
-	root.AddCommand(newVersionCommand())
+	root.AddCommand(newVersionCommand(f))
 	root.AddCommand(newInfoCommand(f))
 	root.AddCommand(newStatusCommand(f))
 	root.AddCommand(newCreateCommand(f))

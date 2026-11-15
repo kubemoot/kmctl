@@ -45,6 +45,7 @@ var kubemootKinds = map[string]string{
 	"models":            "Model",
 	"crewfitnesssuites": "CrewFitnessSuite",
 	"crewfitnesses":     "CrewFitness",
+	"kubemootconfigs":   "KubemootConfig",
 }
 
 const kubemootAPIPath = "/apis/kubemoot.ai/v1alpha1"
