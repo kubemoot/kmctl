@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -18,11 +19,12 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	k8stesting "k8s.io/client-go/testing"
 
+	"github.com/kubemoot/kmctl/internal/clierr"
 	"github.com/kubemoot/kmctl/internal/version"
 )
 
 // testRelease is the release the fake operator reports; any string shows it is passed through.
-const testRelease = "7.7.7-test"
+const testRelease = "0.0.0-test"
 
 func versionConfig(status map[string]any) *unstructured.Unstructured {
 	obj := map[string]any{
@@ -87,7 +89,7 @@ func TestVersionCommand_ClientAndServerLines(t *testing.T) {
 	if len(lines) != 2 {
 		t.Fatalf("want a client line and a server line, got %q", out)
 	}
-	if !strings.HasPrefix(lines[0], "Client Version: kmctl "+version.Get().Version) {
+	if !strings.HasPrefix(lines[0], "Client Version: kmctl "+shownVersion(version.Get().Version)) {
 		t.Errorf("client line = %q", lines[0])
 	}
 	if lines[1] != "Server Version: Kubemoot "+testRelease {
@@ -142,15 +144,7 @@ func TestVersionCommand_RejectsUnknownFormat(t *testing.T) {
 
 // With no cluster to reach, the command still prints the client line and says so on the server line.
 func TestVersionCommand_NoCluster(t *testing.T) {
-	down := httptest.NewServer(http.NotFoundHandler())
-	url := down.URL
-	down.Close() // nothing listens at url any more
-	kc := filepath.Join(t.TempDir(), "kubeconfig")
-	cfg := "apiVersion: v1\nkind: Config\nclusters:\n- name: c\n  cluster:\n    server: " + url +
-		"\nusers:\n- name: u\n  user:\n    token: t\ncontexts:\n- name: c\n  context:\n    cluster: c\n    user: u\ncurrent-context: c\n"
-	if err := os.WriteFile(kc, []byte(cfg), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	kc := unreachableKubeconfig(t)
 
 	root := NewRootCommand()
 	var out bytes.Buffer
@@ -160,10 +154,10 @@ func TestVersionCommand_NoCluster(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatalf("version without a cluster must still succeed: %v", err)
 	}
-	if !strings.Contains(out.String(), "Client Version: kmctl "+version.Get().Version) {
+	if !strings.Contains(out.String(), "Client Version: kmctl "+shownVersion(version.Get().Version)) {
 		t.Errorf("client line missing: %q", out.String())
 	}
-	if !strings.Contains(out.String(), "Server Version: unavailable (cannot reach the cluster") {
+	if !strings.Contains(out.String(), "Server Version: unavailable (cannot reach the Kubernetes API server") {
 		t.Errorf("server line should say the cluster is unreachable: %q", out.String())
 	}
 }
@@ -225,8 +219,8 @@ func TestServerReleaseFrom(t *testing.T) {
 		{"old operator without the field", versionConfig(map[string]any{"ready": true, "message": "ok"}), nil, "", "does not report a release"},
 		{"empty release", versionConfig(map[string]any{"release": ""}), nil, "", "does not report a release"},
 		{"no KubemootConfig", nil, nil, "", "Kubemoot is not installed"},
-		{"forbidden", nil, forbidden, "", "not allowed to read the KubemootConfig"},
-		{"unreachable", nil, errors.New("connection refused"), "", "cannot reach the cluster"},
+		{"forbidden", nil, forbidden, "", "denied the request"},
+		{"unreachable", nil, &net.OpError{Op: "dial", Err: errors.New("connection refused")}, "", "cannot reach the Kubernetes API server (context \"fake\")"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -238,7 +232,7 @@ func TestServerReleaseFrom(t *testing.T) {
 			dc.PrependReactor("get", "kubemootconfigs", func(k8stesting.Action) (bool, runtime.Object, error) {
 				return tc.getErr != nil, nil, tc.getErr
 			})
-			got, note := serverReleaseFrom(context.Background(), dc)
+			got, note, _ := serverReleaseFrom(context.Background(), dc, clierr.Env{Context: "fake"}, false)
 			if tc.wantRelease != "" {
 				if got == nil || got.Release != tc.wantRelease || note != "" {
 					t.Fatalf("got (%v, %q), want release %q", got, note, tc.wantRelease)
@@ -249,5 +243,95 @@ func TestServerReleaseFrom(t *testing.T) {
 				t.Fatalf("got (%v, %q), want a note containing %q", got, note, tc.wantNote)
 			}
 		})
+	}
+}
+
+func TestServerReleaseFrom_RawCauseOnlyWhenVerbose(t *testing.T) {
+	raw := &net.OpError{Op: "dial", Err: errors.New("connection refused")}
+	dc := fakeDyn()
+	dc.PrependReactor("get", "kubemootconfigs", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, raw
+	})
+	env := clierr.Env{Context: "fake"}
+
+	_, note, cause := serverReleaseFrom(context.Background(), dc, env, false)
+	if cause != "" || strings.Contains(note, "refused") {
+		t.Errorf("without -v the raw error must stay out: note %q, cause %q", note, cause)
+	}
+	_, _, cause = serverReleaseFrom(context.Background(), dc, env, true)
+	if !strings.Contains(cause, "connection refused") {
+		t.Errorf("with -v the cause = %q, want the raw error", cause)
+	}
+}
+
+func unreachableKubeconfig(t *testing.T) string {
+	t.Helper()
+	down := httptest.NewServer(http.NotFoundHandler())
+	url := down.URL
+	down.Close()
+	kc := filepath.Join(t.TempDir(), "kubeconfig")
+	cfg := "apiVersion: v1\nkind: Config\nclusters:\n- name: c\n  cluster:\n    server: " + url +
+		"\nusers:\n- name: u\n  user:\n    token: t\ncontexts:\n- name: c\n  context:\n    cluster: c\n    user: u\ncurrent-context: c\n"
+	if err := os.WriteFile(kc, []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return kc
+}
+
+// An unreachable cluster still exits 0 and the structured output says why.
+func TestVersionCommand_UnreachableJSON(t *testing.T) {
+	root := NewRootCommand()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(new(bytes.Buffer))
+	root.SetArgs([]string{"--kubeconfig", unreachableKubeconfig(t), "--cache-dir", t.TempDir(), "version", "-o", "json"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("version -o json without a cluster must exit 0: %v", err)
+	}
+	var got versionReport
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatalf("json %q: %v", out.String(), err)
+	}
+	if got.ServerVersion != nil || !strings.Contains(got.ServerMessage, "cannot reach the Kubernetes API server") || got.ServerCause != "" {
+		t.Errorf("report = %+v", got)
+	}
+}
+
+func TestVersionCommand_VerboseAddsTheCause(t *testing.T) {
+	root := NewRootCommand()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(new(bytes.Buffer))
+	root.SetArgs([]string{"--kubeconfig", unreachableKubeconfig(t), "--cache-dir", t.TempDir(), "-v", "version"})
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "; cause: ") {
+		t.Errorf("-v should add the cause: %q", out.String())
+	}
+}
+
+func TestVersionCommand_OutputAndShortAreExclusive(t *testing.T) {
+	root := NewRootCommand()
+	root.SetOut(new(bytes.Buffer))
+	root.SetErr(new(bytes.Buffer))
+	root.SetArgs([]string{"version", "--short", "-o", "json"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected -o and --short together to be an error")
+	}
+}
+
+func TestShownVersion(t *testing.T) {
+	for in, want := range map[string]string{"dev": devBuildLabel, "0.0.0": devBuildLabel, "0.0.0-test": "0.0.0-test", "": ""} {
+		if got := shownVersion(in); got != want {
+			t.Errorf("shownVersion(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestServerLine_DevelopmentBuild(t *testing.T) {
+	r := versionReport{ServerVersion: &serverVersion{Release: "0.0.0"}}
+	if got := serverLine(r); got != "Kubemoot development build" {
+		t.Errorf("serverLine = %q", got)
 	}
 }
