@@ -812,6 +812,9 @@ func TestSpecialists_ReviewerNamesTheCallLines(t *testing.T) {
 			t.Errorf("reviewer rules lack %q", want)
 		}
 	}
+	if !strings.Contains(reviewer.Rules, "no [RESULT], [EMPTY RESULT] or [FAILED RESULT] block THEN") {
+		t.Error("a finding with an [EMPTY RESULT] or [FAILED RESULT] block must not count as unseen")
+	}
 	if strings.Contains(reviewer.Rules, "ARTIFACT") {
 		t.Error("reviewer rules still name the ARTIFACT marker")
 	}
