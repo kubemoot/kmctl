@@ -789,3 +789,30 @@ func assertRequiresToolCallingOnly(t *testing.T, phase string, rule map[string]a
 		t.Errorf("%s: a prefer list switches qualityBias off; the scaffold sets none", phase)
 	}
 }
+
+// The prompts describe the call lines agent-runtime writes now, not the retired
+// [ARTIFACT ...] marker or its artifact_* tools.
+func TestGenerate_PromptsNameNoRetiredMarker(t *testing.T) {
+	for _, size := range []int{1, MaxMembers} {
+		modules := ofKind(generated(t, bundle(size)), "PromptModule")
+		for i := range modules {
+			m := &modules[i]
+			content := str(m, "spec", "content")
+			if strings.Contains(content, "[ARTIFACT") || strings.Contains(content, "artifact_") {
+				t.Errorf("%s names the retired artifact marker or tool:\n%s", str(m, "metadata", "name"), content)
+			}
+		}
+	}
+}
+
+// The reviewer reads the same call lines the reference crews describe.
+func TestSpecialists_ReviewerNamesTheCallLines(t *testing.T) {
+	for _, want := range []string{"[WORKSPACE agent=", "[CALL key=<key> tool=<tool> args=", "[RESULT]", "[EMPTY RESULT]", "[FAILED RESULT]", "(args cut at <n> of <m> chars)", "[CALL tool=<tool>", "stored=no", "[NOT STORED"} {
+		if !strings.Contains(reviewer.Rules, want) {
+			t.Errorf("reviewer rules lack %q", want)
+		}
+	}
+	if strings.Contains(reviewer.Rules, "ARTIFACT") {
+		t.Error("reviewer rules still name the ARTIFACT marker")
+	}
+}

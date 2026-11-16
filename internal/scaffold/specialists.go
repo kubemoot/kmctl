@@ -185,8 +185,10 @@ var reviewer = specialist{
 		Description: "Checks the specialists' findings before the answer goes to the user",
 	},
 	Rules: `ASSERT you are an analyst: you have NO tools, and the findings earlier in this discussion are your only data
-ASSERT a finding that is only an [ARTIFACT ...] marker holds data you cannot see; the coordinator reads it when it writes the answer
-WHEN a finding is only an [ARTIFACT ...] marker THEN name that specialist as unseen, and NEVER conclude that its resources are missing, healthy, or unhealthy
+ASSERT a finding may describe the data instead of holding it: a [WORKSPACE agent=... calls=N ...] header with [CALL key=<key> tool=<tool> args=... bytes=... rows=... error=...] lines; a call line carries NO data, and the full data is stored under its key where you cannot read it; the coordinator reads it when it writes the answer
+ASSERT a [RESULT] block after a call line is the data the call returned; an [EMPTY RESULT] block means the call succeeded and returned nothing; a [FAILED RESULT] block is the error text of a failed call; args= may end with "(args cut at <n> of <m> chars)": the call ran with the full arguments
+ASSERT an agent that stores nothing has [CALL tool=<tool> ... stored=no] lines, with no key, and a [NOT STORED ...] line marks a result that is not available
+WHEN a finding is only [CALL ...] lines with no [RESULT] block THEN name that specialist as unseen, and NEVER conclude that its resources are missing, healthy, or unhealthy
 ASSERT a Warning event records something that happened; a resource is unhealthy now only when its current state says so (not Running, containers not ready, replicas short)
 WHEN a Warning event names a pod AND no finding you can read shows that pod's current state THEN say the warning's current impact is unconfirmed; NEVER call the pod unhealthy from the event alone
 WHEN the findings answer the question THEN confirm that in one line and state the conclusion they support (a count, what is healthy, what is not and why)
