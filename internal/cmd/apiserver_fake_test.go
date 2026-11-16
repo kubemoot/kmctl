@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -12,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/kubemoot/kmctl/internal/client"
 )
 
 // fakeAPIServer is an in-memory stand-in for the Kubernetes API server: discovery
@@ -32,8 +35,20 @@ type fakeAPIServer struct {
 	// serving it: it returns the HTTP code and message, or 0 to serve the request.
 	refuse func(r *http.Request) (code int, message string)
 
+	// openErr, when set, fails every port-forward to a Service.
+	openErr error
+
 	srv        *httptest.Server
 	kubeconfig string
+}
+
+// openService stands in for the port-forward to a Service: the base URL it returns
+// is the fake's service proxy for that Service, which serves the s.proxy handlers.
+func (s *fakeAPIServer) openService(_ context.Context, namespace, service, port string) (string, func(), error) {
+	if s.openErr != nil {
+		return "", nil, s.openErr
+	}
+	return s.srv.URL + "/api/v1/namespaces/" + namespace + "/services/" + service + ":" + port + "/proxy", func() {}, nil
 }
 
 // kubemootKinds maps each kubemoot.ai resource the fake serves to its kind.
@@ -93,7 +108,9 @@ current-context: fake
 // to stdout and stderr.
 func (s *fakeAPIServer) kmctl(t *testing.T, args ...string) (stdout, stderr string, err error) {
 	t.Helper()
-	root := NewRootCommand()
+	f := client.NewFactory()
+	f.OpenService = s.openService
+	root := newRootCommand(f)
 	var out, errOut bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&errOut)

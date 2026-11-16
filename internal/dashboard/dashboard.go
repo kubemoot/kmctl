@@ -1,6 +1,6 @@
 // Package dashboard finds the Kubemoot dashboard Service in the cluster and reads
-// from it through the API server's service proxy, using the active kubeconfig
-// credentials.
+// from it through a port-forward to its pod (see client.Factory.ServiceClient),
+// using the active kubeconfig credentials.
 package dashboard
 
 import (
@@ -12,7 +12,6 @@ import (
 	"github.com/kubemoot/kmctl/internal/client"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 )
 
@@ -26,7 +25,7 @@ const Selector = "app.kubernetes.io/part-of=kubemoot,app.kubernetes.io/name in (
 // httpPortName is the dashboard chart's Service port name.
 const httpPortName = "http"
 
-// Target is a dashboard Service and the port the service proxy reaches it on.
+// Target is a dashboard Service and the port the port-forward reaches it on.
 type Target struct {
 	Name string
 	Port string
@@ -89,13 +88,18 @@ func proxyPort(svc *corev1.Service) (string, error) {
 }
 
 // DownloadArtifact fetches a fitness suite's XLSX artifact from the dashboard's
-// artifact endpoint.
-func DownloadArtifact(ctx context.Context, cs kubernetes.Interface, dashNS, dashSvc, suiteNS, suite string) ([]byte, error) {
-	t, err := Find(ctx, cs.CoreV1().Services(dashNS), dashNS, dashSvc)
+// artifact endpoint. svcs lists the dashboard Service; open reaches it.
+func DownloadArtifact(ctx context.Context, svcs corev1client.ServiceInterface, open client.ServiceOpener, dashNS, dashSvc, suiteNS, suite string) ([]byte, error) {
+	t, err := Find(ctx, svcs, dashNS, dashSvc)
 	if err != nil {
 		return nil, err
 	}
-	data, err := client.ServiceProxy(cs.CoreV1().RESTClient().Get(), dashNS, t.Name, t.Port).
+	rc, stop, err := open(ctx, dashNS, t.Name, t.Port)
+	if err != nil {
+		return nil, fmt.Errorf("reach the dashboard service %s/%s: %w", dashNS, t.Name, err)
+	}
+	defer stop()
+	data, err := rc.Get().
 		Suffix("dashboard", "api", "kubemoot", "crewfitnesssuites", suiteNS, suite, "artifact").
 		DoRaw(ctx)
 	if err != nil {

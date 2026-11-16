@@ -17,16 +17,16 @@ import (
 
 // resolveConversation turns a conversation ID or a unique prefix of one into the full
 // ID, listing the crew's recent conversations through its gateway when needed.
-func resolveConversation(ctx context.Context, rc rest.Interface, namespace, crew, given string) (string, error) {
+func resolveConversation(ctx context.Context, rc rest.Interface, crew, given string) (string, error) {
 	return discussion.ResolveConversationID(given, func() ([]discussion.ConversationInfo, error) {
-		return listConversations(ctx, rc, namespace, crew)
+		return listConversations(ctx, rc, crew)
 	})
 }
 
 // listConversations lists as many of the crew's recent conversations as the gateway
 // returns.
-func listConversations(ctx context.Context, rc rest.Interface, namespace, crew string) ([]discussion.ConversationInfo, error) {
-	return discussion.List(ctx, rc, namespace, crew, discussion.ListLimit)
+func listConversations(ctx context.Context, rc rest.Interface, crew string) ([]discussion.ConversationInfo, error) {
+	return discussion.List(ctx, rc, crew, discussion.ListLimit)
 }
 
 // completeConversationIDs completes a conversation ID of the crew named by the
@@ -36,11 +36,12 @@ func completeConversationIDs(f *client.Factory, cmd *cobra.Command, crew, toComp
 	if crew == "" {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
-	rc, err := f.CoreRESTClient()
+	rc, stop, err := openGateway(cmd.Context(), f, crew, f.Namespace())
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
-	conversations, err := listConversations(cmd.Context(), rc, f.Namespace(), crew)
+	defer stop()
+	conversations, err := listConversations(cmd.Context(), rc, crew)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
@@ -88,11 +89,12 @@ conversation ID.`,
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeCrewArg(f),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			rc, err := f.CoreRESTClient()
+			rc, stop, err := openGateway(cmd.Context(), f, args[0], f.Namespace())
 			if err != nil {
 				return err
 			}
-			conversations, err := listConversations(cmd.Context(), rc, f.Namespace(), args[0])
+			defer stop()
+			conversations, err := listConversations(cmd.Context(), rc, args[0])
 			if err != nil {
 				return explainGateway(cmd.Context(), f, err, args[0], f.Namespace())
 			}
@@ -131,11 +133,12 @@ the question.`,
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: completeCrewArg(f),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			rc, err := f.CoreRESTClient()
+			rc, stop, err := openGateway(cmd.Context(), f, args[0], f.Namespace())
 			if err != nil {
 				return err
 			}
-			body, err := discussion.FetchArtifact(cmd.Context(), rc, f.Namespace(), args[0], args[1])
+			defer stop()
+			body, err := discussion.FetchArtifact(cmd.Context(), rc, args[0], args[1])
 			if err != nil {
 				return explainGateway(cmd.Context(), f, err, args[0], f.Namespace())
 			}

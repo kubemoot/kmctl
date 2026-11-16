@@ -1,6 +1,6 @@
-// Package discussion talks to a crew's discussion gateway through the API
-// server's service proxy (so it uses the active kubeconfig credentials, never
-// direct NATS). It starts a turn and streams the discussion as SSE.
+// Package discussion talks to a crew's discussion gateway over HTTP, through a
+// client for the gateway Service (client.Factory.ServiceClient), never direct
+// NATS. It starts a turn and streams the discussion as SSE.
 package discussion
 
 import (
@@ -13,13 +13,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kubemoot/kmctl/internal/client"
 	"k8s.io/client-go/rest"
 )
 
-// The per-crew gateway Service is "<crew>-discussion" on port 80 in the crew's
-// namespace (see the operator's Crew status.discussionEndpoint).
-const gatewayPort = "80"
+// GatewayPort is the port of the per-crew gateway Service, "<crew>-discussion" in
+// the crew's namespace (see the operator's Crew status.discussionEndpoint).
+const GatewayPort = "80"
 
 // ServiceName is the name of a crew's discussion gateway Service.
 func ServiceName(crew string) string { return crew + "-discussion" }
@@ -110,12 +109,12 @@ type Activity struct {
 // conversationID continues an existing conversation. The question carries this
 // machine's time zone and local date and time, so the crew's tools use the date of
 // the person asking, not the date where the crew runs.
-func Ask(ctx context.Context, rc rest.Interface, namespace, crew, message, conversationID string) (string, error) {
+func Ask(ctx context.Context, rc rest.Interface, crew, message, conversationID string) (string, error) {
 	body, err := json.Marshal(askBody(message, conversationID, CurrentRequester(time.Now())))
 	if err != nil {
 		return "", err
 	}
-	raw, err := client.ServiceProxy(rc.Post(), namespace, ServiceName(crew), gatewayPort).
+	raw, err := rc.Post().
 		Suffix("api", "v1", "discussions", crew).
 		Body(body).SetHeader("Content-Type", "application/json").
 		DoRaw(ctx)
@@ -135,8 +134,8 @@ func Ask(ctx context.Context, rc rest.Interface, namespace, crew, message, conve
 }
 
 // Stream opens the SSE stream for a conversation.
-func Stream(ctx context.Context, rc rest.Interface, namespace, crew, conversationID string) (io.ReadCloser, error) {
-	return client.ServiceProxy(rc.Get(), namespace, ServiceName(crew), gatewayPort).
+func Stream(ctx context.Context, rc rest.Interface, crew, conversationID string) (io.ReadCloser, error) {
+	return rc.Get().
 		Suffix("api", "v1", "discussions", crew, conversationID, "stream").
 		Stream(ctx)
 }
@@ -214,8 +213,8 @@ type Closed struct {
 // discussion stream, which keeps about a day of discussions. onEvent, when set, sees
 // every event as it arrives. On an error the Closed value still names the thread
 // seen so far.
-func FetchReceipt(ctx context.Context, rc rest.Interface, namespace, crew, conversationID string, onEvent func(Event)) (Closed, error) {
-	stream, err := Stream(ctx, rc, namespace, crew, conversationID)
+func FetchReceipt(ctx context.Context, rc rest.Interface, crew, conversationID string, onEvent func(Event)) (Closed, error) {
+	stream, err := Stream(ctx, rc, crew, conversationID)
 	if err != nil {
 		return Closed{}, err
 	}

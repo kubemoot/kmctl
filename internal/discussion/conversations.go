@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/kubemoot/kmctl/internal/client"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/rest"
 )
@@ -37,8 +36,8 @@ type ConversationInfo struct {
 }
 
 // List returns the crew's recent conversations, newest first.
-func List(ctx context.Context, rc rest.Interface, namespace, crew string, limit int) ([]ConversationInfo, error) {
-	raw, err := client.ServiceProxy(rc.Get(), namespace, ServiceName(crew), gatewayPort).
+func List(ctx context.Context, rc rest.Interface, crew string, limit int) ([]ConversationInfo, error) {
+	raw, err := rc.Get().
 		Suffix("api", "v1", "discussions", crew).
 		Param("limit", strconv.Itoa(limit)).
 		DoRaw(ctx)
@@ -64,8 +63,8 @@ func parseList(raw []byte) ([]ConversationInfo, error) {
 }
 
 // FetchArtifact opens the artifact under key in the crew's artifact store.
-func FetchArtifact(ctx context.Context, rc rest.Interface, namespace, crew, key string) (io.ReadCloser, error) {
-	body, err := client.ServiceProxy(rc.Get(), namespace, ServiceName(crew), gatewayPort).
+func FetchArtifact(ctx context.Context, rc rest.Interface, crew, key string) (io.ReadCloser, error) {
+	body, err := rc.Get().
 		Suffix("api", "v1", "discussions", crew, "artifact").
 		Param("key", key).
 		Stream(ctx)

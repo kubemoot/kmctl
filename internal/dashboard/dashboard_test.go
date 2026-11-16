@@ -2,19 +2,19 @@ package dashboard
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"testing"
 
+	"github.com/kubemoot/kmctl/internal/client"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/client-go/kubernetes/scheme"
+	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/rest"
 	k8stesting "k8s.io/client-go/testing"
 )
@@ -145,72 +145,86 @@ func TestProxyPort(t *testing.T) {
 	}
 }
 
-// fakeAPIServer serves the two calls DownloadArtifact makes: the labelled
-// Service list and the service-proxy GET of the artifact.
-func fakeAPIServer(t *testing.T, artifact string) (kubernetes.Interface, func() []string) {
+// openAt is a ServiceOpener that reaches a local server, as a port-forward would,
+// and records what it was asked to open.
+type opened struct {
+	namespace, service, port string
+	stopped                  bool
+}
+
+func openAt(t *testing.T, handler http.HandlerFunc, o *opened) client.ServiceOpener {
 	t.Helper()
-	var mu sync.Mutex
-	var paths []string
-	seen := func() []string {
-		mu.Lock()
-		defer mu.Unlock()
-		return append([]string(nil), paths...)
-	}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		paths = append(paths, r.URL.Path)
-		mu.Unlock()
-		switch r.URL.Path {
-		case "/api/v1/namespaces/kubemoot/services":
-			if r.URL.Query().Get("labelSelector") != Selector {
-				http.Error(w, "unexpected selector", http.StatusBadRequest)
-				return
-			}
-			list := corev1.ServiceList{Items: []corev1.Service{*svc("kubemoot-operator-dashboard", "dashboard", httpPort)}}
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(list)
-		case "/api/v1/namespaces/kubemoot/services/kubemoot-operator-dashboard:http/proxy/dashboard/api/kubemoot/crewfitnesssuites/crew-ns/suite1/artifact":
-			_, _ = w.Write([]byte(artifact))
-		default:
-			http.NotFound(w, r)
-		}
-	}))
+	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
-	cs, err := kubernetes.NewForConfig(&rest.Config{Host: srv.URL})
-	if err != nil {
-		t.Fatal(err)
+	return func(_ context.Context, namespace, service, port string) (rest.Interface, func(), error) {
+		o.namespace, o.service, o.port = namespace, service, port
+		rc, err := rest.UnversionedRESTClientFor(&rest.Config{
+			Host:          srv.URL,
+			ContentConfig: rest.ContentConfig{NegotiatedSerializer: scheme.Codecs.WithoutConversion()},
+		})
+		return rc, func() { o.stopped = true }, err
 	}
-	return cs, seen
+}
+
+func artifactHandler(artifact string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/dashboard/api/kubemoot/crewfitnesssuites/crew-ns/suite1/artifact" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write([]byte(artifact))
+	}
+}
+
+func dashboardServices() corev1client.ServiceInterface {
+	return fake.NewClientset(svc("kubemoot-operator-dashboard", "dashboard", httpPort)).CoreV1().Services(ns)
 }
 
 func TestDownloadArtifact_ThroughDiscoveredService(t *testing.T) {
-	cs, _ := fakeAPIServer(t, "XLSX-BYTES")
-	data, err := DownloadArtifact(context.Background(), cs, ns, "", "crew-ns", "suite1")
+	var o opened
+	data, err := DownloadArtifact(context.Background(), dashboardServices(), openAt(t, artifactHandler("XLSX-BYTES"), &o), ns, "", "crew-ns", "suite1")
 	if err != nil {
 		t.Fatalf("DownloadArtifact: %v", err)
 	}
 	if string(data) != "XLSX-BYTES" {
 		t.Errorf("data = %q", data)
 	}
+	if o.namespace != ns || o.service != "kubemoot-operator-dashboard" || o.port != "http" {
+		t.Errorf("opened %+v, want kubemoot/kubemoot-operator-dashboard:http", o)
+	}
+	if !o.stopped {
+		t.Error("the connection to the dashboard was left open")
+	}
 }
 
-func TestDownloadArtifact_FindErrorStopsBeforeProxy(t *testing.T) {
-	cs, seen := fakeAPIServer(t, "unused")
-	_, err := DownloadArtifact(context.Background(), cs, ns, "absent", "crew-ns", "suite1")
+func TestDownloadArtifact_FindErrorOpensNothing(t *testing.T) {
+	var o opened
+	_, err := DownloadArtifact(context.Background(), dashboardServices(), openAt(t, artifactHandler("unused"), &o), ns, "absent", "crew-ns", "suite1")
 	if err == nil {
 		t.Fatal("want an error for a missing override service")
 	}
-	for _, p := range seen() {
-		if strings.Contains(p, "/proxy/") {
-			t.Errorf("no proxy call may follow a failed lookup: %s", p)
-		}
+	if o.service != "" {
+		t.Errorf("nothing may be opened after a failed lookup, opened %+v", o)
 	}
 }
 
-func TestDownloadArtifact_ProxyError(t *testing.T) {
-	cs, _ := fakeAPIServer(t, "unused")
-	_, err := DownloadArtifact(context.Background(), cs, ns, "", "crew-ns", "no-such-suite")
+func TestDownloadArtifact_OpenErrorNamesTheService(t *testing.T) {
+	open := func(context.Context, string, string, string) (rest.Interface, func(), error) {
+		return nil, nil, errors.New("pods/portforward is forbidden")
+	}
+	_, err := DownloadArtifact(context.Background(), dashboardServices(), open, ns, "", "crew-ns", "suite1")
+	if err == nil || !strings.Contains(err.Error(), "kubemoot/kubemoot-operator-dashboard") || !strings.Contains(err.Error(), "forbidden") {
+		t.Fatalf("want the service and the cause named, got %v", err)
+	}
+}
+
+func TestDownloadArtifact_DownloadErrorNamesTheSuite(t *testing.T) {
+	var o opened
+	_, err := DownloadArtifact(context.Background(), dashboardServices(), openAt(t, artifactHandler("unused"), &o), ns, "", "crew-ns", "no-such-suite")
 	if err == nil || !strings.Contains(err.Error(), `suite "no-such-suite"`) {
 		t.Fatalf("want a download error naming the suite, got %v", err)
+	}
+	if !o.stopped {
+		t.Error("the connection to the dashboard was left open after a failed download")
 	}
 }

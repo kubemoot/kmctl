@@ -34,7 +34,7 @@ func newFitnessCommand(f *client.Factory) *cobra.Command {
 }
 
 // newDownloadCommand fetches a suite's XLSX artifact from the dashboard's
-// artifact endpoint through the API server service proxy (kubeconfig creds, no
+// artifact endpoint through a port-forward to its pod (kubeconfig creds, no
 // direct NATS object-store access). The dashboard Service is found by label.
 func newDownloadCommand(f *client.Factory) *cobra.Command {
 	var outFile, dashNS, dashSvc string
@@ -42,7 +42,8 @@ func newDownloadCommand(f *client.Factory) *cobra.Command {
 		Use:   "download SUITE",
 		Short: "Download a fitness suite's XLSX artifact",
 		Long: `Download fetches a fitness suite's XLSX artifact from the Kubemoot dashboard
-through the API server's service proxy. The dashboard Service is found in
+through a port-forward to its pod, as kubectl port-forward does, which works
+under any network policy. The dashboard Service is found in
 --dashboard-namespace by its labels (` + dashboard.Selector + `);
 --dashboard-service names it instead.`,
 		Example: `  kmctl fitness download demo-starter
@@ -55,7 +56,7 @@ through the API server's service proxy. The dashboard Service is found in
 			if err != nil {
 				return err
 			}
-			data, err := dashboard.DownloadArtifact(cmd.Context(), cs, dashNS, dashSvc, f.Namespace(), suite)
+			data, err := dashboard.DownloadArtifact(cmd.Context(), cs.CoreV1().Services(dashNS), f.ServiceClient, dashNS, dashSvc, f.Namespace(), suite)
 			if err != nil {
 				return err
 			}
