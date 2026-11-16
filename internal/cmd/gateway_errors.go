@@ -14,6 +14,7 @@ import (
 	"github.com/kubemoot/kmctl/internal/conversation"
 	"github.com/kubemoot/kmctl/internal/discussion"
 	"github.com/kubemoot/kmctl/internal/resource"
+	"github.com/kubemoot/kmctl/internal/svcforward"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
@@ -58,8 +59,11 @@ func explainGatewayOpen(ctx context.Context, f *client.Factory, err error, crew,
 			"kmctl port-forwards to it, which takes get on services, list on pods, and create on pods/portforward; check yours with: kubectl auth can-i create pods/portforward -n "+namespace, err)
 	case apierrors.IsNotFound(err):
 		return explainGateway(ctx, f, err, crew, namespace)
-	case strings.Contains(err.Error(), "no ready pod"):
+	case errors.Is(err, svcforward.ErrNoReadyPod):
 		return gatewayStatus(http.StatusServiceUnavailable, crew, namespace, err)
+	case errors.Is(err, svcforward.ErrNoPodsSelected):
+		return clierr.New(fmt.Sprintf("the discussion gateway service of crew %q in namespace %q selects no pods", crew, namespace),
+			"A Service without a selector has nothing to forward to; check how the crew's chart defines "+discussion.ServiceName(crew), err)
 	}
 	return clierr.New(fmt.Sprintf("could not reach the discussion gateway of crew %q in namespace %q", crew, namespace),
 		"kmctl port-forwards to it, as kubectl port-forward does; check that you can with: kubectl port-forward -n "+namespace+" svc/"+discussion.ServiceName(crew)+" 8080:"+discussion.GatewayPort, err)

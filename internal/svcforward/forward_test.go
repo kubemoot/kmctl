@@ -3,13 +3,16 @@ package svcforward
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -218,5 +221,101 @@ func TestOpenNamesAMissingService(t *testing.T) {
 	_, _, err := Open(context.Background(), &rest.Config{}, fake.NewSimpleClientset(), "kubemoot", "dash", "http")
 	if err == nil || !strings.Contains(err.Error(), "kubemoot/dash") {
 		t.Errorf("Open() error = %v, want the service named", err)
+	}
+}
+
+func podNoReadyCondition(name string) *corev1.Pod {
+	p := pod(name, corev1.PodRunning, corev1.ConditionTrue)
+	p.Status.Conditions = nil
+	return p
+}
+
+func TestPickPodNoneReady(t *testing.T) {
+	cases := map[string][]runtime.Object{
+		"ready condition false":   {pod("nats-0", corev1.PodRunning, corev1.ConditionFalse), pod("nats-1", corev1.PodRunning, corev1.ConditionFalse)},
+		"no ready condition":      {podNoReadyCondition("nats-0")},
+		"ready condition unknown": {pod("nats-0", corev1.PodRunning, corev1.ConditionUnknown)},
+		"no pods at all":          {},
+		"ready but not running":   {pod("nats-0", corev1.PodSucceeded, corev1.ConditionTrue)},
+	}
+	for name, pods := range cases {
+		cs := fake.NewSimpleClientset(append([]runtime.Object{service(map[string]string{"app": "nats"})}, pods...)...)
+		_, _, err := PickPod(context.Background(), cs, "nats", "nats")
+		if !errors.Is(err, ErrNoReadyPod) {
+			t.Errorf("%s: PickPod() error = %v, want ErrNoReadyPod", name, err)
+		}
+	}
+}
+
+func TestPickPodTakesTheLaterReadyPod(t *testing.T) {
+	cs := fake.NewSimpleClientset(
+		service(map[string]string{"app": "nats"}),
+		pod("nats-0", corev1.PodRunning, corev1.ConditionFalse),
+		podNoReadyCondition("nats-1"),
+		pod("nats-2", corev1.PodPending, corev1.ConditionTrue),
+		pod("nats-3", corev1.PodRunning, corev1.ConditionTrue),
+	)
+	_, got, err := PickPod(context.Background(), cs, "nats", "nats")
+	if err != nil || got.Name != "nats-3" {
+		t.Errorf("PickPod() = %v, %v, want nats-3", got, err)
+	}
+}
+
+func TestPickPodSentinelForAServiceWithoutASelector(t *testing.T) {
+	_, _, err := PickPod(context.Background(), fake.NewSimpleClientset(service(nil)), "nats", "nats")
+	if !errors.Is(err, ErrNoPodsSelected) || errors.Is(err, ErrNoReadyPod) {
+		t.Errorf("PickPod() error = %v, want ErrNoPodsSelected only", err)
+	}
+}
+
+// forbiddenServer answers every request, the WebSocket and the SPDY upgrade
+// alike, with the 403 Status the API server sends when pods/portforward is refused.
+func forbiddenServer(t *testing.T) *rest.Config {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = io.WriteString(w, `{"kind":"Status","apiVersion":"v1","status":"Failure","message":"pods \"nats-0\" is forbidden: User \"dev\" cannot create resource \"pods/portforward\" in API group \"\" in the namespace \"nats\"","reason":"Forbidden","details":{"name":"nats-0","kind":"pods"},"code":403}`)
+	}))
+	t.Cleanup(srv.Close)
+	return &rest.Config{Host: srv.URL}
+}
+
+func TestForwardForbiddenByTheAPIServerIsForbidden(t *testing.T) {
+	cfg := forbiddenServer(t)
+	cs, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dialer, err := dialerFor(cfg, cs, "nats", "nats-0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = forward(context.Background(), dialer, "0:4222")
+	if !apierrors.IsForbidden(err) {
+		t.Fatalf("forward() error = %v, want apierrors.IsForbidden", err)
+	}
+	if !strings.Contains(err.Error(), "pods/portforward") {
+		t.Errorf("the error lost the server's message: %v", err)
+	}
+}
+
+func TestClassify(t *testing.T) {
+	status := &apierrors.StatusError{ErrStatus: metav1.Status{Code: 403, Reason: metav1.StatusReasonForbidden, Message: "no"}}
+	cases := map[string]struct {
+		err           error
+		wantForbidden bool
+	}{
+		"websocket upgrade failure carrying a 403 Status": {&httpstream.UpgradeFailureError{Cause: status}, true},
+		"spdy upgrade text with a forbidden message":      {errors.New(`unable to upgrade connection: pods "p" is forbidden: User "u" cannot create`), true},
+		"spdy upgrade text with another message":          {errors.New("unable to upgrade connection: pod does not exist"), false},
+		"a forbidden word outside an upgrade":             {errors.New(`pods "p" is forbidden: x`), false},
+		"a dial failure":                                  {errors.New("connection refused"), false},
+		"a not found Status":                              {&apierrors.StatusError{ErrStatus: metav1.Status{Code: 404, Reason: metav1.StatusReasonNotFound}}, false},
+	}
+	for name, c := range cases {
+		if got := apierrors.IsForbidden(classify(c.err)); got != c.wantForbidden {
+			t.Errorf("%s: IsForbidden(classify(err)) = %v, want %v", name, got, c.wantForbidden)
+		}
 	}
 }

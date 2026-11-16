@@ -15,6 +15,7 @@ import (
 	"github.com/kubemoot/kmctl/internal/client"
 	"github.com/kubemoot/kmctl/internal/clierr"
 	"github.com/kubemoot/kmctl/internal/conversation"
+	"github.com/kubemoot/kmctl/internal/svcforward"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -251,11 +252,20 @@ func TestErrors_Forbidden(t *testing.T) {
 
 func TestErrors_GatewayHasNoReadyPod(t *testing.T) {
 	s := newFakeAPIServer(t)
-	s.openErr = errors.New("the service team-a/demo-discussion has no ready pod")
+	s.openErr = fmt.Errorf("the service team-a/demo-discussion has %w", svcforward.ErrNoReadyPod)
 	got, code := s.run(t, "conversation", "ask", "demo", "hi")
 	wantStderr(t, "no ready pod", got, code,
 		"Error: the discussion gateway of crew \"demo\" in namespace \"team-a\" is not ready\n"+
 			"Hint: Its pods may still be starting. Check the crew with: kmctl crew get demo -n team-a\n")
+}
+
+func TestErrors_GatewayServiceSelectsNoPods(t *testing.T) {
+	s := newFakeAPIServer(t)
+	s.openErr = fmt.Errorf("the service team-a/demo-discussion %w", svcforward.ErrNoPodsSelected)
+	got, code := s.run(t, "conversation", "ask", "demo", "hi")
+	wantStderr(t, "no selector", got, code,
+		"Error: the discussion gateway service of crew \"demo\" in namespace \"team-a\" selects no pods\n"+
+			"Hint: A Service without a selector has nothing to forward to; check how the crew's chart defines demo-discussion\n")
 }
 
 func TestErrors_GatewayPortForwardFails(t *testing.T) {

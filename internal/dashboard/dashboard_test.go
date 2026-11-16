@@ -128,7 +128,7 @@ func TestFind_ListError(t *testing.T) {
 	}
 }
 
-func TestProxyPort(t *testing.T) {
+func TestServicePort(t *testing.T) {
 	cases := map[string]struct {
 		ports []corev1.ServicePort
 		want  string
@@ -138,9 +138,9 @@ func TestProxyPort(t *testing.T) {
 		"first when no http":  {[]corev1.ServicePort{{Name: "web", Port: 8080}, {Name: "metrics", Port: 9090}}, "8080"},
 	}
 	for name, c := range cases {
-		got, err := proxyPort(svc("d", "dashboard", c.ports...))
+		got, err := servicePort(svc("d", "dashboard", c.ports...))
 		if err != nil || got != c.want {
-			t.Errorf("%s: proxyPort = %q, %v; want %q", name, got, err, c.want)
+			t.Errorf("%s: servicePort = %q, %v; want %q", name, got, err, c.want)
 		}
 	}
 }
