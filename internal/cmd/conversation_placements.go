@@ -78,12 +78,13 @@ watch".
 // the latest closed thread. A stream that ends or stalls before a thread closes is
 // explained the way watch explains it, with the IDs and the command that reattaches.
 func fetchReceipt(ctx context.Context, f *client.Factory, sf streamFlags, crew, given string) (string, discussion.Closed, error) {
-	rc, err := f.CoreRESTClient()
+	ns := f.Namespace()
+	rc, stop, err := openGateway(ctx, f, crew, ns)
 	if err != nil {
 		return "", discussion.Closed{}, err
 	}
-	ns := f.Namespace()
-	id, err := resolveConversation(ctx, rc, ns, crew, given)
+	defer stop()
+	id, err := resolveConversation(ctx, rc, crew, given)
 	if err != nil {
 		return "", discussion.Closed{}, explainGateway(ctx, f, err, crew, ns)
 	}
@@ -91,7 +92,7 @@ func fetchReceipt(ctx context.Context, f *client.Factory, sf streamFlags, crew, 
 	defer cancel()
 	w := &streamWatch{idle: conversation.NewIdleClock(sf.idleTimeout, sf.after, cancel)}
 	defer w.idle.Stop()
-	closed, err := discussion.FetchReceipt(ctx, rc, ns, crew, id, w.seen)
+	closed, err := discussion.FetchReceipt(ctx, rc, crew, id, w.seen)
 	if err == nil {
 		return id, closed, nil
 	}

@@ -1,13 +1,15 @@
 package client
 
 import (
+	"context"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
 )
 
 type fakeGroups struct {
@@ -96,10 +98,6 @@ func TestFactory_ClientsetAndCoreRESTClient(t *testing.T) {
 	if err != nil || cs == nil {
 		t.Fatalf("Clientset = %v, %v", cs, err)
 	}
-	rc, err := f.CoreRESTClient()
-	if err != nil || rc == nil {
-		t.Fatalf("CoreRESTClient = %v, %v", rc, err)
-	}
 }
 
 func TestFactory_ClientsetConfigError(t *testing.T) {
@@ -109,18 +107,60 @@ func TestFactory_ClientsetConfigError(t *testing.T) {
 	if _, err := f.Clientset(); err == nil {
 		t.Error("a missing kubeconfig must surface as an error")
 	}
-	if _, err := f.CoreRESTClient(); err == nil {
+	if _, _, err := f.ServiceClient(context.Background(), "ns", "svc", "http"); err == nil {
 		t.Error("a missing kubeconfig must surface as an error")
 	}
 }
 
-func TestServiceProxy_Path(t *testing.T) {
-	cs, err := kubernetes.NewForConfig(&rest.Config{Host: "http://127.0.0.1:1"})
+func TestServiceClient_RequestsAreRelativeToTheServiceRoot(t *testing.T) {
+	var path, auth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path, auth = r.URL.Path, r.Header.Get("Authorization")
+		_, _ = io.WriteString(w, "ok")
+	}))
+	defer srv.Close()
+	var gotNS, gotSvc, gotPort string
+	f := NewFactory()
+	f.OpenService = func(_ context.Context, ns, svc, port string) (string, func(), error) {
+		gotNS, gotSvc, gotPort = ns, svc, port
+		return srv.URL, func() {}, nil
+	}
+	rc, stop, err := f.ServiceClient(context.Background(), "team-a", "demo-discussion", "80")
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := ServiceProxy(cs.CoreV1().RESTClient().Get(), "ns", "svc", "http").Suffix("a", "b").URL().Path
-	if want := "/api/v1/namespaces/ns/services/svc:http/proxy/a/b"; got != want {
-		t.Errorf("path = %q, want %q", got, want)
+	defer stop()
+	raw, err := rc.Get().Suffix("api", "v1", "discussions", "demo").DoRaw(context.Background())
+	if err != nil || string(raw) != "ok" {
+		t.Fatalf("DoRaw = %q, %v", raw, err)
+	}
+	if path != "/api/v1/discussions/demo" {
+		t.Errorf("path = %q, want the Service-relative path", path)
+	}
+	if auth != "" {
+		t.Errorf("the Kubernetes credentials reached the Service: %q", auth)
+	}
+	if gotNS != "team-a" || gotSvc != "demo-discussion" || gotPort != "80" {
+		t.Errorf("opened %s/%s:%s", gotNS, gotSvc, gotPort)
+	}
+}
+
+func TestServiceClient_OpenErrorSurfaces(t *testing.T) {
+	f := NewFactory()
+	boom := errors.New("pods/portforward is forbidden")
+	f.OpenService = func(context.Context, string, string, string) (string, func(), error) { return "", nil, boom }
+	if _, _, err := f.ServiceClient(context.Background(), "ns", "svc", "http"); !errors.Is(err, boom) {
+		t.Errorf("error = %v, want the open error", err)
+	}
+}
+
+func TestServiceClient_StopsTheForwardWhenTheClientCannotBeBuilt(t *testing.T) {
+	f := NewFactory()
+	stopped := false
+	f.OpenService = func(context.Context, string, string, string) (string, func(), error) {
+		return "http://[::1", func() { stopped = true }, nil
+	}
+	if _, _, err := f.ServiceClient(context.Background(), "ns", "svc", "http"); err == nil || !stopped {
+		t.Errorf("err = %v, stopped = %v; want an error and a closed forward", err, stopped)
 	}
 }

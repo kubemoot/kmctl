@@ -16,13 +16,13 @@ import (
 	"github.com/kubemoot/kmctl/internal/resource"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/rest"
 )
 
 // explainGateway explains a failed call to a crew's discussion gateway. A 404 or
 // 503 first checks that the crew exists in the namespace, and names the
-// namespaces where it does when it does not. A 403 names the permission the
-// service proxy takes. Errors that are not an HTTP status (an unreachable
-// cluster) and rejected credentials are returned unchanged.
+// namespaces where it does when it does not. Errors that are not an HTTP status
+// (an unreachable cluster) and rejected credentials are returned unchanged.
 func explainGateway(ctx context.Context, f *client.Factory, err error, crew, namespace string) error {
 	var se *apierrors.StatusError
 	if !errors.As(err, &se) || apierrors.IsUnauthorized(err) {
@@ -38,14 +38,38 @@ func explainGateway(ctx context.Context, f *client.Factory, err error, crew, nam
 	return gatewayStatus(code, crew, namespace, err)
 }
 
+// openGateway opens a client to the crew's discussion gateway through a
+// port-forward to one of its pods, as kubectl port-forward does; the caller closes
+// it with the returned function. A failure is explained: the Service or crew is
+// missing, the forward is not allowed, or no pod is ready.
+func openGateway(ctx context.Context, f *client.Factory, crew, namespace string) (rest.Interface, func(), error) {
+	rc, stop, err := f.ServiceClient(ctx, namespace, discussion.ServiceName(crew), discussion.GatewayPort)
+	if err != nil {
+		return nil, nil, explainGatewayOpen(ctx, f, err, crew, namespace)
+	}
+	return rc, stop, nil
+}
+
+// explainGatewayOpen explains why the port-forward to the gateway could not open.
+func explainGatewayOpen(ctx context.Context, f *client.Factory, err error, crew, namespace string) error {
+	switch {
+	case apierrors.IsForbidden(err):
+		return clierr.New(fmt.Sprintf("you are not allowed to reach the discussion gateway of crew %q in namespace %q", crew, namespace),
+			"kmctl port-forwards to it, which takes get on services, list on pods, and create on pods/portforward; check yours with: kubectl auth can-i create pods/portforward -n "+namespace, err)
+	case apierrors.IsNotFound(err):
+		return explainGateway(ctx, f, err, crew, namespace)
+	case strings.Contains(err.Error(), "no ready pod"):
+		return gatewayStatus(http.StatusServiceUnavailable, crew, namespace, err)
+	}
+	return clierr.New(fmt.Sprintf("could not reach the discussion gateway of crew %q in namespace %q", crew, namespace),
+		"kmctl port-forwards to it, as kubectl port-forward does; check that you can with: kubectl port-forward -n "+namespace+" svc/"+discussion.ServiceName(crew)+" 8080:"+discussion.GatewayPort, err)
+}
+
 // gatewayStatus explains the gateway's HTTP status once the crew is known to be
 // in the namespace (or cannot be looked up).
 func gatewayStatus(code int, crew, namespace string, err error) *clierr.Error {
 	check := fmt.Sprintf("Check the crew with: kmctl crew get %s -n %s", crew, namespace)
 	switch code {
-	case http.StatusForbidden:
-		return clierr.New(fmt.Sprintf("you are not allowed to reach the discussion gateway of crew %q in namespace %q", crew, namespace),
-			"It takes create on services/proxy; check yours with: kubectl auth can-i create services/proxy -n "+namespace, err)
 	case http.StatusNotFound:
 		return clierr.New(fmt.Sprintf("the discussion gateway of crew %q was not found in namespace %q", crew, namespace), check, err)
 	case http.StatusServiceUnavailable:

@@ -6,12 +6,16 @@
 package client
 
 import (
+	"context"
+
+	"github.com/kubemoot/kmctl/internal/svcforward"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 )
 
@@ -21,6 +25,9 @@ const KubemootGroup = "kubemoot.ai"
 // Factory builds clients from the resolved kubeconfig/context/namespace flags.
 type Factory struct {
 	ConfigFlags *genericclioptions.ConfigFlags
+	// OpenService, when set, replaces the port-forward ServiceClient opens; tests
+	// point it at a local server.
+	OpenService BaseOpener
 }
 
 // NewFactory returns a Factory backed by the standard kubectl config flags
@@ -54,7 +61,7 @@ func (f *Factory) RESTMapper() (meta.RESTMapper, error) {
 }
 
 // Clientset builds a typed Kubernetes clientset for core resources (Services,
-// the service proxy) authenticated by the active kubeconfig context.
+// the Service lookup) authenticated by the active kubeconfig context.
 func (f *Factory) Clientset() (kubernetes.Interface, error) {
 	cfg, err := f.RESTConfig()
 	if err != nil {
@@ -63,21 +70,56 @@ func (f *Factory) Clientset() (kubernetes.Interface, error) {
 	return kubernetes.NewForConfig(cfg)
 }
 
-// CoreRESTClient builds a core/v1 REST client, used to reach in-cluster services
-// (e.g. the per-crew discussion gateway) through the API server's service proxy,
-// authenticated by the active kubeconfig context.
-func (f *Factory) CoreRESTClient() (rest.Interface, error) {
-	cs, err := f.Clientset()
-	if err != nil {
-		return nil, err
+// ServiceOpener opens an HTTP client to a Service's port (a name or a number) and
+// returns a function that closes it.
+type ServiceOpener func(ctx context.Context, namespace, service, port string) (rest.Interface, func(), error)
+
+// BaseOpener opens a connection to a Service's port and returns the base URL its
+// HTTP server answers on and a function that closes the connection.
+type BaseOpener func(ctx context.Context, namespace, service, port string) (string, func(), error)
+
+// ServiceClient opens an HTTP client to a Service in the cluster (the per-crew
+// discussion gateway, the dashboard) through a port-forward to one of its pods, as
+// kubectl port-forward does, with the active kubeconfig context's credentials. The
+// traffic goes through the kubelet, so it works under a default-deny NetworkPolicy,
+// which blocks the API server's service proxy. The client sends no Kubernetes
+// credentials to the Service; request paths are relative to the Service's root.
+// The returned function closes the forward; the forward also ends with ctx.
+func (f *Factory) ServiceClient(ctx context.Context, namespace, service, port string) (rest.Interface, func(), error) {
+	open := f.OpenService
+	if open == nil {
+		open = f.forwardService
 	}
-	return cs.CoreV1().RESTClient(), nil
+	base, stop, err := open(ctx, namespace, service, port)
+	if err != nil {
+		return nil, nil, err
+	}
+	rc, err := rest.UnversionedRESTClientFor(&rest.Config{
+		Host:          base,
+		ContentConfig: rest.ContentConfig{NegotiatedSerializer: scheme.Codecs.WithoutConversion()},
+	})
+	if err != nil {
+		stop()
+		return nil, nil, err
+	}
+	return rc, stop, nil
 }
 
-// ServiceProxy points a request at a Service through the API server's service
-// proxy (services/<name>:<port>/proxy); the caller adds the path with Suffix.
-func ServiceProxy(req *rest.Request, namespace, service, port string) *rest.Request {
-	return req.Namespace(namespace).Resource("services").Name(service + ":" + port).SubResource("proxy")
+// forwardService is the port-forward behind ServiceClient.
+func (f *Factory) forwardService(ctx context.Context, namespace, service, port string) (string, func(), error) {
+	cfg, err := f.RESTConfig()
+	if err != nil {
+		return "", nil, err
+	}
+	cs, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		return "", nil, err
+	}
+	addr, stop, err := svcforward.Open(ctx, cfg, cs, namespace, service, port)
+	if err != nil {
+		return "", nil, err
+	}
+	return "http://" + addr, stop, nil
 }
 
 // Namespace resolves the effective namespace from the --namespace flag, the

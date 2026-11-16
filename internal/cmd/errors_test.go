@@ -15,6 +15,8 @@ import (
 	"github.com/kubemoot/kmctl/internal/client"
 	"github.com/kubemoot/kmctl/internal/clierr"
 	"github.com/kubemoot/kmctl/internal/conversation"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 // runOpts is how a test runs kmctl the way main does: whether stderr counts as a
@@ -22,6 +24,8 @@ import (
 type runOpts struct {
 	styled bool
 	env    map[string]string
+	// open replaces the port-forward to a Service; nil keeps the real one.
+	open client.BaseOpener
 }
 
 // runKmctl runs a command line through report, as Execute does, and returns what
@@ -29,6 +33,7 @@ type runOpts struct {
 func runKmctl(t *testing.T, o runOpts, args ...string) (string, int) {
 	t.Helper()
 	f := client.NewFactory()
+	f.OpenService = o.open
 	root := newRootCommand(f)
 	var stderr bytes.Buffer
 	root.SetOut(io.Discard)
@@ -42,7 +47,7 @@ func runKmctl(t *testing.T, o runOpts, args ...string) (string, int) {
 // run runs a command line against the fake API server through report.
 func (s *fakeAPIServer) run(t *testing.T, args ...string) (string, int) {
 	t.Helper()
-	return runKmctl(t, runOpts{}, append([]string{"--kubeconfig", s.kubeconfig}, args...)...)
+	return runKmctl(t, runOpts{open: s.openService}, append([]string{"--kubeconfig", s.kubeconfig}, args...)...)
 }
 
 // wantStderr checks that a failed command printed exactly want and exited 1.
@@ -235,13 +240,31 @@ func TestErrors_Forbidden(t *testing.T) {
 		"Error: you are not allowed to list crews in namespace \"team-a\"\n"+
 			"Hint: Ask a cluster admin for access, or check yours with: kubectl auth can-i --list -n team-a\n")
 
-	s.refuse = func(*http.Request) (int, string) {
-		return http.StatusForbidden, `services "demo-discussion" is forbidden: User "dev" cannot create resource "services/proxy" in API group "" in the namespace "team-a"`
-	}
+	s.refuse = nil
+	s.openErr = apierrors.NewForbidden(schema.GroupResource{Resource: "pods/portforward"}, "demo-discussion-0",
+		errors.New(`User "dev" cannot create resource "pods/portforward" in the namespace "team-a"`))
 	got, code = s.run(t, "conversation", "ask", "demo", "hi")
-	wantStderr(t, "403 on the service proxy", got, code,
+	wantStderr(t, "403 on the port-forward", got, code,
 		"Error: you are not allowed to reach the discussion gateway of crew \"demo\" in namespace \"team-a\"\n"+
-			"Hint: It takes create on services/proxy; check yours with: kubectl auth can-i create services/proxy -n team-a\n")
+			"Hint: kmctl port-forwards to it, which takes get on services, list on pods, and create on pods/portforward; check yours with: kubectl auth can-i create pods/portforward -n team-a\n")
+}
+
+func TestErrors_GatewayHasNoReadyPod(t *testing.T) {
+	s := newFakeAPIServer(t)
+	s.openErr = errors.New("the service team-a/demo-discussion has no ready pod")
+	got, code := s.run(t, "conversation", "ask", "demo", "hi")
+	wantStderr(t, "no ready pod", got, code,
+		"Error: the discussion gateway of crew \"demo\" in namespace \"team-a\" is not ready\n"+
+			"Hint: Its pods may still be starting. Check the crew with: kmctl crew get demo -n team-a\n")
+}
+
+func TestErrors_GatewayPortForwardFails(t *testing.T) {
+	s := newFakeAPIServer(t)
+	s.openErr = errors.New("open the port-forward: connection refused")
+	got, code := s.run(t, "conversation", "ask", "demo", "hi")
+	wantStderr(t, "forward failed", got, code,
+		"Error: could not reach the discussion gateway of crew \"demo\" in namespace \"team-a\"\n"+
+			"Hint: kmctl port-forwards to it, as kubectl port-forward does; check that you can with: kubectl port-forward -n team-a svc/demo-discussion 8080:80\n")
 }
 
 func TestErrors_ObjectNotFound(t *testing.T) {

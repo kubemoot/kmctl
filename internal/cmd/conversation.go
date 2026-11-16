@@ -17,16 +17,17 @@ import (
 )
 
 // newConversationCommand groups the conversation subcommands. The crew's
-// discussion gateway is reached through the API server's service proxy, so it
-// uses the active kubeconfig credentials (no direct NATS).
+// discussion gateway is reached through a port-forward to its pod, so it uses the
+// active kubeconfig credentials (no direct NATS).
 func newConversationCommand(f *client.Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "conversation",
 		Aliases: []string{"conv"},
 		Short:   "Ask a crew a question and watch the discussion",
 		Long: `Start a turn with a crew and stream the moot's deliberation, or watch an
-in-flight conversation. The crew's discussion gateway is reached through the
-Kubernetes API server's service proxy using your kubeconfig credentials.
+in-flight conversation. The crew's discussion gateway is reached through a
+port-forward to its pod, as kubectl port-forward does, using your kubeconfig
+credentials; that works under any network policy.
 
 Pass the crew's namespace with -n (the crew and its <crew>-discussion service
 live there, e.g. -n crew-homelab-pilot).
@@ -74,17 +75,18 @@ as the last line, the command that asks a follow-up in the same conversation.
 			if err != nil {
 				return err
 			}
-			rc, err := f.CoreRESTClient()
+			ctx, cancel := sf.overall(cmd.Context())
+			defer cancel()
+			rc, stop, err := openGateway(ctx, f, crew, opts.Namespace)
 			if err != nil {
 				return err
 			}
-			ctx, cancel := sf.overall(cmd.Context())
-			defer cancel()
-			conversationID, err = resolveConversation(ctx, rc, opts.Namespace, crew, conversationID)
+			defer stop()
+			conversationID, err = resolveConversation(ctx, rc, crew, conversationID)
 			if err != nil {
 				return explainGateway(ctx, f, err, crew, opts.Namespace)
 			}
-			opts.ConversationID, err = discussion.Ask(ctx, rc, opts.Namespace, crew, message, conversationID)
+			opts.ConversationID, err = discussion.Ask(ctx, rc, crew, message, conversationID)
 			if err != nil {
 				return explainGateway(ctx, f, err, crew, opts.Namespace)
 			}
@@ -122,13 +124,14 @@ The output modes (-o full|plain|json) are the same as for "kmctl conversation as
 			if err != nil {
 				return err
 			}
-			rc, err := f.CoreRESTClient()
+			ctx, cancel := sf.overall(cmd.Context())
+			defer cancel()
+			rc, stop, err := openGateway(ctx, f, crew, opts.Namespace)
 			if err != nil {
 				return err
 			}
-			ctx, cancel := sf.overall(cmd.Context())
-			defer cancel()
-			opts.ConversationID, err = resolveConversation(ctx, rc, opts.Namespace, crew, id)
+			defer stop()
+			opts.ConversationID, err = resolveConversation(ctx, rc, crew, id)
 			if err != nil {
 				return explainGateway(ctx, f, err, crew, opts.Namespace)
 			}
@@ -224,7 +227,7 @@ func (sf *streamFlags) overall(parent context.Context) (context.Context, context
 func followStream(ctx context.Context, cmd *cobra.Command, rc rest.Interface, opts conversation.Options, sf streamFlags, f *client.Factory) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	stream, err := discussion.Stream(ctx, rc, opts.Namespace, opts.Crew, opts.ConversationID)
+	stream, err := discussion.Stream(ctx, rc, opts.Crew, opts.ConversationID)
 	if err != nil {
 		return explainGateway(ctx, f, err, opts.Crew, opts.Namespace)
 	}
