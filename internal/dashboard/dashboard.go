@@ -25,7 +25,8 @@ const Selector = "app.kubernetes.io/part-of=kubemoot,app.kubernetes.io/name in (
 // httpPortName is the dashboard chart's Service port name.
 const httpPortName = "http"
 
-// Target is a dashboard Service and the port the port-forward reaches it on.
+// Target is a dashboard Service and the Service port (a name or a number) the
+// port-forward reaches it on.
 type Target struct {
 	Name string
 	Port string
@@ -38,7 +39,7 @@ func Find(ctx context.Context, svcs corev1client.ServiceInterface, namespace, ov
 	if err != nil {
 		return Target{}, err
 	}
-	port, err := proxyPort(svc)
+	port, err := servicePort(svc)
 	if err != nil {
 		return Target{}, err
 	}
@@ -74,8 +75,8 @@ func findService(ctx context.Context, svcs corev1client.ServiceInterface, namesp
 	}
 }
 
-// proxyPort picks the Service port named "http", else the first port.
-func proxyPort(svc *corev1.Service) (string, error) {
+// servicePort picks the Service port named "http", else the first port.
+func servicePort(svc *corev1.Service) (string, error) {
 	if len(svc.Spec.Ports) == 0 {
 		return "", fmt.Errorf("dashboard service %s/%s exposes no ports", svc.Namespace, svc.Name)
 	}
