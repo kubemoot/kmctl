@@ -144,3 +144,15 @@ func TestParseSSE_DecodesTheGatewayStreamFields(t *testing.T) {
 		t.Errorf("subcommittee: %+v", s)
 	}
 }
+
+func TestCheckKnown(t *testing.T) {
+	if err := CheckKnown(idA, listOf(recent, nil)); err != nil {
+		t.Errorf("a listed ID: %v", err)
+	}
+	if err := CheckKnown("90bea1a0-0e48-4afd-b7f9-e25c65f88858", listOf(recent, nil)); !errors.Is(err, ErrUnknownConversation) {
+		t.Errorf("an unlisted ID: %v", err)
+	}
+	if err := CheckKnown("x", listOf(nil, ErrListUnsupported)); err != nil {
+		t.Errorf("a gateway that cannot list: %v", err)
+	}
+}
