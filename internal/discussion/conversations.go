@@ -104,6 +104,26 @@ func ResolveConversationID(given string, list func() ([]ConversationInfo, error)
 	return matchPrefix(given, conversations)
 }
 
+// ErrUnknownConversation means the ID is in no recent conversation of the crew.
+var ErrUnknownConversation = errors.New("no recent conversation or thread has that ID")
+
+// CheckKnown fails at once when the crew's recent conversations do not include id, so a
+// command that reads a finished turn never waits on a stream that will not produce one.
+// A gateway that cannot list conversations cannot say, and the ID is taken as given.
+func CheckKnown(id string, list func() ([]ConversationInfo, error)) error {
+	conversations, err := list()
+	if err != nil {
+		return nil //nolint:nilerr // an unlisted crew is not a missing conversation
+	}
+	for _, c := range conversations {
+		if c.ConversationID == id {
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: %s (kmctl conversation list shows the recent ones; the gateway keeps about a day)",
+		ErrUnknownConversation, id)
+}
+
 // matchPrefix finds the one conversation whose ID is given or starts with it.
 func matchPrefix(given string, conversations []ConversationInfo) (string, error) {
 	var matches []ConversationInfo

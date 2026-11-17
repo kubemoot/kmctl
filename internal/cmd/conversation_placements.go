@@ -45,7 +45,9 @@ turn whose receipt has no placement calls (older agents do not report them) prin
 one-line note. -o json, yaml, or kyaml print the calls as the receipt carried them,
 with the same totals under "summary".
 
-A turn that has closed replays from the discussion stream at once. For a turn still
+An ID that is in none of the crew's recent conversations fails at once (a thread
+started from the dashboard is a conversation under its thread ID once the crew's
+gateway lists it). A turn that has closed replays from the discussion stream at once. For a turn still
 running, kmctl waits for it to close, on the same terms as "kmctl conversation
 watch".
 ` + waitingHelp,
@@ -87,6 +89,11 @@ func fetchReceipt(ctx context.Context, f *client.Factory, sf streamFlags, crew, 
 	id, err := resolveConversation(ctx, rc, crew, given)
 	if err != nil {
 		return "", discussion.Closed{}, explainGateway(ctx, f, err, crew, ns)
+	}
+	if err := discussion.CheckKnown(id, func() ([]discussion.ConversationInfo, error) {
+		return listConversations(ctx, rc, crew)
+	}); err != nil {
+		return id, discussion.Closed{}, err
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()

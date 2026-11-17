@@ -187,3 +187,15 @@ func TestConversationPlacements_MalformedReceipt(t *testing.T) {
 		t.Errorf("a call that is not an object: %v", err)
 	}
 }
+
+// A full ID the gateway lists no conversation for (a thread ID, or an expired one) fails
+// at once instead of waiting on a stream that never starts.
+func TestConversationPlacements_UnlistedIDFailsAtOnce(t *testing.T) {
+	s := newFakeAPIServer(t)
+	var sent string
+	withListingGateway(s, &sent)
+	_, _, err := s.kmctl(t, "conversation", "placements", "demo", "90bea1a0-0e48-4afd-b7f9-e25c65f88858")
+	if err == nil || !strings.Contains(err.Error(), "no recent conversation or thread has that ID") {
+		t.Fatalf("want an unknown-conversation error, got %v", err)
+	}
+}
