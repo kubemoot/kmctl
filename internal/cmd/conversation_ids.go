@@ -118,41 +118,58 @@ func printConversations(w io.Writer, conversations []discussion.ConversationInfo
 	return tw.Flush()
 }
 
-func newConversationArtifactCommand(f *client.Factory) *cobra.Command {
+func newConversationWorkspaceCommand(f *client.Factory) *cobra.Command {
 	var file string
 	cmd := &cobra.Command{
-		Use:   "artifact CREW KEY",
-		Short: "Fetch an artifact an agent attached to a discussion",
-		Long: `Fetch an artifact an agent attached to a discussion: a contribution too large
-for the discussion stream, kept in the crew's artifact store under KEY. The
-conversation output prints this command for each artifact. A thread's artifacts
-are deleted soon after the thread closes, so fetch them while the crew is working on
-the question.`,
-		Example: `  kmctl conversation artifact homelab-pilot crew-homelab-pilot/homelab-pilot/<thread>/pilot-metrics/agree-1b2c -n crew-homelab-pilot
-  kmctl conv artifact homelab-pilot <key> -f metrics.txt`,
+		Use:   "workspace CREW KEY",
+		Short: "Fetch an object from a discussion's workspace",
+		Long: `Fetch an object from a discussion's workspace: a result too large for the
+discussion stream, kept in the workspace under KEY. The conversation output prints
+this command for each object. A thread's workspace is deleted soon after the
+thread closes, so fetch objects while the crew is working on the question.`,
+		Example: `  kmctl conversation workspace homelab-pilot crew-homelab-pilot/homelab-pilot/<thread>/pilot-metrics/agree-1b2c -n crew-homelab-pilot
+  kmctl conv workspace homelab-pilot <key> -f metrics.txt`,
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: completeCrewArg(f),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			rc, stop, err := openGateway(cmd.Context(), f, args[0], f.Namespace())
-			if err != nil {
-				return err
-			}
-			defer stop()
-			body, err := discussion.FetchArtifact(cmd.Context(), rc, args[0], args[1])
-			if err != nil {
-				return explainGateway(cmd.Context(), f, err, args[0], f.Namespace())
-			}
-			defer func() { _ = body.Close() }()
-			return writeArtifact(cmd.OutOrStdout(), file, body)
+			return runFetchWorkspace(cmd, f, file, args[0], args[1])
 		},
 	}
-	cmd.Flags().StringVarP(&file, "file", "f", "", "Write the artifact to this file instead of stdout")
+	cmd.Flags().StringVarP(&file, "file", "f", "", "Write the object to this file instead of stdout")
 	return cmd
 }
 
-// writeArtifact copies the artifact to file, or to stdout when file is empty. A file
+// newConversationArtifactAliasCommand is the old name of the workspace command. It is
+// hidden, warns on stderr, and does the same work.
+func newConversationArtifactAliasCommand(f *client.Factory) *cobra.Command {
+	cmd := newConversationWorkspaceCommand(f)
+	cmd.Use = "artifact CREW KEY"
+	cmd.Hidden = true
+	run := cmd.RunE
+	cmd.RunE = func(c *cobra.Command, args []string) error {
+		_, _ = fmt.Fprintln(c.ErrOrStderr(), "kmctl conversation artifact is deprecated and is removed in the next release; use kmctl conversation workspace")
+		return run(c, args)
+	}
+	return cmd
+}
+
+func runFetchWorkspace(cmd *cobra.Command, f *client.Factory, file, crew, key string) error {
+	rc, stop, err := openGateway(cmd.Context(), f, crew, f.Namespace())
+	if err != nil {
+		return err
+	}
+	defer stop()
+	body, err := discussion.FetchWorkspace(cmd.Context(), rc, crew, key)
+	if err != nil {
+		return explainGateway(cmd.Context(), f, err, crew, f.Namespace())
+	}
+	defer func() { _ = body.Close() }()
+	return writeWorkspaceObject(cmd.OutOrStdout(), file, body)
+}
+
+// writeWorkspaceObject copies the workspace object to file, or to stdout when file is empty. A file
 // that could not be written whole is removed.
-func writeArtifact(stdout io.Writer, file string, body io.Reader) error {
+func writeWorkspaceObject(stdout io.Writer, file string, body io.Reader) error {
 	if file == "" {
 		_, err := io.Copy(stdout, body)
 		return err
@@ -166,7 +183,7 @@ func writeArtifact(stdout io.Writer, file string, body io.Reader) error {
 		err = cerr
 	}
 	if err != nil {
-		// A partial file would look like the whole artifact.
+		// A partial file would look like the whole object.
 		_ = os.Remove(file)
 	}
 	return err

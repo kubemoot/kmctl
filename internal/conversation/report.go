@@ -41,11 +41,12 @@ type Summary struct {
 	OutputTokens int64                    `json:"outputTokens,omitempty"`
 	ToolErrors   []string                 `json:"toolErrors,omitempty"`
 	Errors       []string                 `json:"errors,omitempty"`
-	Artifacts    []ArtifactReport         `json:"artifacts,omitempty"`
+	Workspaces   []ArtifactReport         `json:"workspaces,omitempty"`
+	Artifacts    []ArtifactReport         `json:"artifacts,omitempty"` // the old name of workspaces, same content, removed in the next release
 	Agents       []AgentReport            `json:"agents"`
 }
 
-// ArtifactReport is an artifact an agent attached, with the command that fetches it.
+// ArtifactReport is a workspace object an agent stored, with the command that fetches it.
 type ArtifactReport struct {
 	Agent string `json:"agent"`
 	Key   string `json:"key"`
@@ -68,7 +69,8 @@ type AgentReport struct {
 	OutputTokens      int64     `json:"outputTokens,omitempty"`
 	ToolsEnabled      []string  `json:"toolsEnabled,omitempty"`
 	ToolError         string    `json:"toolError,omitempty"`
-	Artifact          *Artifact `json:"artifact,omitempty"`
+	Workspace         *Artifact `json:"workspace,omitempty"`
+	Artifact          *Artifact `json:"artifact,omitempty"` // the old name of workspace, same content, removed in the next release
 }
 
 // Clock starts: when kmctl started the turn, or when it attached to one.
@@ -118,7 +120,9 @@ func (s *Summary) addAgent(a *Agent) {
 	s.InputTokens += a.InputTokens
 	s.OutputTokens += a.OutputTokens
 	if a.Artifact != nil {
-		s.Artifacts = append(s.Artifacts, ArtifactReport{Agent: a.Name, Key: a.Artifact.Key, Bytes: a.Artifact.Bytes})
+		r := ArtifactReport{Agent: a.Name, Key: a.Artifact.Key, Bytes: a.Artifact.Bytes}
+		s.Workspaces = append(s.Workspaces, r)
+		s.Artifacts = append(s.Artifacts, r)
 	}
 	s.Agents = append(s.Agents, reportAgent(a))
 }
@@ -130,11 +134,12 @@ func timeSource(stamped bool) string {
 	return "received"
 }
 
-// WithFetchCommands fills in the command that fetches each artifact.
+// WithFetchCommands fills in the command that fetches each workspace object.
 func (s Summary) WithFetchCommands(crew, namespace string) Summary {
-	for i := range s.Artifacts {
-		s.Artifacts[i].Fetch = ArtifactFetch(crew, namespace, s.Artifacts[i].Key)
+	for i := range s.Workspaces {
+		s.Workspaces[i].Fetch = WorkspaceFetch(crew, namespace, s.Workspaces[i].Key)
 	}
+	s.Artifacts = append([]ArtifactReport(nil), s.Workspaces...)
 	return s
 }
 
@@ -148,7 +153,7 @@ func appendIf(list []string, ok bool, v string) []string {
 func reportAgent(a *Agent) AgentReport {
 	return AgentReport{
 		Name: a.Name, Signal: a.Signal, Summary: a.Summary, Reason: a.Reason,
-		GPU: a.GPU, Model: a.Model, Artifact: a.Artifact,
+		GPU: a.GPU, Model: a.Model, Workspace: a.Artifact, Artifact: a.Artifact,
 		TriageSeconds:     optionalSeconds(a.Triage),
 		EvaluationSeconds: optionalSeconds(a.Evaluation),
 		InferenceSeconds:  optionalSeconds(a.Inference),
@@ -167,7 +172,7 @@ func (s Summary) Markdown() string {
 		joinLine("Waited for GPU capacity", s.WaitedForGPU), joinLine("Tool errors", s.ToolErrors),
 		joinLine("Errors", s.Errors),
 	}
-	optional = append(optional, s.artifactLines()...)
+	optional = append(optional, s.workspaceLines()...)
 	for _, line := range optional {
 		if line != "" {
 			lines = append(lines, line)
@@ -236,12 +241,12 @@ func (s Summary) tokensLine() string {
 	return fmt.Sprintf("Tokens: %s in, %s out", thousands(s.InputTokens), thousands(s.OutputTokens))
 }
 
-// artifactLines are one line per artifact with its fetch command, once filled in.
-func (s Summary) artifactLines() []string {
+// workspaceLines are one line per workspace object with its fetch command, once filled in.
+func (s Summary) workspaceLines() []string {
 	var lines []string
-	for _, a := range s.Artifacts {
+	for _, a := range s.Workspaces {
 		if a.Fetch != "" {
-			lines = append(lines, fmt.Sprintf("Artifact from %s (%s): `%s`", a.Agent, formatBytes(a.Bytes), a.Fetch))
+			lines = append(lines, fmt.Sprintf("Workspace object from %s (%s): `%s`", a.Agent, formatBytes(a.Bytes), a.Fetch))
 		}
 	}
 	return lines
@@ -318,9 +323,9 @@ func FollowUp(crew, namespace, conversationID string) string {
 	return cmd + " --conversation-id " + conversationID
 }
 
-// ArtifactFetch is the command that writes an artifact to stdout.
-func ArtifactFetch(crew, namespace, key string) string {
-	cmd := "kmctl conversation artifact " + crew + " " + key
+// WorkspaceFetch is the command that writes a workspace object to stdout.
+func WorkspaceFetch(crew, namespace, key string) string {
+	cmd := "kmctl conversation workspace " + crew + " " + key
 	if namespace != "" {
 		cmd += " -n " + namespace
 	}

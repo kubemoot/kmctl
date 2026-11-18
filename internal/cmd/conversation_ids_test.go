@@ -141,19 +141,19 @@ func TestConversationIDCompletionOnAnOlderGatewayIsEmpty(t *testing.T) {
 	}
 }
 
-func TestConversationArtifact(t *testing.T) {
+func TestConversationWorkspace(t *testing.T) {
 	s := newFakeAPIServer(t)
 	var key string
-	s.proxy[gatewayKey+"/artifact"] = func(w http.ResponseWriter, r *http.Request) {
+	s.proxy[gatewayKey+"/workspace"] = func(w http.ResponseWriter, r *http.Request) {
 		key = r.URL.Query().Get("key")
 		_, _ = io.WriteString(w, "pve1 online\n")
 	}
-	out, _, err := s.kmctl(t, "conversation", "artifact", "demo", artifactID)
+	out, _, err := s.kmctl(t, "conversation", "workspace", "demo", artifactID)
 	if err != nil || out != "pve1 online\n" || key != artifactID {
 		t.Fatalf("stdout: %q, key %q, %v", out, key, err)
 	}
 	file := filepath.Join(t.TempDir(), "a.txt")
-	if out, _, err := s.kmctl(t, "conversation", "artifact", "demo", artifactID, "-f", file); err != nil || out != "" {
+	if out, _, err := s.kmctl(t, "conversation", "workspace", "demo", artifactID, "-f", file); err != nil || out != "" {
 		t.Fatalf("-f: %q, %v", out, err)
 	}
 	if data, _ := os.ReadFile(file); string(data) != "pve1 online\n" {
@@ -161,14 +161,67 @@ func TestConversationArtifact(t *testing.T) {
 	}
 }
 
-func TestConversationArtifactGone(t *testing.T) {
+func TestConversationWorkspaceGone(t *testing.T) {
 	s := newFakeAPIServer(t)
-	s.proxy[gatewayKey+"/artifact"] = func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "artifact not found"})
+	gone := func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "workspace object not found"})
 	}
-	_, _, err := s.kmctl(t, "conversation", "artifact", "demo", artifactID)
+	s.proxy[gatewayKey+"/workspace"], s.proxy[gatewayKey+"/artifact"] = gone, gone
+	_, _, err := s.kmctl(t, "conversation", "workspace", "demo", artifactID)
 	if err == nil || !strings.Contains(err.Error(), "deleted after the thread closes") {
 		t.Fatalf("got %v", err)
+	}
+}
+
+// A gateway older than this kmctl has no workspace route; its old route answers.
+func TestConversationWorkspaceFallsBackToTheOldRoute(t *testing.T) {
+	s := newFakeAPIServer(t)
+	s.proxy[gatewayKey+"/workspace"] = func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "no such route"})
+	}
+	s.proxy[gatewayKey+"/artifact"] = func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("key") != artifactID {
+			t.Errorf("key %q", r.URL.Query().Get("key"))
+		}
+		_, _ = io.WriteString(w, "old gateway\n")
+	}
+	out, _, err := s.kmctl(t, "conversation", "workspace", "demo", artifactID)
+	if err != nil || out != "old gateway\n" {
+		t.Fatalf("got %q, %v", out, err)
+	}
+}
+
+// The new route answers, so the old one is never asked.
+func TestConversationWorkspaceDoesNotAskTheOldRouteWhenTheNewOneAnswers(t *testing.T) {
+	s := newFakeAPIServer(t)
+	s.proxy[gatewayKey+"/workspace"] = func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "new\n") }
+	s.proxy[gatewayKey+"/artifact"] = func(_ http.ResponseWriter, _ *http.Request) {
+		t.Error("the old route was asked")
+	}
+	if out, _, err := s.kmctl(t, "conversation", "workspace", "demo", artifactID); err != nil || out != "new\n" {
+		t.Fatalf("got %q, %v", out, err)
+	}
+}
+
+// The old command name works and warns on stderr.
+func TestConversationArtifactAliasWarnsAndFetches(t *testing.T) {
+	s := newFakeAPIServer(t)
+	s.proxy[gatewayKey+"/workspace"] = func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "pve1 online\n") }
+	out, errOut, err := s.kmctl(t, "conversation", "artifact", "demo", artifactID)
+	if err != nil || out != "pve1 online\n" {
+		t.Fatalf("got %q, %v", out, err)
+	}
+	if !strings.Contains(errOut, "deprecated") || !strings.Contains(errOut, "kmctl conversation workspace") {
+		t.Errorf("stderr %q", errOut)
+	}
+}
+
+// The workspace command warns about nothing.
+func TestConversationWorkspaceIsQuiet(t *testing.T) {
+	s := newFakeAPIServer(t)
+	s.proxy[gatewayKey+"/workspace"] = func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "x") }
+	if _, errOut, err := s.kmctl(t, "conversation", "workspace", "demo", artifactID); err != nil || errOut != "" {
+		t.Fatalf("stderr %q, %v", errOut, err)
 	}
 }
 
@@ -183,15 +236,15 @@ func (b *failingBody) Read(p []byte) (int, error) {
 }
 
 // A copy that fails partway leaves no file that looks like the whole artifact.
-func TestWriteArtifactRemovesAPartialFile(t *testing.T) {
+func TestWriteWorkspaceObjectRemovesAPartialFile(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "a.txt")
-	if err := writeArtifact(io.Discard, file, &failingBody{}); err == nil {
+	if err := writeWorkspaceObject(io.Discard, file, &failingBody{}); err == nil {
 		t.Fatal("want the copy error")
 	}
 	if _, err := os.Stat(file); !os.IsNotExist(err) {
 		t.Fatalf("the partial file is still there: %v", err)
 	}
-	if err := writeArtifact(io.Discard, filepath.Join(t.TempDir(), "missing", "a.txt"), strings.NewReader("x")); err == nil {
+	if err := writeWorkspaceObject(io.Discard, filepath.Join(t.TempDir(), "missing", "a.txt"), strings.NewReader("x")); err == nil {
 		t.Fatal("a file that cannot be created is an error")
 	}
 }

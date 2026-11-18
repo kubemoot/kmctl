@@ -172,8 +172,8 @@ func TestSummaryHelpers(t *testing.T) {
 	if timeSource(true) != "published" || timeSource(false) != "received" {
 		t.Error("timeSource")
 	}
-	s := Summary{Artifacts: []ArtifactReport{{Key: "k"}}}.WithFetchCommands("crew", "")
-	if s.Artifacts[0].Fetch != "kmctl conversation artifact crew k" {
-		t.Errorf("fetch without a namespace: %q", s.Artifacts[0].Fetch)
+	s := Summary{Workspaces: []ArtifactReport{{Key: "k"}}}.WithFetchCommands("crew", "")
+	if s.Workspaces[0].Fetch != "kmctl conversation workspace crew k" || s.Artifacts[0].Fetch != s.Workspaces[0].Fetch {
+		t.Errorf("fetch without a namespace: %q", s.Workspaces[0].Fetch)
 	}
 }

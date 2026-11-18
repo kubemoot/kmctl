@@ -13,18 +13,19 @@ import (
 // summaryWidth is the most characters an agent's one-line summary shows.
 const summaryWidth = 120
 
-// Artifact is a contribution an agent spilled to the crew's artifact store; the
-// discussion carries only a reference line naming its key and size.
+// Artifact is a result an agent stored in the discussion's workspace; the discussion
+// carries only a reference naming its key and size. The name is the gateway's, whose
+// metadata.artifact field and legacy marker predate the workspace.
 type Artifact struct {
 	Key   string `json:"key"`
 	Bytes int64  `json:"bytes"`
 }
 
-// artifactMarker matches the reference line the agent runtime writes in place of
-// a spilled contribution: "[ARTIFACT key=<key> bytes=<n> ...]".
+// artifactMarker matches the reference line older threads carry in place of a stored
+// result (current threads use call lines and metadata): "[ARTIFACT key=<key> bytes=<n> ...]".
 var artifactMarker = regexp.MustCompile(`\[ARTIFACT key=(\S+) bytes=(\d+)`)
 
-// artifactOf is the artifact a signal names: from its metadata when the gateway
+// artifactOf is the workspace object a signal names: from its metadata when the gateway
 // forwards it, else from the reference line in its text.
 func artifactOf(m *discussion.SignalMeta, text string) *Artifact {
 	if m != nil && m.Artifact != nil && m.Artifact.Key != "" {
@@ -48,10 +49,10 @@ func parseArtifact(text string) *Artifact {
 
 // describe is how an artifact reads in an agent's summary.
 func (a *Artifact) describe() string {
-	return fmt.Sprintf("attached artifact (%s)", formatBytes(a.Bytes))
+	return fmt.Sprintf("stored in the workspace (%s)", formatBytes(a.Bytes))
 }
 
-// shownSummary is an agent's summary as the terminal shows it: an artifact also
+// shownSummary is an agent's summary as the terminal shows it: a workspace object also
 // points to its fetch command, which the summary at the end lists.
 func shownSummary(a *Agent) string {
 	if a.Artifact != nil {

@@ -28,7 +28,8 @@ type jsonEvent struct {
 	ElapsedMs    int64     `json:"elapsedMs"`
 	TriageMs     int64     `json:"triageMs,omitempty"`
 	EvaluationMs int64     `json:"evaluationMs,omitempty"`
-	Artifact     *Artifact `json:"artifact,omitempty"`
+	Workspace    *Artifact `json:"workspace,omitempty"`
+	Artifact     *Artifact `json:"artifact,omitempty"` // the old name of workspace, same content, removed in the next release
 }
 
 // jsonResult is the last line: the answer, the summary, and the follow-up command.
@@ -76,6 +77,7 @@ func (j *jsonSink) event(t *Tracker, e discussion.Event, c Change, at time.Time)
 		// jsonEvent.Artifact hides the event's own artifact field of the same name.
 		out.Artifact = artifactOf(e.SignalMeta, "")
 	}
+	out.Workspace = out.Artifact
 	return j.enc.Encode(out)
 }
 

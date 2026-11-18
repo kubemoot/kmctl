@@ -223,8 +223,17 @@ func TestRender_StampedSummarySubcommitteeErrorsArtifacts(t *testing.T) {
 	if len(s.ToolErrors) != 1 || s.ToolErrors[0] != "pilot-storage: zfs_pool_status failed 3 times: connection refused" {
 		t.Errorf("tool errors: %v", s.ToolErrors)
 	}
-	if len(s.Artifacts) != 1 || !strings.HasPrefix(s.Artifacts[0].Fetch, "kmctl conversation artifact homelab-pilot crew-homelab-pilot/") {
-		t.Errorf("artifacts: %+v", s.Artifacts)
+	assertWorkspaceKeys(t, s)
+}
+
+// The summary lists the workspace object under workspaces, and under the old artifacts key too.
+func assertWorkspaceKeys(t *testing.T, s Summary) {
+	t.Helper()
+	if len(s.Workspaces) != 1 || !strings.HasPrefix(s.Workspaces[0].Fetch, "kmctl conversation workspace homelab-pilot crew-homelab-pilot/") {
+		t.Errorf("workspaces: %+v", s.Workspaces)
+	}
+	if len(s.Artifacts) != 1 || s.Artifacts[0] != s.Workspaces[0] {
+		t.Errorf("the old artifacts key differs from workspaces: %+v", s.Artifacts)
 	}
 }
 
@@ -243,7 +252,9 @@ func TestRender_JSONKeepsTheArtifactOfAStandAside(t *testing.T) {
 	if err := Render(&out, strings.NewReader(stream), testOptions(ModeJSON)); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), `"artifact":{"key":"ns/c/t/a/x","bytes":5}`) {
-		t.Errorf("artifact dropped:\n%s", out.String())
+	for _, key := range []string{"workspace", "artifact"} {
+		if !strings.Contains(out.String(), `"`+key+`":{"key":"ns/c/t/a/x","bytes":5}`) {
+			t.Errorf("%s dropped:\n%s", key, out.String())
+		}
 	}
 }

@@ -90,6 +90,23 @@ flag, and output format, and the [kmctl user guide](https://kubemoot.org/docs/us
 walks through a first crew. `kmctl --help` and `kmctl <command> --help` show the same
 information in the terminal.
 
+## Migrating to the workspace names
+
+What Kubemoot called discussion artifacts is now the discussion's workspace. Update kmctl
+together with Kubemoot, then:
+
+1. Replace `kmctl conversation artifact CREW KEY` with `kmctl conversation workspace CREW KEY` in
+   scripts. The old command still works, is hidden, and prints a deprecation warning on stderr; it
+   is removed in the next release.
+2. Read `workspace` (per event and per agent) and `workspaces` (in the summary) from
+   `kmctl conversation -o json`. The old `artifact` and `artifacts` keys carry the same content for
+   one release.
+3. Nothing changes for `kmctl fitness download`: the results workbook is generated work and keeps
+   its name.
+
+kmctl asks the gateway's workspace route first and falls back to the old route when the gateway
+does not have it, so a newer kmctl works against an older Kubemoot.
+
 ## Contributing
 
 To build kmctl from source, run its tests, or send a change, see

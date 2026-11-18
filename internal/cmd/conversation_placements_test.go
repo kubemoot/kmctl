@@ -38,7 +38,7 @@ func doneWithReceipt(t *testing.T) string {
 }
 
 func TestConversationPlacementsCommand_Registered(t *testing.T) {
-	assertSubcommands(t, newConversationCommand(client.NewFactory()), "ask", "watch", "list", "placements", "artifact")
+	assertSubcommands(t, newConversationCommand(client.NewFactory()), "ask", "watch", "list", "placements", "workspace", "artifact")
 }
 
 func TestConversationPlacements_Table(t *testing.T) {
