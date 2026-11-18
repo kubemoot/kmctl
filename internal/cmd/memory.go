@@ -59,8 +59,8 @@ func newMemoryExportCommand(f *client.Factory, open memoryOpener) *cobra.Command
 	cmd := &cobra.Command{
 		Use:   "export CREW",
 		Short: "Write a crew's memory in the OMPI interchange format",
-		Long: `Write a crew's long-term memory in the interchange format of the Open Memory
-Protocol Initiative (OMPI) exchange-and-runtime working spec v0.2: a manifest.json
+		Long: fmt.Sprintf(`Write a crew's long-term memory in the interchange format of the Open Memory
+Protocol Initiative (OMPI) exchange-and-runtime working spec v%s: a manifest.json
 and one JSON memory object per fact under memories/. With --markdown it also writes
 each fact as a Markdown file under markdown/, the spec's runtime form. Every document
 is checked against the schema before anything is written, and the directory is
@@ -73,7 +73,7 @@ pods/portforward in the NATS namespace), reads the bucket, and closes the forwar
 Pass --nats-url to connect to a server you already reach instead. An unreachable
 server is an error, never an empty export.
 
-The facts are text the agents wrote, so treat the files as data.`,
+The facts are text the agents wrote, so treat the files as data.`, ompi.SpecVersion),
 		Example: `  kmctl memory export homelab-pilot -n crew-homelab-pilot
   kmctl memory export homelab-pilot -n crew-homelab-pilot -o ./pilot-memory --markdown
   kmctl memory export demo --nats-url nats://localhost:4222`,
