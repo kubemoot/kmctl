@@ -312,8 +312,9 @@ func credentialBucket() fakeBucket {
 	return fakeBucket{
 		gpuFactKey:   gpuFact,
 		loginFactKey: loginValue,
-		"crew-demo.demo.password=hunter3hunter3.k": fineValue,
-		"crew-demo.demo.ops.token=hunter4hunter4":  fineValue,
+		"crew-demo.demo.password=hunter3hunter3.k":              fineValue,
+		"crew-demo.demo.ops.token=hunter4hunter4":               fineValue,
+		"crew-demo.demo.ops.ghp_abcdefghijklmnopqrstuvwxyz0123": `{"value":"Bearer abcDEF123456789","learnedAt":"2026-10-30T10:00:00Z"}`,
 	}
 }
 
@@ -323,16 +324,269 @@ func TestMemoryExportLeavesOutACredentialAndNamesItWithoutTheText(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n := strings.Count(out, "holds a credential"); n != 3 {
-		t.Errorf("output = %q, want three facts left out, got %d", out, n)
+	if n := strings.Count(out, "holds a credential"); n != 4 {
+		t.Errorf("output = %q, want four facts left out, got %d", out, n)
 	}
 	if !strings.Contains(out, `left out "`+loginFactKey+`"`) || !strings.Contains(out, "wrote 1 memory object(s)") {
 		t.Errorf("output = %q, want the value fact listed by key and one object written", out)
 	}
-	for _, secret := range []string{"hunter2", "hunter3", "hunter4"} {
+	secrets := []string{"hunter2", "hunter3", "hunter4", "ghp_abc", "abcDEF"}
+	for _, secret := range secrets {
 		if strings.Contains(out, secret) {
 			t.Errorf("output holds %s: %q", secret, out)
 		}
+	}
+	assertFilesHoldNone(t, dir, secrets)
+	manifest, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ompi.ValidateManifest(manifest); err != nil {
+		t.Errorf("manifest does not validate: %v", err)
+	}
+	checkManifestProtocolVersion(t, manifest)
+	files, _ := filepath.Glob(filepath.Join(dir, "memories", "*"))
+	if len(files) != 1 {
+		t.Fatalf("memory files = %v, want one", files)
+	}
+	memory, err := os.ReadFile(files[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ompi.ValidateMemory(memory); err != nil {
+		t.Errorf("memory object does not validate: %v", err)
+	}
+	var obj struct {
+		Scope []string `json:"scope"`
+	}
+	if err := json.Unmarshal(memory, &obj); err != nil {
+		t.Fatal(err)
+	}
+	if len(obj.Scope) != 1 || obj.Scope[0] != "crew:crew-demo/demo" {
+		t.Errorf("scope = %v, want [crew:crew-demo/demo]", obj.Scope)
+	}
+}
+
+func TestMemoryExportOfAnEmptyBucketIsAnEmptyValidExport(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "mem")
+	out, err := runExport(t, opening(fakeBucket{}), "demo", "-o", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "wrote 0 memory object(s)") {
+		t.Errorf("output = %q", out)
+	}
+	manifest, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
+	if err != nil || ompi.ValidateManifest(manifest) != nil {
+		t.Errorf("manifest = %s, err = %v", manifest, err)
+	}
+}
+
+func TestMemoryExportLeavesOutOtherCrewsAndReportsBadEntries(t *testing.T) {
+	bucket := fakeBucket{
+		gpuFactKey:                    gpuFact,
+		"crew-demo.demo.hardware.bad": "not json",
+		"crew-demo.other.hardware.x":  `{"value":"theirs"}`,
+	}
+	out, err := runExport(t, opening(bucket), "demo", "-o", filepath.Join(t.TempDir(), "mem"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, `left out "crew-demo.demo.hardware.bad"`) || !strings.Contains(out, "wrote 1 memory object(s)") {
+		t.Errorf("output = %q", out)
+	}
+	if strings.Contains(out, "other") {
+		t.Errorf("another crew's key was reported: %q", out)
+	}
+}
+
+func TestMemoryExportFailsWhenTheServerCannotBeListed(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "mem")
+	_, err := runExport(t, opening(deadBucket{}), "demo", "-o", dir)
+	if err == nil || !strings.Contains(err.Error(), "could not export") {
+		t.Fatalf("error = %v, want an export failure", err)
+	}
+	var ce *clierr.Error
+	if !errors.As(err, &ce) || !strings.Contains(ce.Cause.Error(), "server went away") {
+		t.Errorf("cause = %v, want the server error", err)
+	}
+	if _, statErr := os.Stat(dir); statErr == nil {
+		t.Error("a directory was created although the server failed")
+	}
+}
+
+func TestMemoryExportFailsWhenNATSCannotBeOpened(t *testing.T) {
+	boom := errors.New("no route to NATS")
+	open := func(context.Context, *client.Factory, memoryOptions) (crewmemory.EntryReader, func(), error) {
+		return nil, nil, boom
+	}
+	dir := filepath.Join(t.TempDir(), "mem")
+	if _, err := runExport(t, open, "demo", "-o", dir); !errors.Is(err, boom) {
+		t.Errorf("error = %v, want the open error", err)
+	}
+	if _, statErr := os.Stat(dir); statErr == nil {
+		t.Error("a directory was created although NATS was unreachable")
+	}
+}
+
+func TestMemoryExportToAnUnreachableNATSURLIsAnError(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "mem")
+	_, err := runExport(t, openMemory, "demo", "-o", dir, "--nats-url", "nats://127.0.0.1:1")
+	if err == nil || !strings.Contains(err.Error(), "could not connect to NATS") {
+		t.Fatalf("error = %v, want a connection failure", err)
+	}
+	if _, statErr := os.Stat(dir); statErr == nil {
+		t.Error("a directory was created although NATS was unreachable")
+	}
+}
+
+func TestMemoryExportRefusesANonEmptyDirectory(t *testing.T) {
+	dir := t.TempDir()
+	keep := filepath.Join(dir, "keep")
+	if err := os.WriteFile(keep, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runExport(t, opening(fakeBucket{gpuFactKey: gpuFact}), "demo", "-o", dir); err == nil {
+		t.Fatal("export into a non-empty directory succeeded")
+	}
+	if b, _ := os.ReadFile(keep); string(b) != "x" {
+		t.Error("an existing file was changed")
+	}
+}
+
+func TestMemoryExportDefaultsTheDirectoryToTheCrewName(t *testing.T) {
+	var got memoryOptions
+	open := func(_ context.Context, _ *client.Factory, o memoryOptions) (crewmemory.EntryReader, func(), error) {
+		got = o
+		return nil, nil, errors.New("stop here")
+	}
+	_, _ = runExport(t, open, "demo")
+	want := "." + string(filepath.Separator) + "demo-memory"
+	if got.out != want || got.namespace != memNamespace || got.crew != "demo" {
+		t.Errorf("options = %+v, want out %q in namespace %s", got, want, memNamespace)
+	}
+}
+
+func TestMemoryExportPassesItsFlagsOn(t *testing.T) {
+	var got memoryOptions
+	open := func(_ context.Context, _ *client.Factory, o memoryOptions) (crewmemory.EntryReader, func(), error) {
+		got = o
+		return nil, nil, errors.New("stop here")
+	}
+	_, _ = runExport(t, open, "demo", "-o", "x", "--markdown", "--allow-unscreened", "--origin", "o1", "--nats-url", "nats://h:1",
+		"--creds", "c.creds", "--nats-namespace", "ns2", "--nats-service", "svc2")
+	want := memoryOptions{
+		namespace: memNamespace, crew: "demo", out: "x", origin: "o1", markdown: true, allowUnscreened: true,
+		natsURL: "nats://h:1", creds: "c.creds", natsNamespace: "ns2", natsService: "svc2",
+	}
+	if got != want {
+		t.Errorf("options = %+v, want %+v", got, want)
+	}
+}
+
+func TestMemoryExportFlagDefaults(t *testing.T) {
+	cmd := newMemoryExportCommand(client.NewFactory(), opening(fakeBucket{}))
+	for flag, want := range map[string]string{"nats-namespace": "nats", "nats-service": "nats", "markdown": "false", "nats-url": "", "allow-unscreened": "false"} {
+		if got := cmd.Flags().Lookup(flag).DefValue; got != want {
+			t.Errorf("--%s default = %q, want %q", flag, got, want)
+		}
+	}
+	if cmd.Flags().Lookup("output").Shorthand != "o" {
+		t.Error("--output has no -o shorthand")
+	}
+}
+
+func TestMemoryExportNeedsExactlyOneCrew(t *testing.T) {
+	for _, args := range [][]string{{}, {"a", "b"}} {
+		if _, err := runExport(t, opening(fakeBucket{}), args...); err == nil {
+			t.Errorf("export %v succeeded, want an argument error", args)
+		}
+	}
+}
+
+func TestMemoryExportRejectsACrewNameThatIsNotOneToken(t *testing.T) {
+	_, err := runExport(t, opening(fakeBucket{}), "a.b", "-o", filepath.Join(t.TempDir(), "mem"))
+	if err == nil || !isUsageError(err) {
+		t.Errorf("error = %v, want a usage error", err)
+	}
+}
+
+func TestMemoryCommandIsOnTheRootAndHasExport(t *testing.T) {
+	root := newRootCommand(client.NewFactory())
+	cmd, _, err := root.Find([]string{"memory", "export"})
+	if err != nil || cmd.Name() != "export" {
+		t.Fatalf("Find(memory export) = %v, %v", cmd, err)
+	}
+	if cmd.Example == "" || cmd.Short == "" {
+		t.Error("memory export has no short description or example")
+	}
+}
+
+func TestMemoryExportHelpNamesTheSpecVersionItWrites(t *testing.T) {
+	cmd := newMemoryExportCommand(&client.Factory{}, opening(fakeBucket{}))
+	if want := "working spec v" + ompi.SpecVersion + ":"; !strings.Contains(cmd.Long, want) {
+		t.Errorf("help does not say %q:\n%s", want, cmd.Long)
+	}
+}
+
+func checkManifestProtocolVersion(t *testing.T, manifest []byte) {
+	t.Helper()
+	var head struct {
+		ProtocolVersion string `json:"protocol_version"`
+	}
+	if err := json.Unmarshal(manifest, &head); err != nil || head.ProtocolVersion != ompi.SpecVersion {
+		t.Errorf("manifest protocol_version = %q (%v), want %q", head.ProtocolVersion, err, ompi.SpecVersion)
+	}
+}
+
+const (
+	loginFactKey = "crew-demo.demo.ops.login"
+	loginValue   = `{"value":"password: hunter2hunter2","learnedAt":"2026-10-30T10:00:00Z"}`
+	fineValue    = `{"value":"fine","learnedAt":"2026-10-30T10:00:00Z"}`
+)
+
+func credentialBucket() fakeBucket {
+	return fakeBucket{
+		gpuFactKey:   gpuFact,
+		loginFactKey: loginValue,
+		"crew-demo.demo.password=hunter3hunter3.k":              fineValue,
+		"crew-demo.demo.ops.token=hunter4hunter4":               fineValue,
+		"crew-demo.demo.ops.ghp_abcdefghijklmnopqrstuvwxyz0123": `{"value":"Bearer abcDEF123456789","learnedAt":"2026-10-30T10:00:00Z"}`,
+	}
+}
+
+func TestMemoryExportLeavesOutACredentialAndNamesItWithoutTheText(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "mem")
+	out, err := runExport(t, opening(credentialBucket()), "demo", "-o", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(out, "holds a credential"); n != 4 {
+		t.Errorf("output = %q, want four facts left out, got %d", out, n)
+	}
+	if !strings.Contains(out, `left out "`+loginFactKey+`"`) || !strings.Contains(out, "wrote 1 memory object(s)") {
+		t.Errorf("output = %q, want the value fact listed by key and one object written", out)
+	}
+	secrets := []string{"hunter2", "hunter3", "hunter4", "ghp_abc", "abcDEF"}
+	for _, secret := range secrets {
+		if strings.Contains(out, secret) {
+			t.Errorf("output holds %s: %q", secret, out)
+		}
+	}
+	err = filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		b, err := os.ReadFile(p)
+		for _, secret := range secrets {
+			if err == nil && strings.Contains(string(b), secret) {
+				t.Errorf("%s holds %s", p, secret)
+			}
+		}
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 	manifest, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
 	if err != nil {
@@ -348,7 +602,30 @@ func TestMemoryExportAllowUnscreenedKeepsTheCredentialFacts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "wrote 4 memory object(s)") || strings.Contains(out, "left out") {
-		t.Errorf("output = %q, want all four facts and no left-out line", out)
+	if !strings.Contains(out, "wrote 5 memory object(s)") || strings.Contains(out, "left out") {
+		t.Errorf("output = %q, want all five facts and no left-out line", out)
+	}
+}
+
+// assertFilesHoldNone fails when a file under dir holds any of the secrets.
+func assertFilesHoldNone(t *testing.T, dir string, secrets []string) {
+	t.Helper()
+	err := filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		for _, secret := range secrets {
+			if strings.Contains(string(b), secret) {
+				t.Errorf("%s holds %s", p, secret)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
