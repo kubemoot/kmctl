@@ -226,10 +226,10 @@ func TestMemoryExportPassesItsFlagsOn(t *testing.T) {
 		got = o
 		return nil, nil, errors.New("stop here")
 	}
-	_, _ = runExport(t, open, "demo", "-o", "x", "--markdown", "--origin", "o1", "--nats-url", "nats://h:1",
+	_, _ = runExport(t, open, "demo", "-o", "x", "--markdown", "--allow-unscreened", "--origin", "o1", "--nats-url", "nats://h:1",
 		"--creds", "c.creds", "--nats-namespace", "ns2", "--nats-service", "svc2")
 	want := memoryOptions{
-		namespace: memNamespace, crew: "demo", out: "x", origin: "o1", markdown: true,
+		namespace: memNamespace, crew: "demo", out: "x", origin: "o1", markdown: true, allowUnscreened: true,
 		natsURL: "nats://h:1", creds: "c.creds", natsNamespace: "ns2", natsService: "svc2",
 	}
 	if got != want {
@@ -239,7 +239,7 @@ func TestMemoryExportPassesItsFlagsOn(t *testing.T) {
 
 func TestMemoryExportFlagDefaults(t *testing.T) {
 	cmd := newMemoryExportCommand(client.NewFactory(), opening(fakeBucket{}))
-	for flag, want := range map[string]string{"nats-namespace": "nats", "nats-service": "nats", "markdown": "false", "nats-url": ""} {
+	for flag, want := range map[string]string{"nats-namespace": "nats", "nats-service": "nats", "markdown": "false", "nats-url": "", "allow-unscreened": "false"} {
 		if got := cmd.Flags().Lookup(flag).DefValue; got != want {
 			t.Errorf("--%s default = %q, want %q", flag, got, want)
 		}
@@ -299,5 +299,37 @@ func checkManifestProtocolVersion(t *testing.T, manifest []byte) {
 	}
 	if err := json.Unmarshal(manifest, &head); err != nil || head.ProtocolVersion != ompi.SpecVersion {
 		t.Errorf("manifest protocol_version = %q (%v), want %q", head.ProtocolVersion, err, ompi.SpecVersion)
+	}
+}
+
+const loginFactKey = "crew-demo.demo.ops.login"
+
+func TestMemoryExportLeavesOutACredentialAndNamesItWithoutTheText(t *testing.T) {
+	bucket := fakeBucket{gpuFactKey: gpuFact, loginFactKey: `{"value":"password: hunter2hunter2","learnedAt":"2026-10-30T10:00:00Z"}`}
+	dir := filepath.Join(t.TempDir(), "mem")
+	out, err := runExport(t, opening(bucket), "demo", "-o", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, `left out "`+loginFactKey+`": holds a credential`) || strings.Contains(out, "hunter2") {
+		t.Errorf("output = %q, want the fact listed with a reason and no secret", out)
+	}
+	if !strings.Contains(out, "wrote 1 memory object(s)") {
+		t.Errorf("output = %q, want one memory object", out)
+	}
+	manifest, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
+	if err != nil || !strings.Contains(string(manifest), `"selection": "selection"`) && !strings.Contains(string(manifest), `"selection":"selection"`) {
+		t.Errorf("manifest = %s, %v, want selection", manifest, err)
+	}
+}
+
+func TestMemoryExportAllowUnscreenedKeepsTheCredentialFact(t *testing.T) {
+	bucket := fakeBucket{gpuFactKey: gpuFact, loginFactKey: `{"value":"password: hunter2hunter2","learnedAt":"2026-10-30T10:00:00Z"}`}
+	out, err := runExport(t, opening(bucket), "demo", "-o", filepath.Join(t.TempDir(), "mem"), "--allow-unscreened")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "wrote 2 memory object(s)") || strings.Contains(out, "left out") {
+		t.Errorf("output = %q, want both facts and no left-out line", out)
 	}
 }

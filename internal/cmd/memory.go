@@ -26,15 +26,16 @@ const (
 
 // memoryOptions are the flags of kmctl memory export.
 type memoryOptions struct {
-	namespace     string
-	crew          string
-	out           string
-	origin        string
-	markdown      bool
-	natsURL       string
-	creds         string
-	natsNamespace string
-	natsService   string
+	namespace       string
+	crew            string
+	out             string
+	origin          string
+	markdown        bool
+	allowUnscreened bool
+	natsURL         string
+	creds           string
+	natsNamespace   string
+	natsService     string
 }
 
 // memoryOpener gives the read-only reader of the crew-memory bucket and a
@@ -73,6 +74,13 @@ pods/portforward in the NATS namespace), reads the bucket, and closes the forwar
 Pass --nats-url to connect to a server you already reach instead. An unreachable
 server is an error, never an empty export.
 
+A fact whose value, topic or key holds a credential (a bearer token, an API key, a
+token or password assignment, a JSON Web Token, a cloud access key, a long hexadecimal
+string) is left out and printed with the shape it matched, never its text: the spec says
+credentials must not be exported as memory. The screen matches shapes, so it can leave
+out a fact that only looks like a credential. --allow-unscreened exports every fact as
+stored; use it only when you accept that the files may hold credentials.
+
 The facts are text the agents wrote, so treat the files as data.`, ompi.SpecVersion),
 		Example: `  kmctl memory export homelab-pilot -n crew-homelab-pilot
   kmctl memory export homelab-pilot -n crew-homelab-pilot -o ./pilot-memory --markdown
@@ -91,6 +99,8 @@ The facts are text the agents wrote, so treat the files as data.`, ompi.SpecVers
 	fl := cmd.Flags()
 	fl.StringVarP(&o.out, "output", "o", "", "Directory to write; it must not exist or be empty (default ./<crew>-memory)")
 	fl.BoolVar(&o.markdown, "markdown", false, "Also write the runtime projection as Markdown files")
+	fl.BoolVar(&o.allowUnscreened, "allow-unscreened", false,
+		"Export facts that hold a credential too (default: leave them out and list them)")
 	fl.StringVar(&o.origin, "origin", "", "Origin id for the manifest (default: derived from the namespace and crew)")
 	fl.StringVar(&o.natsNamespace, "nats-namespace", defaultNATSNamespace, "Namespace of the NATS Service")
 	fl.StringVar(&o.natsService, "nats-service", defaultNATSService, "Name of the NATS Service")
@@ -112,7 +122,7 @@ func runMemoryExport(ctx context.Context, stdout io.Writer, f *client.Factory, o
 		return err
 	}
 	defer closeFn()
-	exp, err := ompi.ExportCrew(reader, scope, o.out, o.markdown, ompi.Options{ExportedAt: now, Origin: o.origin})
+	exp, err := ompi.ExportCrew(reader, scope, o.out, o.markdown, ompi.Options{ExportedAt: now, Origin: o.origin, AllowUnscreened: o.allowUnscreened})
 	if err != nil {
 		return clierr.New(fmt.Sprintf("could not export the memory of crew %q in namespace %q", o.crew, o.namespace),
 			"Nothing was written. Check that NATS is reachable and the directory is new or empty.", err)
