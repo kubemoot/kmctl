@@ -312,8 +312,9 @@ func credentialBucket() fakeBucket {
 	return fakeBucket{
 		gpuFactKey:   gpuFact,
 		loginFactKey: loginValue,
-		"crew-demo.demo.password=hunter3hunter3.k": fineValue,
-		"crew-demo.demo.ops.token=hunter4hunter4":  fineValue,
+		"crew-demo.demo.password=hunter3hunter3.k":              fineValue,
+		"crew-demo.demo.ops.token=hunter4hunter4":               fineValue,
+		"crew-demo.demo.ops.ghp_abcdefghijklmnopqrstuvwxyz0123": `{"value":"Bearer abcDEF123456789","learnedAt":"2026-10-30T10:00:00Z"}`,
 	}
 }
 
@@ -323,17 +324,19 @@ func TestMemoryExportLeavesOutACredentialAndNamesItWithoutTheText(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n := strings.Count(out, "holds a credential"); n != 3 {
-		t.Errorf("output = %q, want three facts left out, got %d", out, n)
+	if n := strings.Count(out, "holds a credential"); n != 4 {
+		t.Errorf("output = %q, want four facts left out, got %d", out, n)
 	}
 	if !strings.Contains(out, `left out "`+loginFactKey+`"`) || !strings.Contains(out, "wrote 1 memory object(s)") {
 		t.Errorf("output = %q, want the value fact listed by key and one object written", out)
 	}
-	for _, secret := range []string{"hunter2", "hunter3", "hunter4"} {
+	secrets := []string{"hunter2", "hunter3", "hunter4", "ghp_abc", "abcDEF"}
+	for _, secret := range secrets {
 		if strings.Contains(out, secret) {
 			t.Errorf("output holds %s: %q", secret, out)
 		}
 	}
+	assertFilesHoldNone(t, dir, secrets)
 	manifest, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -348,8 +351,8 @@ func TestMemoryExportAllowUnscreenedKeepsTheCredentialFacts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "wrote 4 memory object(s)") || strings.Contains(out, "left out") {
-		t.Errorf("output = %q, want all four facts and no left-out line", out)
+	if !strings.Contains(out, "wrote 5 memory object(s)") || strings.Contains(out, "left out") {
+		t.Errorf("output = %q, want all five facts and no left-out line", out)
 	}
 }
 
