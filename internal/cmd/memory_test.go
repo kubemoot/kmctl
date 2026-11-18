@@ -97,6 +97,7 @@ func TestMemoryExportValidatesAgainstTheSchema(t *testing.T) {
 	if err := ompi.ValidateManifest(manifest); err != nil {
 		t.Errorf("manifest does not validate: %v", err)
 	}
+	checkManifestProtocolVersion(t, manifest)
 	files, _ := filepath.Glob(filepath.Join(dir, "memories", "*"))
 	if len(files) != 1 {
 		t.Fatalf("memory files = %v, want one", files)
@@ -271,5 +272,22 @@ func TestMemoryCommandIsOnTheRootAndHasExport(t *testing.T) {
 	}
 	if cmd.Example == "" || cmd.Short == "" {
 		t.Error("memory export has no short description or example")
+	}
+}
+
+func TestMemoryExportHelpNamesTheSpecVersionItWrites(t *testing.T) {
+	cmd := newMemoryExportCommand(&client.Factory{}, opening(fakeBucket{}))
+	if want := "working spec v" + ompi.SpecVersion + ":"; !strings.Contains(cmd.Long, want) {
+		t.Errorf("help does not say %q:\n%s", want, cmd.Long)
+	}
+}
+
+func checkManifestProtocolVersion(t *testing.T, manifest []byte) {
+	t.Helper()
+	var head struct {
+		ProtocolVersion string `json:"protocol_version"`
+	}
+	if err := json.Unmarshal(manifest, &head); err != nil || head.ProtocolVersion != ompi.SpecVersion {
+		t.Errorf("manifest protocol_version = %q (%v), want %q", head.ProtocolVersion, err, ompi.SpecVersion)
 	}
 }
