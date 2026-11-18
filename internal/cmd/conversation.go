@@ -13,6 +13,7 @@ import (
 	"github.com/kubemoot/kmctl/internal/conversation"
 	"github.com/kubemoot/kmctl/internal/discussion"
 	"github.com/spf13/cobra"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/rest"
 )
 
@@ -239,7 +240,18 @@ func followStream(ctx context.Context, cmd *cobra.Command, rc rest.Interface, op
 	w := &streamWatch{idle: conversation.NewIdleClock(sf.idleTimeout, sf.after, cancel)}
 	defer w.idle.Stop()
 	opts.OnEvent = w.seen
-	return w.endErr(ctx, conversation.Render(cmd.OutOrStdout(), stream, opts), sf.timeout, opts)
+	end := w.endErr(ctx, conversation.Render(cmd.OutOrStdout(), stream, opts), sf.timeout, opts)
+	return explainRefusedResume(ctx, f, end, opts)
+}
+
+// explainRefusedResume explains an end caused by the gateway refusing to reopen the
+// stream (HTTP 401, 403, 404), the way a refusal when the stream first opens is explained.
+func explainRefusedResume(ctx context.Context, f *client.Factory, end error, o conversation.Options) error {
+	var se *apierrors.StatusError
+	if f == nil || !errors.As(end, &se) {
+		return end
+	}
+	return explainGateway(ctx, f, se, o.Crew, o.Namespace)
 }
 
 // streamWatch follows a stream's events: it restarts the idle clock and keeps the
