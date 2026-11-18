@@ -11,10 +11,12 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/kubemoot/kmctl/internal/client"
 	"github.com/kubemoot/kmctl/internal/clierr"
 	"github.com/kubemoot/kmctl/internal/conversation"
+	"github.com/kubemoot/kmctl/internal/discussion"
 	"github.com/kubemoot/kmctl/internal/svcforward"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -135,6 +137,7 @@ func TestErrors_GatewayHTTPError(t *testing.T) {
 }
 
 func TestErrors_StreamCut(t *testing.T) {
+	defer discussion.SetResumeBounds(2, time.Millisecond)()
 	s := newFakeAPIServer(t)
 	s.proxy["demo-discussion/api/v1/discussions/demo"] = func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"conversationId": "c-1"})

@@ -150,7 +150,11 @@ coordinator synthesizing) the gateway sends activity events; plain shows them as
 "busy:" lines, json as type "activity", and full in the header. kmctl stops only
 when the crew shows no activity for --idle-timeout (default 5m), or when --timeout
 passes, if you set one. It then prints the conversation and thread IDs and the
-"kmctl conversation watch" command that reattaches; the crew may still answer.`
+"kmctl conversation watch" command that reattaches; the crew may still answer.
+
+If the stream drops before the crew answers (the gateway restarted, a port-forward
+broke), kmctl reopens it after the last event it received. When it cannot, it exits
+with an error and the same reattach command; it never prints an empty answer.`
 
 // defaultIdleTimeout is how long the crew may show no activity before kmctl stops
 // waiting. A gateway that reports activity sends it every 15 seconds while anyone
@@ -227,7 +231,7 @@ func (sf *streamFlags) overall(parent context.Context) (context.Context, context
 func followStream(ctx context.Context, cmd *cobra.Command, rc rest.Interface, opts conversation.Options, sf streamFlags, f *client.Factory) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	stream, err := discussion.Stream(ctx, rc, opts.Crew, opts.ConversationID)
+	stream, err := discussion.StreamResuming(ctx, rc, opts.Crew, opts.ConversationID)
 	if err != nil {
 		return explainGateway(ctx, f, err, opts.Crew, opts.Namespace)
 	}
