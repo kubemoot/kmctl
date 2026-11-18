@@ -282,6 +282,16 @@ func TestMemoryExportHelpNamesTheSpecVersionItWrites(t *testing.T) {
 	}
 }
 
+// The export writes OMPI working spec v0.6; the literal guards against the constant moving unnoticed.
+func TestMemoryExportWritesSpecVersionSixLiterally(t *testing.T) {
+	if ompi.SpecVersion != "0.6" {
+		t.Errorf("ompi.SpecVersion = %q, want 0.6", ompi.SpecVersion)
+	}
+	if !strings.Contains(newMemoryExportCommand(&client.Factory{}, opening(fakeBucket{})).Long, "working spec v0.6:") {
+		t.Error("help does not say working spec v0.6:")
+	}
+}
+
 func checkManifestProtocolVersion(t *testing.T, manifest []byte) {
 	t.Helper()
 	var head struct {
