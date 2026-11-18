@@ -7,6 +7,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // fakeGateway serves scripted streams: each open returns the next body and records the
@@ -127,5 +130,38 @@ func TestStreamThatKeepsEndingWithNothingNewIsLost(t *testing.T) {
 
 	if !errors.Is(err, ErrStreamLost) {
 		t.Fatalf("err = %v, want ErrStreamLost: reopens that deliver nothing must not loop forever", err)
+	}
+}
+
+func TestAnErrorEventEndsTheStreamAtOnceWithoutReopening(t *testing.T) {
+	fast(t, 3)
+	g := &fakeGateway{bodies: []*string{str("id: a:1\ndata: {\"type\":\"error\",\"error\":\"boom\"}\n\n")}}
+
+	got, err := collect(t, g)
+
+	if err != nil || len(got) != 1 || got[0].Type != "error" || len(g.opened) != 1 {
+		t.Fatalf("err = %v, events = %v, opens = %d: an error event is terminal", err, got, len(g.opened))
+	}
+}
+
+func TestRefusedReopenStopsAtOnceAndKeepsTheStatusError(t *testing.T) {
+	for _, code := range []int32{401, 403, 404} {
+		fast(t, 5)
+		opens := 0
+		open := func(_ context.Context, _ string) (io.ReadCloser, error) {
+			opens++
+			if opens == 1 {
+				return io.NopCloser(strings.NewReader("id: a:1\ndata: {\"type\":\"phase\"}\n\n")), nil
+			}
+			return nil, &apierrors.StatusError{ErrStatus: metav1.Status{Code: code, Reason: metav1.StatusReasonUnknown}}
+		}
+		s, _ := newResuming(context.Background(), open)
+
+		_, err := io.ReadAll(s)
+
+		var se *apierrors.StatusError
+		if !errors.As(err, &se) || se.Status().Code != code || opens != 2 {
+			t.Fatalf("code %d: err = %v, opens = %d, want the status error after one reopen", code, err, opens)
+		}
 	}
 }

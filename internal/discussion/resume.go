@@ -8,9 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"strings"
 	"time"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/rest"
 )
 
@@ -167,10 +169,27 @@ func (r *resuming) reopen(cause error) error {
 			r.cur, r.in = next, bufio.NewReader(next)
 			return nil
 		}
+		if notRetryable(err) {
+			return fmt.Errorf("could not resume the discussion stream: %w", err)
+		}
 		last = err
 		pause = min(pause*2, resumeMaxPause)
 	}
 	return fmt.Errorf("%w (%d attempts): %v", ErrStreamLost, resumeAttempts, last)
+}
+
+// notRetryable reports an open error that waiting will not fix: the gateway refused the
+// caller (401, 403) or does not have the conversation or service (404).
+func notRetryable(err error) bool {
+	var se *apierrors.StatusError
+	if !errors.As(err, &se) {
+		return false
+	}
+	switch se.Status().Code {
+	case http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound:
+		return true
+	}
+	return false
 }
 
 // SetResumeBounds replaces the resume bounds and returns a function that restores them;
