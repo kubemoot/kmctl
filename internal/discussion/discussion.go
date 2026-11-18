@@ -54,7 +54,7 @@ type Event struct {
 }
 
 // SignalMeta is how an agent's signal was made: the model, the tokens and inference
-// time of its call, the tools it has enabled, an artifact it spilled, and for a
+// time of its call, the tools it has enabled, a workspace object it stored, and for a
 // failure, what failed. A gateway older than these fields sends none of them.
 type SignalMeta struct {
 	ModelName    string       `json:"modelName,omitempty"`
@@ -70,7 +70,8 @@ type SignalMeta struct {
 	Artifact     *ArtifactRef `json:"artifact,omitempty"`
 }
 
-// ArtifactRef names a contribution an agent spilled to the crew's artifact store.
+// ArtifactRef names a contribution an agent stored in the discussion's workspace. The gateway
+// still carries it as metadata.artifact.
 type ArtifactRef struct {
 	Key   string `json:"key"`
 	Bytes int64  `json:"bytes,omitempty"`

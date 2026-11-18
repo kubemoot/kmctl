@@ -52,7 +52,7 @@ func (o Options) since() string {
 	return SinceWatch
 }
 
-// summarize is the summary of what t saw, with the commands that fetch its artifacts.
+// summarize is the summary of what t saw, with the commands that fetch its workspace objects.
 func (o Options) summarize(t *Tracker) Summary {
 	return t.Summarize(o.since()).WithFetchCommands(o.Crew, o.Namespace)
 }

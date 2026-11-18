@@ -37,7 +37,7 @@ A conversation ID can be shortened to any unique prefix, as with git hashes, whe
 the crew's gateway lists conversations ("kmctl conversation list").`,
 		Args: cobra.NoArgs,
 	}
-	cmd.AddCommand(newAskCommand(f), newWatchCommand(f), newConversationListCommand(f), newConversationPlacementsCommand(f), newConversationArtifactCommand(f))
+	cmd.AddCommand(newAskCommand(f), newWatchCommand(f), newConversationListCommand(f), newConversationPlacementsCommand(f), newConversationWorkspaceCommand(f), newConversationArtifactAliasCommand(f))
 	return cmd
 }
 

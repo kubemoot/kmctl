@@ -99,7 +99,7 @@ func TestRenderClosing_MarkdownThenFollowUp(t *testing.T) {
 
 func TestRenderClosing_SuggestedCommandsAreBlueNotRed(t *testing.T) {
 	tr := NewTracker(testStart)
-	tr.Answer = "Fetch it with `kmctl conversation artifact x y`"
+	tr.Answer = "Fetch it with `kmctl conversation workspace x y`"
 	for style, want := range map[string]string{"dark": "38;5;39", "light": "38;5;26"} {
 		out := renderClosing(tr, testOptions(ModeFull), style, 100)
 		lines := strings.Split(strings.TrimRight(out, "\n"), "\n")

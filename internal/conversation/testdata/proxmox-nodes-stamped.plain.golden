@@ -9,7 +9,7 @@ conversation 6733c361-aa0c-4bde-85c6-e143af23b251
 [   8.0s] pilot-gpu              stood aside (qwen3:8b, 419 tokens): not in the subcommittee
 [   9.0s] pilot-metrics          evaluating on rig2-gpu0 (triage 2.5s)
 [  10.0s] pilot-proxmox          agree (evaluation 10.4s, qwen3:14b, 5,850 tokens): The cluster has three Proxmox nodes, all online.
-[  11.0s] pilot-metrics          agree (evaluation 12.0s, qwen3:14b, 8,230 tokens): attached artifact (8.3 KB); fetch command below
+[  11.0s] pilot-metrics          agree (evaluation 12.0s, qwen3:14b, 8,230 tokens): stored in the workspace (8.3 KB); fetch command below
 [  12.0s] pilot-storage          failure (qwen3:14b, 3,300 tokens): Tools failed
 [  13.0s] answer ready
 [  14.0s] done
@@ -34,6 +34,6 @@ ANSWER:
 - Accelerators: rig1-gpu0, rig2-gpu0
 - Models: qwen3:14b, qwen3:8b
 - Tool errors: pilot-storage: zfs_pool_status failed 3 times: connection refused
-- Artifact from pilot-metrics (8.3 KB): `kmctl conversation artifact homelab-pilot crew-homelab-pilot/homelab-pilot/t-42/pilot-metrics/agree-1b2c -n crew-homelab-pilot`
+- Workspace object from pilot-metrics (8.3 KB): `kmctl conversation workspace homelab-pilot crew-homelab-pilot/homelab-pilot/t-42/pilot-metrics/agree-1b2c -n crew-homelab-pilot`
 
 Next: kmctl conversation ask homelab-pilot "<next question>" -n crew-homelab-pilot --conversation-id 6733c361-aa0c-4bde-85c6-e143af23b251

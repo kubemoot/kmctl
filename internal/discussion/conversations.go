@@ -22,9 +22,9 @@ const ListLimit = 100
 var ErrListUnsupported = errors.New("the crew's discussion gateway does not list conversations " +
 	"(it is older than this kmctl, or the crew has no gateway)")
 
-// ErrArtifactNotFound means the gateway has no artifact under the key.
-var ErrArtifactNotFound = errors.New("artifact not found: a thread's artifacts are deleted after the thread " +
-	"closes, and a gateway older than this kmctl cannot fetch artifacts")
+// ErrWorkspaceNotFound means the gateway has no workspace object under the key.
+var ErrWorkspaceNotFound = errors.New("workspace object not found: a thread's workspace is deleted after the thread " +
+	"closes, and a gateway older than this kmctl cannot fetch workspace objects")
 
 // ConversationInfo is one recent conversation of a crew, as the gateway lists it.
 type ConversationInfo struct {
@@ -62,19 +62,34 @@ func parseList(raw []byte) ([]ConversationInfo, error) {
 	return *resp.Conversations, nil
 }
 
-// FetchArtifact opens the artifact under key in the crew's artifact store.
-func FetchArtifact(ctx context.Context, rc rest.Interface, crew, key string) (io.ReadCloser, error) {
-	body, err := rc.Get().
-		Suffix("api", "v1", "discussions", crew, "artifact").
-		Param("key", key).
-		Stream(ctx)
+// Gateway routes that serve a workspace object: the current one, then the name a gateway
+// older than this kmctl answers to.
+const (
+	workspaceRoute       = "workspace"
+	legacyWorkspaceRoute = "artifact"
+)
+
+// FetchWorkspace opens the workspace object under key in the discussion's workspace. It asks
+// the workspace route and, when the gateway does not have it, the route's old name.
+func FetchWorkspace(ctx context.Context, rc rest.Interface, crew, key string) (io.ReadCloser, error) {
+	body, err := fetchRoute(ctx, rc, crew, key, workspaceRoute)
 	if missingEndpoint(err) {
-		return nil, ErrArtifactNotFound
+		body, err = fetchRoute(ctx, rc, crew, key, legacyWorkspaceRoute)
+	}
+	if missingEndpoint(err) {
+		return nil, ErrWorkspaceNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("fetch artifact %s: %w", key, err)
+		return nil, fmt.Errorf("fetch workspace object %s: %w", key, err)
 	}
 	return body, nil
+}
+
+func fetchRoute(ctx context.Context, rc rest.Interface, crew, key, route string) (io.ReadCloser, error) {
+	return rc.Get().
+		Suffix("api", "v1", "discussions", crew, route).
+		Param("key", key).
+		Stream(ctx)
 }
 
 // missingEndpoint reports whether err is the gateway, or the API server in front of
