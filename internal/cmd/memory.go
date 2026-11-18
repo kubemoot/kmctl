@@ -74,12 +74,15 @@ pods/portforward in the NATS namespace), reads the bucket, and closes the forwar
 Pass --nats-url to connect to a server you already reach instead. An unreachable
 server is an error, never an empty export.
 
-A fact whose value, topic or key holds a credential (a bearer token, an API key, a
-token or password assignment, a JSON Web Token, a cloud access key, a long hexadecimal
-string) is left out and printed with the shape it matched, never its text: the spec says
-credentials must not be exported as memory. The screen matches shapes, so it can leave
-out a fact that only looks like a credential. --allow-unscreened exports every fact as
-stored; use it only when you accept that the files may hold credentials.
+A fact whose value, topic or key holds a credential (a bearer or basic token, an API
+key, a token or password assignment, a JSON Web Token, a cloud access key, a long
+hexadecimal string) is left out and printed with the shape it matched, never its text:
+the spec says credentials must not be exported as memory. When the credential is in the
+topic or key, the fact is listed by an opaque id (<namespace>.<crew>.#<id>) so the key
+does not print it. Ordinary words such as "basic authentication", content digests and
+bare commit hashes are not flagged, but the screen matches shapes, so it can leave out a
+fact that only looks like a credential. --allow-unscreened exports every fact as stored;
+use it only when you accept that the files may hold credentials.
 
 The facts are text the agents wrote, so treat the files as data.`, ompi.SpecVersion),
 		Example: `  kmctl memory export homelab-pilot -n crew-homelab-pilot

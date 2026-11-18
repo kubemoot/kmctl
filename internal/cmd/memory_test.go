@@ -302,34 +302,53 @@ func checkManifestProtocolVersion(t *testing.T, manifest []byte) {
 	}
 }
 
-const loginFactKey = "crew-demo.demo.ops.login"
+const (
+	loginFactKey = "crew-demo.demo.ops.login"
+	loginValue   = `{"value":"password: hunter2hunter2","learnedAt":"2026-10-30T10:00:00Z"}`
+	fineValue    = `{"value":"fine","learnedAt":"2026-10-30T10:00:00Z"}`
+)
 
-func TestMemoryExportLeavesOutACredentialAndNamesItWithoutTheText(t *testing.T) {
-	bucket := fakeBucket{gpuFactKey: gpuFact, loginFactKey: `{"value":"password: hunter2hunter2","learnedAt":"2026-10-30T10:00:00Z"}`}
-	dir := filepath.Join(t.TempDir(), "mem")
-	out, err := runExport(t, opening(bucket), "demo", "-o", dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(out, `left out "`+loginFactKey+`": holds a credential`) || strings.Contains(out, "hunter2") {
-		t.Errorf("output = %q, want the fact listed with a reason and no secret", out)
-	}
-	if !strings.Contains(out, "wrote 1 memory object(s)") {
-		t.Errorf("output = %q, want one memory object", out)
-	}
-	manifest, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
-	if err != nil || !strings.Contains(string(manifest), `"selection": "selection"`) && !strings.Contains(string(manifest), `"selection":"selection"`) {
-		t.Errorf("manifest = %s, %v, want selection", manifest, err)
+func credentialBucket() fakeBucket {
+	return fakeBucket{
+		gpuFactKey:   gpuFact,
+		loginFactKey: loginValue,
+		"crew-demo.demo.password=hunter3hunter3.k": fineValue,
+		"crew-demo.demo.ops.token=hunter4hunter4":  fineValue,
 	}
 }
 
-func TestMemoryExportAllowUnscreenedKeepsTheCredentialFact(t *testing.T) {
-	bucket := fakeBucket{gpuFactKey: gpuFact, loginFactKey: `{"value":"password: hunter2hunter2","learnedAt":"2026-10-30T10:00:00Z"}`}
-	out, err := runExport(t, opening(bucket), "demo", "-o", filepath.Join(t.TempDir(), "mem"), "--allow-unscreened")
+func TestMemoryExportLeavesOutACredentialAndNamesItWithoutTheText(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "mem")
+	out, err := runExport(t, opening(credentialBucket()), "demo", "-o", dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "wrote 2 memory object(s)") || strings.Contains(out, "left out") {
-		t.Errorf("output = %q, want both facts and no left-out line", out)
+	if n := strings.Count(out, "holds a credential"); n != 3 {
+		t.Errorf("output = %q, want three facts left out, got %d", out, n)
+	}
+	if !strings.Contains(out, `left out "`+loginFactKey+`"`) || !strings.Contains(out, "wrote 1 memory object(s)") {
+		t.Errorf("output = %q, want the value fact listed by key and one object written", out)
+	}
+	for _, secret := range []string{"hunter2", "hunter3", "hunter4"} {
+		if strings.Contains(out, secret) {
+			t.Errorf("output holds %s: %q", secret, out)
+		}
+	}
+	manifest, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(manifest), `"selection"`) || strings.Contains(string(manifest), `"snapshot"`) {
+		t.Errorf("manifest = %s, want selection", manifest)
+	}
+}
+
+func TestMemoryExportAllowUnscreenedKeepsTheCredentialFacts(t *testing.T) {
+	out, err := runExport(t, opening(credentialBucket()), "demo", "-o", filepath.Join(t.TempDir(), "mem"), "--allow-unscreened")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "wrote 4 memory object(s)") || strings.Contains(out, "left out") {
+		t.Errorf("output = %q, want all four facts and no left-out line", out)
 	}
 }
