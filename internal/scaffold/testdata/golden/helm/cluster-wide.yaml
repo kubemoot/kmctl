@@ -116,6 +116,10 @@ spec:
   description: "Pods, Deployments, ReplicaSets, StatefulSets, and Jobs."
   triageSummary: "Lists and inspects Pods, Deployments, ReplicaSets, StatefulSets, and Jobs: phase, readiness, replicas, conditions, and logs."
   discussRole: tooler
+  # What the agent does with the discussion's workspace, where every tool result is
+  # stored as a file: a tooler writes what it fetched, the analyst reads it.
+  workspace:
+    access: write
   capabilities: [tool-calling, kubernetes]
   discussChannels: [kubernetes]
   discussKeywords: [pod, pods, deployment, deployments, replicaset, statefulset, job, jobs, replicas, workload, logs, running]
@@ -204,7 +208,7 @@ spec:
       memory: 1Gi
 ---
 # Source: hello/templates/tools.yaml
-# The crew's one tool server: the Kubernetes MCP server in read-only mode, which
+# The crew's tool server: the Kubernetes MCP server in read-only mode, which
 # registers only tools that do not change the cluster. It runs as the
 # hello-kubernetes-mcp ServiceAccount, whose RBAC grants read access to this
 # namespace. Agents reach it through the crew's MCPGateway, never directly, and

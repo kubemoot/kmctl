@@ -96,3 +96,11 @@ The tool server runs with `--read-only`, so it offers no tool that changes the c
 Role grants only get, list, and watch. Secrets are not readable at all: Kubernetes cannot
 grant a Secret's name without its data, so the crew names Secrets from the references in
 pod specs instead.
+
+## Its results are the workspace
+
+Every tool result a specialist gets is stored as a file in the discussion's workspace, and a
+small one is posted in the discussion as well. Each agent declares what it does with the
+workspace in `spec.workspace.access`: the toolers declare `write` (they store what they fetched and
+read nothing), and the coordinator calls no tool, so it declares nothing. With the `reviewer` (`--members 5`) the crew also has an analyst that reads those
+results to check what the toolers claim.

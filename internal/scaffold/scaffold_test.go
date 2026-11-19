@@ -96,6 +96,9 @@ func TestGenerate_EverySizeIsAWholeCrew(t *testing.T) {
 			}
 			counts := map[string]int{"Crew": 1, "CrewSchedulingPolicy": 1, "MCPServer": 1, "MCPGateway": 1, "CrewFitnessSuite": 1,
 				"ServiceAccount": 1, "Role": 1, "RoleBinding": 1, "Model": 0, "ModelServer": 0, "PromptModule": 5 + n}
+			if n == MaxMembers {
+				counts["MCPServer"] = 2 // the reviewer reads stored results through the workspace server
+			}
 			for kind, want := range counts {
 				if got := len(ofKind(p, kind)); got != want {
 					t.Errorf("%s count = %d, want %d", kind, got, want)
@@ -120,8 +123,8 @@ func TestGenerate_PromptRefIntegrity(t *testing.T) {
 // The tools every tooler may enable: the read-only Kubernetes MCP server's tools.
 var readOnlyTools = []string{"pods_list_in_namespace", "pods_get", "pods_log", "resources_list", "resources_get", "events_list"}
 
-// Each tooler enables only a handful of read tools; the coordinator and the
-// reviewer call none, so the gateway is off for them.
+// Each tooler enables only a handful of read tools; the coordinator calls none, so
+// its gateway is off, and the reviewer enables only the workspace read tools.
 func TestGenerate_ToolsPerRole(t *testing.T) {
 	p := generated(t, bundle(MaxMembers))
 	for _, a := range ofKind(p, "Agent") {
@@ -130,26 +133,35 @@ func TestGenerate_ToolsPerRole(t *testing.T) {
 }
 
 // checkAgentTools holds one Agent to its role's tool rule: a tooler enables one to
-// five read tools; the coordinator and the analyst enable none and run without the
-// gateway.
+// five read tools; the coordinator enables none and runs without the gateway; the
+// analyst enables exactly the workspace read tools and no cluster tool.
 func checkAgentTools(t *testing.T, a *unstructured.Unstructured) {
 	t.Helper()
-	role := str(a, "spec", "discussRole")
 	tools := strs(a, "spec", "enabledTools")
-	switch role {
+	gateway := envValue(a, "KUBEMOOT_GATEWAY_ENABLED")
+	switch role := str(a, "spec", "discussRole"); role {
 	case "tooler":
-		if len(tools) == 0 || len(tools) > 5 {
-			t.Errorf("tooler %q enables %d tools, want 1 to 5", a.GetName(), len(tools))
+		checkToolerTools(t, a.GetName(), tools)
+	case "coordinator":
+		if len(tools) != 0 || gateway != "false" {
+			t.Errorf("coordinator %q must call no tools (enabledTools %v, gateway %q)", a.GetName(), tools, gateway)
 		}
-		if extra := slices.DeleteFunc(slices.Clone(tools), isReadOnlyTool); len(extra) > 0 {
-			t.Errorf("tooler %q enables %v, which are not read tools", a.GetName(), extra)
-		}
-	case "coordinator", "analyst":
-		if gatewayOff := envValue(a, "KUBEMOOT_GATEWAY_ENABLED") == "false"; len(tools) != 0 || !gatewayOff {
-			t.Errorf("%s %q must call no tools (enabledTools %v, gateway off %v)", role, a.GetName(), tools, gatewayOff)
+	case "analyst":
+		if !slices.Equal(tools, workspaceReadTools) || gateway != "true" {
+			t.Errorf("analyst %q must enable only %v with the gateway on (enabledTools %v)", a.GetName(), workspaceReadTools, tools)
 		}
 	default:
 		t.Errorf("agent %q has unexpected role %q", a.GetName(), role)
+	}
+}
+
+func checkToolerTools(t *testing.T, name string, tools []string) {
+	t.Helper()
+	if len(tools) == 0 || len(tools) > 5 {
+		t.Errorf("tooler %q enables %d tools, want 1 to 5", name, len(tools))
+	}
+	if extra := slices.DeleteFunc(slices.Clone(tools), isReadOnlyTool); len(extra) > 0 {
+		t.Errorf("tooler %q enables %v, which are not read tools", name, extra)
 	}
 }
 
@@ -568,10 +580,16 @@ func bundleData() templateData { return bundle(1).data() }
 // prompts and the RBAC differ: Helm supplies both.
 func TestGenerate_ChartLayoutKeepsTheManifests(t *testing.T) {
 	flat, chart := flatAndChart(t, MaxMembers)
-	for _, name := range []string{"crew.yaml", "agents.yaml", "tools.yaml"} {
+	for _, name := range []string{"crew.yaml", "agents.yaml"} {
 		if chart["templates/"+name] != flat[name] {
 			t.Errorf("templates/%s differs from the bundle's %s", name, name)
 		}
+	}
+	// The tool servers differ only in where the workspace server's NATS address comes from.
+	chartTools := strings.ReplaceAll(chart["templates/tools.yaml"], chartData().NATSURL, bundleData().NATSURL)
+	chartTools = strings.ReplaceAll(chartTools, chartData().NATSNote, bundleData().NATSNote)
+	if chartTools != flat["tools.yaml"] {
+		t.Error("templates/tools.yaml differs from the bundle's tools.yaml beyond the NATS address")
 	}
 	chartPrompts := strings.ReplaceAll(namespacedBranch(chart["templates/promptmodules.yaml"]), helmNamespace, "crew-demo")
 	chartPrompts = strings.ReplaceAll(chartPrompts, chartData().Widen, bundleData().Widen)
@@ -589,7 +607,7 @@ func TestGenerate_ChartLayoutKeepsTheManifests(t *testing.T) {
 // Helm actions appear only where Helm renders them: the chart's prompts and RBAC.
 func TestGenerate_HelmActionsOnlyWhereHelmRenders(t *testing.T) {
 	flat, chart := flatAndChart(t, MaxMembers)
-	helmFiles := map[string]bool{"templates/promptmodules.yaml": true, "templates/rbac.yaml": true, "templates/fitness-scenarios.yaml": true}
+	helmFiles := map[string]bool{"templates/promptmodules.yaml": true, "templates/rbac.yaml": true, "templates/fitness-scenarios.yaml": true, "templates/tools.yaml": true}
 	for name, content := range chart {
 		if strings.Contains(content, "{{") != helmFiles[name] {
 			t.Errorf("chart file %s: holds a Helm action = %v, want %v", name, !helmFiles[name], helmFiles[name])
@@ -817,5 +835,71 @@ func TestSpecialists_ReviewerNamesTheCallLines(t *testing.T) {
 	}
 	if strings.Contains(reviewer.Rules, "ARTIFACT") {
 		t.Error("reviewer rules still name the ARTIFACT marker")
+	}
+}
+
+// Every specialist declares its workspace access as the reference crews do: a tooler
+// writes what it fetched and reads nothing, the analyst reads and stores nothing of its
+// own. The coordinator calls no tool, so it declares nothing, as the reference crews'
+// coordinators do.
+func TestGenerate_AgentsDeclareWorkspaceAccess(t *testing.T) {
+	for _, size := range []int{1, MaxMembers} {
+		for _, a := range ofKind(generated(t, bundle(size)), "Agent") {
+			want := map[string]string{"tooler": "write", "analyst": "read", "coordinator": ""}[str(&a, "spec", "discussRole")]
+			if got := str(&a, "spec", "workspace", "access"); got != want {
+				t.Errorf("size %d: %s declares workspace access %q, want %q", size, a.GetName(), got, want)
+			}
+		}
+	}
+}
+
+// A reader needs a workspace server to read from: one MCP server that selects the
+// operator's workspace-access image, with no image or version of the crew's own, found by
+// the crew's gateway. A crew without the reviewer has no reader and so no such server.
+func TestGenerate_ReviewerHasAWorkspaceServer(t *testing.T) {
+	servers := ofKind(generated(t, bundle(MaxMembers)), "MCPServer")
+	ws := named(servers, "demo-workspace-mcp")
+	if ws == nil {
+		t.Fatalf("no workspace server among %v", names(servers))
+	}
+	if str(ws, "spec", "kubemootImage") != "workspaceAccess" {
+		t.Error("the workspace server must take its image from the operator (kubemootImage: workspaceAccess)")
+	}
+	if str(ws, "spec", "image") != "" {
+		t.Error("the workspace server must not name an image")
+	}
+	if got := ws.GetLabels()["kubemoot.ai/crew"]; got != "demo" {
+		t.Errorf("the gateway selects servers by the crew label; the workspace server has %q", got)
+	}
+	if n := len(ofKind(generated(t, bundle(MaxMembers-1)), "MCPServer")); n != 1 {
+		t.Errorf("a crew without the reviewer has %d MCP servers, want 1", n)
+	}
+}
+
+// The reviewer's prompt sends it to the workspace read tools it has, and the tools it
+// names are the ones it enables.
+func TestSpecialists_ReviewerReadsStoredResults(t *testing.T) {
+	for _, tool := range workspaceReadTools {
+		if !strings.Contains(reviewer.Rules, tool) {
+			t.Errorf("reviewer rules do not name %s", tool)
+		}
+	}
+	if strings.Contains(reviewer.Rules, "NO tools") || strings.Contains(reviewer.Rules, "where you cannot read it") {
+		t.Error("reviewer rules still say it cannot read stored results")
+	}
+}
+
+// The chart names the NATS address as a value, the bundle as a literal.
+func TestGenerate_WorkspaceServerNATSAddress(t *testing.T) {
+	flat, chart := flatAndChart(t, MaxMembers)
+	if !strings.Contains(flat["tools.yaml"], `value: "`+defaultNATSURL+`"`) {
+		t.Error("the bundle's workspace server must name the default NATS address")
+	}
+	if !strings.Contains(chart["templates/tools.yaml"], "{{ .Values.nats.url | quote }}") || !strings.Contains(chart["values.yaml"], defaultNATSURL) {
+		t.Error("the chart's workspace server must read nats.url, which values.yaml defaults")
+	}
+	_, one := flatAndChart(t, 1)
+	if strings.Contains(one["values.yaml"], "nats") {
+		t.Error("a crew without the reviewer has no workspace server and so no nats value")
 	}
 }

@@ -34,6 +34,10 @@ spec:
   description: "Pods, Deployments, ReplicaSets, StatefulSets, and Jobs."
   triageSummary: "Lists and inspects Pods, Deployments, ReplicaSets, StatefulSets, and Jobs: phase, readiness, replicas, conditions, and logs."
   discussRole: tooler
+  # What the agent does with the discussion's workspace, where every tool result is
+  # stored as a file: a tooler writes what it fetched, the analyst reads it.
+  workspace:
+    access: write
   capabilities: [tool-calling, kubernetes]
   discussChannels: [kubernetes]
   discussKeywords: [pod, pods, deployment, deployments, replicaset, statefulset, job, jobs, replicas, workload, logs, running]

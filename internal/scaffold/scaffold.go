@@ -66,6 +66,11 @@ const helmNamespace = "{{ .Release.Namespace }}"
 // namespace with, the release the reference crews run. Bump it here.
 const kubernetesMCPImage = "quay.io/containers/kubernetes_mcp_server:v0.0.63"
 
+// defaultNATSURL is where the Kubemoot quickstart and operator chart install NATS. The
+// workspace MCP server needs the address and the operator does not inject it, so the
+// crew names it: a chart value, or a line to edit in a bundle.
+const defaultNATSURL = "nats://nats.nats.svc.cluster.local:4222"
+
 type templateData struct {
 	Name               string
 	DisplayName        string // the display name as a YAML scalar, for Chart.yaml
@@ -80,6 +85,8 @@ type templateData struct {
 	Rules              string          // the read-only RBAC rules
 	KubernetesMCPImage string          // the tool server image
 	Chart              bool
+	NATSURL            string // the NATS server the workspace MCP server reads, as the manifest writes the value
+	NATSNote           string // where a reader changes NATSURL
 	Widen              string // how a namespaced crew gets read-only cluster-wide access, for its prompts
 	Fitness            string // the rendered fitness suite, which a bundle's scenarios ConfigMap holds
 }
@@ -99,9 +106,13 @@ func (o Options) data() templateData {
 		Agents:             o.agents(),
 	}
 	d.NS = d.TargetNS
+	d.NATSURL = quoted(defaultNATSURL, false)
+	d.NATSNote = "Change it if your cluster runs NATS elsewhere."
 	d.Widen = "scaffolding the crew again as a Helm chart (kmctl create --chart) with access.clusterWide: true"
 	if o.Chart {
 		d.NS = helmNamespace
+		d.NATSURL = "{{ .Values.nats.url | quote }}"
+		d.NATSNote = "Set nats.url in values.yaml for another server."
 		d.Widen = "setting access.clusterWide: true in the crew's values.yaml and redeploying"
 	}
 	if d.Renamed {

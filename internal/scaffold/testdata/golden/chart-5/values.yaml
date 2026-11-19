@@ -8,3 +8,9 @@ access:
   # the release namespace; true has the specialists read every namespace and name
   # the namespace of each resource they report.
   clusterWide: false
+
+# The NATS JetStream server Kubemoot runs on. The reviewer's workspace server reads
+# the results the toolers stored from it. This is where the Kubemoot quickstart
+# installs NATS; change it when your cluster runs NATS elsewhere.
+nats:
+  url: "nats://nats.nats.svc.cluster.local:4222"

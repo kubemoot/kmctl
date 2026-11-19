@@ -61,7 +61,7 @@ same question: the answer now ends with that line.
 - `templates/agents.yaml`: the coordinator and the specialists. Agents declare capabilities,
   never a model.
 - `templates/promptmodules.yaml`: every prompt, in ADL.
-- `templates/tools.yaml`: the Kubernetes MCP server, read-only, and the MCP gateway the agents reach it through.
+- `templates/tools.yaml`: the Kubernetes MCP server, read-only, the workspace server the reviewer reads stored results with, and the MCP gateway the agents reach them through.
 - `templates/rbac.yaml`: the read-only Role the tool server runs with. Set `access.clusterWide: true` in
   `values.yaml` to let it read every namespace.
 - `fitness/fitness.yaml`: the fitness suite, outside `templates/` so installing does not start a run.
@@ -97,3 +97,12 @@ The tool server runs with `--read-only`, so it offers no tool that changes the c
 Role grants only get, list, and watch. Secrets are not readable at all: Kubernetes cannot
 grant a Secret's name without its data, so the crew names Secrets from the references in
 pod specs instead.
+
+## Its results are the workspace
+
+Every tool result a specialist gets is stored as a file in the discussion's workspace, and a
+small one is posted in the discussion as well. Each agent declares what it does with the
+workspace in `spec.workspace.access`: the toolers declare `write` (they store what they fetched and
+read nothing), and the coordinator calls no tool, so it declares nothing. The reviewer declares `read`: when a finding holds only a pointer to a stored result,
+it reads that result with `workspace_head`, `workspace_tail`, and `workspace_grep` from the crew's workspace server before it judges the claim. The server reads the workspace from NATS at
+`nats://nats.nats.svc.cluster.local:4222`, where Kubemoot's quickstart installs it. Set nats.url in values.yaml for another server.

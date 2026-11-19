@@ -21,7 +21,7 @@ spec:
         ASSERT(discussion completes with "done" event within MAX_DURATION)
         ASSERT(at least 1 specialist contributes with signal=agree)
         ASSERT(synthesis CONTAINS "hello-coordinator")
-        ASSERT(DEFER synthesis REFLECTS "The namespace runs the crew's own pods, all Running and ready: the hello-coordinator pod, one pod per specialist (hello-workloads, hello-events, hello-networking, hello-config, hello-reviewer), the hello-kubernetes-mcp tool server, and the hello-gateway MCP gateway, plus the pods Kubemoot adds for the crew, such as its discussion gateway. Pod name suffixes and the number of supporting pods vary between installs; a correct answer lists the real pods by name with their status and invents none.")
+        ASSERT(DEFER synthesis REFLECTS "The namespace runs the crew's own pods, all Running and ready: the hello-coordinator pod, one pod per specialist (hello-workloads, hello-events, hello-networking, hello-config, hello-reviewer), the hello-kubernetes-mcp tool server, the hello-workspace-mcp server the reviewer reads stored results with, and the hello-gateway MCP gateway, plus the pods Kubemoot adds for the crew, such as its discussion gateway. Pod name suffixes and the number of supporting pods vary between installs; a correct answer lists the real pods by name with their status and invents none.")
     - testRef: coordinator-deployment
       testContent: |
         DESCRIPTION Workloads: the crew explains the state of its own coordinator Deployment.
@@ -63,7 +63,7 @@ spec:
         ASSERT(discussion completes with "done" event within MAX_DURATION)
         ASSERT(at least 1 specialist contributes with signal=agree)
         ASSERT(synthesis CONTAINS "hello-coordinator")
-        ASSERT(DEFER synthesis REFLECTS "The namespace has a ClusterIP Service for each of the crew's agents (the hello-coordinator and each specialist), for the hello-kubernetes-mcp tool server, and for the hello-gateway MCP gateway, plus the Services Kubemoot adds for the crew, such as its discussion gateway. Each has ready endpoints because its pod is running. A correct answer lists the real Services by name with their ports and endpoint state and invents none.")
+        ASSERT(DEFER synthesis REFLECTS "The namespace has a ClusterIP Service for each of the crew's agents (the hello-coordinator and each specialist), for the hello-kubernetes-mcp tool server, for the hello-workspace-mcp server, and for the hello-gateway MCP gateway, plus the Services Kubemoot adds for the crew, such as its discussion gateway. Each has ready endpoints because its pod is running. A correct answer lists the real Services by name with their ports and endpoint state and invents none.")
     - testRef: config-and-accounts
       testContent: |
         DESCRIPTION Config: the crew lists ServiceAccounts and ConfigMaps and names the Secrets workloads reference.

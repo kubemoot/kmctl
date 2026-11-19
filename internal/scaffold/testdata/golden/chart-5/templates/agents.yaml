@@ -34,6 +34,10 @@ spec:
   description: "Pods, Deployments, ReplicaSets, StatefulSets, and Jobs."
   triageSummary: "Lists and inspects Pods, Deployments, ReplicaSets, StatefulSets, and Jobs: phase, readiness, replicas, conditions, and logs."
   discussRole: tooler
+  # What the agent does with the discussion's workspace, where every tool result is
+  # stored as a file: a tooler writes what it fetched, the analyst reads it.
+  workspace:
+    access: write
   capabilities: [tool-calling, kubernetes]
   discussChannels: [kubernetes]
   discussKeywords: [pod, pods, deployment, deployments, replicaset, statefulset, job, jobs, replicas, workload, logs, running]
@@ -58,6 +62,10 @@ spec:
   description: "Warning events, container restarts, and recent failures."
   triageSummary: "Reads Warning events, container restart counts, and the reasons for recent failures (crashes, failed probes, failed pulls)."
   discussRole: tooler
+  # What the agent does with the discussion's workspace, where every tool result is
+  # stored as a file: a tooler writes what it fetched, the analyst reads it.
+  workspace:
+    access: write
   capabilities: [tool-calling, kubernetes]
   discussChannels: [kubernetes]
   discussKeywords: [event, events, warning, warnings, restart, restarts, crash, failing, failed, error, unhealthy, problem]
@@ -82,6 +90,10 @@ spec:
   description: "Services, endpoints, Ingresses or HTTPRoutes, and NetworkPolicies."
   triageSummary: "Lists Services and whether they have ready endpoints, Ingresses, HTTPRoutes, and NetworkPolicies."
   discussRole: tooler
+  # What the agent does with the discussion's workspace, where every tool result is
+  # stored as a file: a tooler writes what it fetched, the analyst reads it.
+  workspace:
+    access: write
   capabilities: [tool-calling, kubernetes]
   discussChannels: [kubernetes]
   discussKeywords: [service, services, endpoint, endpoints, port, ports, ingress, httproute, route, networkpolicy, network, traffic, dns]
@@ -106,6 +118,10 @@ spec:
   description: "ConfigMaps, ServiceAccounts, and the Secrets workloads reference."
   triageSummary: "Lists ConfigMaps and their keys, ServiceAccounts and the pods that use them, and the names of the Secrets workloads reference."
   discussRole: tooler
+  # What the agent does with the discussion's workspace, where every tool result is
+  # stored as a file: a tooler writes what it fetched, the analyst reads it.
+  workspace:
+    access: write
   capabilities: [tool-calling, kubernetes]
   discussChannels: [kubernetes]
   discussKeywords: [configmap, configmaps, config, configuration, secret, secrets, serviceaccount, serviceaccounts, account, env, volume]
@@ -130,16 +146,24 @@ spec:
   description: "Checks the answer against the data the other specialists gathered and flags unsupported claims."
   triageSummary: "Reviews the findings the other specialists gathered: checks that each claim is supported by tool output, reconciles contradictions, and draws the conclusion (healthy or not, and why)."
   discussRole: analyst
+  # What the agent does with the discussion's workspace, where every tool result is
+  # stored as a file: a tooler writes what it fetched, the analyst reads it.
+  workspace:
+    access: read
   capabilities: [reasoning]
   discussChannels: [kubernetes]
   discussKeywords: [healthy, unhealthy, why, check, review, summary, overall]
   promptRefs: [discussion-protocol, response-style, hello-reviewer-system]
+  # Only the tools that read a stored result by key, from the crew's workspace MCP
+  # server (tools.yaml). The analyst has no cluster tool.
+  enabledTools: [workspace_head, workspace_tail, workspace_grep]
   temperature: "0.2"
   maxTokens: 4096
   deployment:
     replicas: 1
     port: 8080
     env:
-      # An analyst calls no tools: it reasons over what the toolers gathered.
+      # The gateway is on so the analyst can read the workspace; enabledTools limits it
+      # to the read tools above, so it sees no cluster tool.
       - name: KUBEMOOT_GATEWAY_ENABLED
-        value: "false"
+        value: "true"
