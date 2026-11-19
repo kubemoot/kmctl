@@ -79,13 +79,19 @@ jobs:
           version: 'v3.19.0'
 
       - name: Check the candidate's scaffold applies to the Kubemoot it pins
+        id: gate
         env:
           RC_TAG: ${{ inputs.rc_tag }}
           WORKTREE: ${{ runner.temp }}/candidate
+          SCRATCH: ${{ runner.temp }}/gate-files
         run: |
           # shellcheck source=/dev/null
           source "${RELEASE_LIB}"
-          commit="$(rl_resolve_point "${RC_TAG}")"
+          # The commit comes from the same function the tag step runs, in a dry run that
+          # tags nothing, so the gate tests the candidate that step will tag, not main's head.
+          commit="$(DRY_RUN=true rl_promote_single v kmctl "${SCRATCH}" | sed -n 's/^commit=//p')"
+          [ -n "${commit}" ] || { echo "ERROR: could not resolve the candidate's commit" >&2; exit 1; }
+          echo "commit=${commit}" >> "$GITHUB_OUTPUT"
           git worktree add --detach "${WORKTREE}" "${commit}"
           cd "${WORKTREE}"
           if [ ! -x scripts/scaffold-applies.sh ]; then
@@ -107,6 +113,19 @@ jobs:
           source "${RELEASE_LIB}"
           rl_promote_single v kmctl "${OUT_DIR}" >> "$GITHUB_OUTPUT"
           cat "${OUT_DIR}/notes.md" >> "$GITHUB_STEP_SUMMARY"
+
+      # The gate must have tested the commit that was tagged. Both come from
+      # rl_promote_single; this stops the run before anything is built or published if
+      # they ever differ (a candidate pushed between the two steps, a change to the lib).
+      - name: Check the tagged commit is the one the gate tested
+        env:
+          GATED: ${{ steps.gate.outputs.commit }}
+          TAGGED: ${{ steps.tag.outputs.commit }}
+        run: |
+          if [ "${GATED}" != "${TAGGED}" ]; then
+            echo "ERROR: the scaffold gate tested ${GATED} but the release tags ${TAGGED}" >&2
+            exit 1
+          fi
 
       # goreleaser builds from the checkout, so it moves to the candidate's commit; the
       # notes live outside the checkout so the tree stays clean.
