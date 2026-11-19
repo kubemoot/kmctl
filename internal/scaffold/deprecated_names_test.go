@@ -15,18 +15,18 @@ import (
 // DeprecatedNames condition. The list is Kubemoot's own, published as
 // workspacetools.DeprecatedNames in the operator module go.mod pins, so a name
 // renamed later is caught here with no edit.
-func deprecatedNames() []string {
-	return workspacetools.DeprecatedNames().Strings()
+func deprecatedNames() workspacetools.Deprecated {
+	return workspacetools.DeprecatedNames()
 }
 
-// findDeprecated reports each deprecated name the files use, as "file: name".
-func findDeprecated(files map[string]string, names []string) []string {
+// findDeprecated reports each deprecated name the files use, as "file: name". A name
+// counts only where it starts a word, so the current WORKSPACE_QUERY_MAX_ARTIFACT_BYTES
+// is not the old ARTIFACT_ prefix.
+func findDeprecated(files map[string]string, names workspacetools.Deprecated) []string {
 	var found []string
 	for _, file := range slices.Sorted(maps.Keys(files)) {
-		for _, name := range names {
-			if strings.Contains(files[file], name) {
-				found = append(found, file+": "+name)
-			}
+		for _, name := range names.Find(files[file]) {
+			found = append(found, file+": "+name)
 		}
 	}
 	return found
@@ -36,8 +36,8 @@ func findDeprecated(files map[string]string, names []string) []string {
 // and chart at every size, README and values included.
 func TestScaffoldNamesNoDeprecatedName(t *testing.T) {
 	names := deprecatedNames()
-	if len(names) < 7+7 {
-		t.Fatalf("the deprecated-name list is %d long; the published tool list alone is 7", len(names))
+	if len(names.Names()) < 7+7 {
+		t.Fatalf("the deprecated-name list is %d long; the published tool list alone is 7", len(names.Names()))
 	}
 	for _, chart := range []bool{false, true} {
 		for members := 1; members <= MaxMembers; members++ {
@@ -75,5 +75,14 @@ func TestFindDeprecatedFlagsAFileThatNamesOne(t *testing.T) {
 		if strings.HasPrefix(hit, "templates/crew.yaml") {
 			t.Errorf("a file with only current names was flagged: %s", hit)
 		}
+	}
+}
+
+// TestCurrentNamesAreNotFlagged keeps the current workspace names out of the findings, including
+// the one that contains the old environment prefix.
+func TestCurrentNamesAreNotFlagged(t *testing.T) {
+	files := map[string]string{"values.yaml": "WORKSPACE_QUERY_MAX_ARTIFACT_BYTES WORKSPACE_MODE workspace-access workspace_query"}
+	if got := findDeprecated(files, deprecatedNames()); len(got) != 0 {
+		t.Errorf("current names flagged: %v", got)
 	}
 }
