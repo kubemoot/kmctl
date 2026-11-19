@@ -26,6 +26,17 @@ released binaries carry the release version, stamped at build time.
 - A SonarQube quality report (`.github/workflows/quality.yaml`) runs in parallel with CI
   and never blocks builds.
 - Every command ships with unit tests; see [TESTING.md](TESTING.md) for the test tiers.
+- **The scaffold applies.** `make test-scaffold-applies` proves that what `kmctl create`
+  writes is a crew the Kubemoot API accepts. For one to five specialists, the bundle and
+  the chart (rendered with `helm template`) are applied to an ephemeral API server loaded
+  with Kubemoot's CRDs, with strict field validation, so a field Kubemoot renamed or
+  removed is an error rather than silently dropped, and each object is read back to check
+  nothing was pruned. A control in the test confirms the strict check does refuse an
+  undeclared field. A unit test also checks that the scaffold names none of the old
+  workspace names. It needs `helm` and takes about 15 seconds including the first
+  download of the API server binaries. CI runs it on every push and pull request against
+  Kubemoot `main`'s CRDs, and Publish Release runs it, dry runs included, before anything
+  is tagged, against the CRDs of the Kubemoot release `go.mod` pins.
 
 ## Releases
 

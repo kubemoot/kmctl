@@ -24,6 +24,11 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
 
+      - name: Install Helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: 'v3.19.0'
+
       - name: Fetch current Kubemoot CRDs
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -35,13 +40,8 @@ jobs:
       - name: Drift tests (envtest + contract vs current CRDs)
         env:
           KMCTL_CRD_DIR: ${{ github.workspace }}/_kubemoot/operator/config/crd/bases
-        # go.mod is the version source: setup-envtest comes from the release branch of
-        # the controller-runtime kmctl builds with, and the API server is the
-        # Kubernetes minor of its client-go.
+          KMCTL_REQUIRE_SCAFFOLD_APPLIES: "1" # the scaffold test needs helm; never skip it here
         run: |
-          minor_of() { go list -m -f '{{.Version}}' "$1" | sed -E 's/^v([0-9]+)\.([0-9]+)\..*/\1.\2/'; }
-          GOBIN="$PWD/bin" go install "sigs.k8s.io/controller-runtime/tools/setup-envtest@release-$(minor_of sigs.k8s.io/controller-runtime)"
-          k8s="1.$(minor_of k8s.io/client-go | cut -d. -f2)"
-          KUBEBUILDER_ASSETS="$(./bin/setup-envtest use "${k8s}" --bin-dir "$PWD/bin" -p path)"
+          KUBEBUILDER_ASSETS="$(scripts/envtest-assets.sh)"
           export KUBEBUILDER_ASSETS
           go test -tags=integration ./internal/integration/...
