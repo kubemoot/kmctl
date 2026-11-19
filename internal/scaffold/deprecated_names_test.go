@@ -34,6 +34,19 @@ func deprecatedNames() []string {
 	)
 }
 
+// findDeprecated reports each deprecated name the files use, as "file: name".
+func findDeprecated(files map[string]string, names []string) []string {
+	var found []string
+	for _, file := range slices.Sorted(maps.Keys(files)) {
+		for _, name := range names {
+			if strings.Contains(files[file], name) {
+				found = append(found, file+": "+name)
+			}
+		}
+	}
+	return found
+}
+
 // TestScaffoldNamesNoDeprecatedName checks every file the scaffold writes, bundle
 // and chart at every size, README and values included.
 func TestScaffoldNamesNoDeprecatedName(t *testing.T) {
@@ -47,25 +60,35 @@ func TestScaffoldNamesNoDeprecatedName(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Generate: %v", err)
 			}
-			for file, content := range files {
-				for _, name := range names {
-					if strings.Contains(content, name) {
-						t.Errorf("%s (chart=%v, members=%d) names the deprecated %q", file, chart, members, name)
-					}
-				}
+			for _, hit := range findDeprecated(files, names) {
+				t.Errorf("chart=%v members=%d: %s is deprecated", chart, members, hit)
 			}
 		}
 	}
 }
 
-// TestDeprecatedNamesCatchesOne shows the check can fail: a scaffold that names an
-// old tool is flagged.
-func TestDeprecatedNamesCatchesOne(t *testing.T) {
-	content := "call artifact_head on it"
-	for _, name := range deprecatedNames() {
-		if strings.Contains(content, name) {
-			return
+// TestFindDeprecatedFlagsAFileThatNamesOne shows the scan can fail: files that name
+// an old tool, an old environment variable, or the old mount path are reported, and
+// a file that names only current names is not.
+func TestFindDeprecatedFlagsAFileThatNamesOne(t *testing.T) {
+	files := map[string]string{
+		"templates/agents.yaml": "tools: [artifact_head, workspace_query]",
+		"templates/tools.yaml":  "env:\n  - name: ARTIFACT_MODE\n    value: mcp\n  - mountPath: /artifacts",
+		"templates/crew.yaml":   "tools: [workspace_head]\nmountPath: /kubemoot/workspace",
+	}
+	got := findDeprecated(files, deprecatedNames())
+	for _, want := range []string{
+		"templates/agents.yaml: artifact_head",
+		"templates/tools.yaml: ARTIFACT_",
+		"templates/tools.yaml: /artifacts",
+	} {
+		if !slices.Contains(got, want) {
+			t.Errorf("findDeprecated missed %q; found %v", want, got)
 		}
 	}
-	t.Error("no entry of the list matched a text that names artifact_head")
+	for _, hit := range got {
+		if strings.HasPrefix(hit, "templates/crew.yaml") {
+			t.Errorf("a file with only current names was flagged: %s", hit)
+		}
+	}
 }
