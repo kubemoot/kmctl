@@ -125,6 +125,9 @@ func (f *Factory) forwardService(ctx context.Context, namespace, service, port s
 // Namespace resolves the effective namespace from the --namespace flag, the
 // current context, or "default".
 func (f *Factory) Namespace() string {
+	if f.ConfigFlags.Namespace != nil && *f.ConfigFlags.Namespace != "" {
+		return *f.ConfigFlags.Namespace
+	}
 	ns, _, err := f.ConfigFlags.ToRawKubeConfigLoader().Namespace()
 	if err != nil || ns == "" {
 		return "default"

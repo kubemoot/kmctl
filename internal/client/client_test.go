@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -162,5 +163,27 @@ func TestServiceClient_StopsTheForwardWhenTheClientCannotBeBuilt(t *testing.T) {
 	}
 	if _, _, err := f.ServiceClient(context.Background(), "ns", "svc", "http"); err == nil || !stopped {
 		t.Errorf("err = %v, stopped = %v; want an error and a closed forward", err, stopped)
+	}
+}
+
+// -n wins even when the kubeconfig the other flags name cannot be read: the
+// namespace a command reports and acts in is the one the user asked for.
+func TestFactory_NamespaceFlagHoldsWithAMissingKubeconfig(t *testing.T) {
+	f := NewFactory()
+	ns, missing := "team-b", filepath.Join(t.TempDir(), "no-such-kubeconfig")
+	f.ConfigFlags.Namespace = &ns
+	f.ConfigFlags.KubeConfig = &missing
+	if got := f.Namespace(); got != ns {
+		t.Errorf("Namespace() = %q, want %q", got, ns)
+	}
+}
+
+// Without -n and without a readable kubeconfig the namespace is "default".
+func TestFactory_NamespaceDefaultsWithAMissingKubeconfig(t *testing.T) {
+	f := NewFactory()
+	missing := filepath.Join(t.TempDir(), "no-such-kubeconfig")
+	f.ConfigFlags.KubeConfig = &missing
+	if got := f.Namespace(); got != "default" {
+		t.Errorf("Namespace() = %q, want default", got)
 	}
 }
