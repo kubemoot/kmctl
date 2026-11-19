@@ -4,13 +4,16 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
 type fakeGroups struct {
@@ -185,5 +188,77 @@ func TestFactory_NamespaceDefaultsWithAMissingKubeconfig(t *testing.T) {
 	f.ConfigFlags.KubeConfig = &missing
 	if got := f.Namespace(); got != "default" {
 		t.Errorf("Namespace() = %q, want default", got)
+	}
+}
+
+// noContextFactory returns a Factory whose kubeconfig has no current context.
+func noContextFactory(t *testing.T) *Factory {
+	t.Helper()
+	empty := filepath.Join(t.TempDir(), "empty")
+	if err := os.WriteFile(empty, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KUBERNETES_SERVICE_HOST", "")
+	f := NewFactory()
+	f.ConfigFlags.KubeConfig = &empty
+	return f
+}
+
+func TestFactory_NoCurrentContextFailsWithoutANetworkCall(t *testing.T) {
+	// Something may listen on client-go's localhost:8080 fallback; nothing may reach it.
+	var hits atomic.Int32
+	if l, err := net.Listen("tcp", "127.0.0.1:8080"); err == nil {
+		srv := httptest.NewUnstartedServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { hits.Add(1) }))
+		_ = srv.Listener.Close()
+		srv.Listener = l
+		srv.Start()
+		defer srv.Close()
+	} else {
+		t.Log("127.0.0.1:8080 is taken; asserting on the error alone")
+	}
+	f := noContextFactory(t)
+	calls := map[string]func() error{
+		"RESTConfig": func() error { _, err := f.RESTConfig(); return err },
+		"Dynamic":    func() error { _, err := f.Dynamic(); return err },
+		"Clientset":  func() error { _, err := f.Clientset(); return err },
+		"Discovery":  func() error { _, err := f.Discovery(); return err },
+		"RESTMapper": func() error { _, err := f.RESTMapper(); return err },
+	}
+	for name, call := range calls {
+		if err := call(); !clientcmd.IsEmptyConfig(err) {
+			t.Errorf("%s error = %v, want an empty-config error", name, err)
+		}
+	}
+	if n := hits.Load(); n != 0 {
+		t.Errorf("%d requests reached localhost:8080", n)
+	}
+}
+
+func TestFactory_ExplicitServerStillWorksWithoutAContext(t *testing.T) {
+	f := noContextFactory(t)
+	server := "https://127.0.0.1:6443"
+	f.ConfigFlags.APIServer = &server
+	cfg, err := f.RESTConfig()
+	if err != nil || cfg.Host != server {
+		t.Fatalf("RESTConfig = %v, %v; want host %s", cfg, err, server)
+	}
+}
+
+func TestFactory_InClusterConfigStillWorksWithoutAContext(t *testing.T) {
+	f := noContextFactory(t)
+	old := inCluster
+	inCluster = func() bool { return true }
+	defer func() { inCluster = old }()
+	if err := f.requireCluster(); err != nil {
+		t.Errorf("requireCluster in a pod = %v, want nil", err)
+	}
+}
+
+func TestFactory_ContextFlagSkipsTheGuard(t *testing.T) {
+	f := noContextFactory(t)
+	ctx := "nope"
+	f.ConfigFlags.Context = &ctx
+	if err := f.requireCluster(); err != nil {
+		t.Errorf("requireCluster with --context = %v, want nil (the loader reports the unknown context)", err)
 	}
 }

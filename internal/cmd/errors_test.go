@@ -197,8 +197,8 @@ func TestErrors_ClusterUnreachable(t *testing.T) {
 }
 
 func TestErrors_NoKubeconfig(t *testing.T) {
-	// An empty kubeconfig has no context; the client then falls back to
-	// localhost:8080, which nothing in the test serves.
+	// An empty kubeconfig has no context; kmctl fails before any network call and
+	// never falls back to client-go's localhost:8080, whatever listens there.
 	empty := filepath.Join(t.TempDir(), "empty")
 	if err := os.WriteFile(empty, nil, 0o600); err != nil {
 		t.Fatal(err)
