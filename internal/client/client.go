@@ -17,6 +17,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
 // KubemootGroup is the Kubemoot CRD API group.
@@ -37,8 +38,38 @@ func NewFactory() *Factory {
 }
 
 // RESTConfig resolves the *rest.Config for the active context.
+//
+// With no current context, no --context/--server/--cluster and no in-cluster
+// config it fails with clientcmd.ErrEmptyConfig before any network call, instead
+// of using client-go's http://localhost:8080 fallback.
 func (f *Factory) RESTConfig() (*rest.Config, error) {
+	if err := f.requireCluster(); err != nil {
+		return nil, err
+	}
 	return f.ConfigFlags.ToRESTConfig()
+}
+
+// inCluster reports whether the process runs in a pod with a service account;
+// tests replace it.
+var inCluster = func() bool {
+	_, err := rest.InClusterConfig()
+	return err == nil
+}
+
+func flagSet(v *string) bool { return v != nil && *v != "" }
+
+// requireCluster returns clientcmd.ErrEmptyConfig when nothing names a cluster.
+// A kubeconfig that cannot be read is left to the normal path to report.
+func (f *Factory) requireCluster() error {
+	cf := f.ConfigFlags
+	if flagSet(cf.APIServer) || flagSet(cf.Context) || flagSet(cf.ClusterName) {
+		return nil
+	}
+	raw, err := cf.ToRawKubeConfigLoader().RawConfig()
+	if err != nil || raw.CurrentContext != "" || inCluster() {
+		return nil
+	}
+	return clientcmd.ErrEmptyConfig
 }
 
 // Dynamic builds a dynamic client for working with Kubemoot CRDs by GVR.
@@ -52,11 +83,17 @@ func (f *Factory) Dynamic() (dynamic.Interface, error) {
 
 // Discovery builds a discovery client (server version, API groups).
 func (f *Factory) Discovery() (discovery.DiscoveryInterface, error) {
+	if err := f.requireCluster(); err != nil {
+		return nil, err
+	}
 	return f.ConfigFlags.ToDiscoveryClient()
 }
 
 // RESTMapper builds a discovery-backed REST mapper for GVK<->GVR resolution.
 func (f *Factory) RESTMapper() (meta.RESTMapper, error) {
+	if err := f.requireCluster(); err != nil {
+		return nil, err
+	}
 	return f.ConfigFlags.ToRESTMapper()
 }
 
