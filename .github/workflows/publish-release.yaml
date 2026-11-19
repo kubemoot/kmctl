@@ -63,6 +63,37 @@ jobs:
       - name: Set up the release helpers
         uses: kubemoot/release-actions/setup@7accfbc33966d895bab2fc17a2a6c7f2520aaf76 # v0.11.1
 
+      # Before anything is tagged: the candidate this run would release must make a crew
+      # the Kubemoot it pins accepts. kmctl create's bundle and chart, every size, apply
+      # with strict validation to an API server loaded with the CRDs of the operator
+      # module go.mod pins (the Kubemoot this kmctl targets; go.mod records a Kubemoot
+      # commit, not a release tag). A dry run runs it too.
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Install Helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: 'v3.19.0'
+
+      - name: Check the candidate's scaffold applies to the Kubemoot it pins
+        env:
+          RC_TAG: ${{ inputs.rc_tag }}
+          WORKTREE: ${{ runner.temp }}/candidate
+        run: |
+          # shellcheck source=/dev/null
+          source "${RELEASE_LIB}"
+          commit="$(rl_resolve_point "${RC_TAG}")"
+          git worktree add --detach "${WORKTREE}" "${commit}"
+          cd "${WORKTREE}"
+          if [ ! -x scripts/scaffold-applies.sh ]; then
+            echo "ERROR: ${commit} predates the scaffold-applies gate; release a newer candidate" >&2
+            exit 1
+          fi
+          scripts/scaffold-applies.sh
+
       - name: Tag the final version
         id: tag
         env:
@@ -83,11 +114,6 @@ jobs:
         env:
           COMMIT: ${{ steps.tag.outputs.commit }}
         run: git checkout --quiet "${COMMIT}"
-
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
 
       - name: Install cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2

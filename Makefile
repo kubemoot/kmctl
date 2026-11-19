@@ -35,6 +35,10 @@ test-integration: setup-envtest ## Tier 2 drift tests vs current CRDs (set KMCTL
 	KUBEBUILDER_ASSETS="$$($(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" \
 		go test -tags=integration ./internal/integration/...
 
+.PHONY: test-scaffold-applies
+test-scaffold-applies: ## kmctl create's output applies to the Kubemoot API (CRDs from go.mod's pin; CRD_DIR=... to choose)
+	scripts/scaffold-applies.sh $(CRD_DIR)
+
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint (CC<=10, dupl, fmt)
 	$(GOLANGCI_LINT) run

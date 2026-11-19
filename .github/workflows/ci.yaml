@@ -46,3 +46,37 @@ jobs:
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           version: v2.14.0
+
+  # Everything `kmctl create` writes must apply to the Kubemoot API (strict field
+  # validation, read back whole). Against Kubemoot main, so a CRD change that breaks
+  # the scaffold fails the push that meets it; Publish Release runs the same test
+  # against the Kubemoot this kmctl pins. A parallel job, so the push stays as fast as
+  # its slowest job.
+  scaffold-applies:
+    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || 'homelab-runners' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Install Helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: 'v3.19.0'
+
+      - name: Fetch the Kubemoot CRDs from main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: kubemoot/kubemoot
+          token: ${{ secrets.KUBEMOOT_READ_TOKEN || github.token }}
+          path: _kubemoot
+          sparse-checkout: operator/config/crd/bases
+          sparse-checkout-cone-mode: false
+
+      - name: Scaffold applies to the Kubemoot API (envtest, Kubemoot main CRDs)
+        run: scripts/scaffold-applies.sh "${GITHUB_WORKSPACE}/_kubemoot/operator/config/crd/bases"

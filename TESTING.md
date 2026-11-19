@@ -28,8 +28,17 @@ upsert (the fake does not upsert on apply).
 `go test -tags=integration` against an **ephemeral, throwaway apiserver+etcd** started by
 controller-runtime envtest. It loads the **current** Kubemoot CRDs (fetched read-only at
 run time), so it catches schema/GVR drift and validates real server-side apply. It needs
-no operator and never touches the homelab cluster, but it is not instant, so it runs on a
-**schedule + manual dispatch**, not on every push. Status: planned (see the epic).
+no operator and never touches the homelab cluster, but it is not instant, so the drift
+tests run on a **schedule + manual dispatch**, not on every push. Status: running nightly.
+
+One envtest test is the exception and gates releases: `TestScaffoldApplies`
+(`scripts/scaffold-applies.sh`, `make test-scaffold-applies`). It applies everything
+`kmctl create` writes (bundle and chart, one to five specialists) with strict field
+validation and reads each object back, so it proves the scaffold makes a crew the Kubemoot
+API accepts. It runs on every push against Kubemoot `main`'s CRDs and in Publish Release
+(dry runs too) against the CRDs of the Kubemoot `go.mod` pins. The scripts set
+`KMCTL_REQUIRE_SCAFFOLD_APPLIES`, so a missing prerequisite (helm, CRDs, API server
+binaries) fails the gate instead of skipping it.
 
 ## Tier 3 - e2e dogfood (manual; lives in Kubemoot's e2e)
 
@@ -45,5 +54,5 @@ kmctl's per-push CI), and is self-isolating (own namespace + cleanup). Status: p
 | Tier | Where | When | Needs cluster? | Needs operator? | Catches |
 |---|---|---|---|---|---|
 | 1 unit + mocks | kmctl CI | every push | no | no | logic, mechanics, client code paths |
-| 2 envtest | kmctl (scheduled) | nightly/dispatch | no (ephemeral) | no | CRD schema drift, real apply |
+| 2 envtest | kmctl (scheduled; scaffold test every push and release) | nightly/dispatch | no (ephemeral) | no | CRD schema drift, real apply |
 | 3 e2e dogfood | kubemoot e2e | manual | yes (live) | yes | end-to-end reality, real drift |
