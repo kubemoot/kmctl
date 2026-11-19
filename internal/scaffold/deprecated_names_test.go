@@ -12,26 +12,11 @@ import (
 // deprecatedNames lists the names Kubemoot renamed when the discussion's shared
 // store became the workspace. A crew that names one runs only because the operator
 // still honours it for one release, and the MCPServer reports it in its
-// DeprecatedNames condition.
-//
-// The old tool names come from Kubemoot's published list (workspacetools.Legacy in
-// the operator module go.mod pins), so a tool renamed later is caught here with no
-// edit. The rest has no published list; it is kept by hand from the operator's
-// operator/internal/controller/workspace_names.go (deprecatedWorkspaceNames and
-// legacyWorkspaceEnv), the rename table in kubemoot's docs/concepts/workspace.md,
-// and the KubemootConfig and chart fields they name. Add to it when Kubemoot
-// renames something else the scaffold could write.
+// DeprecatedNames condition. The list is Kubemoot's own, published as
+// workspacetools.DeprecatedNames in the operator module go.mod pins, so a name
+// renamed later is caught here with no edit.
 func deprecatedNames() []string {
-	names := slices.Sorted(maps.Keys(workspacetools.Legacy()))
-	return append(names,
-		"artifactAccess",  // spec.kubemootImage value and KubemootConfig image; now workspaceAccess
-		"artifactReadOps", // crew access field; now the workspace access fields
-		"artifact-access", // the old image repository; now workspace-access
-		"/artifacts",      // the old emptyDir mount; now /kubemoot/workspace
-		"spec.artifacts",  // KubemootConfig; now the workspace settings
-		"ARTIFACT_",       // every old workspace-access environment variable (ARTIFACT_MODE, ARTIFACT_DIR, ...)
-		"[ARTIFACT",       // the old finding marker; now [WORKSPACE ...]
-	)
+	return workspacetools.DeprecatedNames().Strings()
 }
 
 // findDeprecated reports each deprecated name the files use, as "file: name".
