@@ -1,4 +1,4 @@
-# The crew's one tool server: the Kubernetes MCP server in read-only mode, which
+# The crew's tool server: the Kubernetes MCP server in read-only mode, which
 # registers only tools that do not change the cluster. It runs as the
 # hello-kubernetes-mcp ServiceAccount, whose RBAC grants read access to this
 # namespace. Agents reach it through the crew's MCPGateway, never directly, and

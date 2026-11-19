@@ -93,11 +93,18 @@ spec:
   description: "[[ .Summary ]]"
   triageSummary: "[[ .Triage ]]"
   discussRole: [[ .Role ]]
+  # What the agent does with the discussion's workspace, where every tool result is
+  # stored as a file: a tooler writes what it fetched, the analyst reads it.
+  workspace:
+    access: [[ .WorkspaceAccess ]]
   capabilities: [[ .CapabilityList ]]
   discussChannels: [kubernetes]
   discussKeywords: [[ .KeywordList ]]
   promptRefs: [discussion-protocol, response-style, [[ .Name ]]-system]
 [[- if .IsAnalyst ]]
+  # Only the tools that read a stored result by key, from the crew's workspace MCP
+  # server (tools.yaml). The analyst has no cluster tool.
+  enabledTools: [[ .ToolList ]]
   temperature: "0.2"
 [[- else ]]
   # Only this specialist's tools from the crew's Kubernetes MCP server (tools.yaml).
@@ -110,9 +117,10 @@ spec:
     port: 8080
 [[- if .IsAnalyst ]]
     env:
-      # An analyst calls no tools: it reasons over what the toolers gathered.
+      # The gateway is on so the analyst can read the workspace; enabledTools limits it
+      # to the read tools above, so it sees no cluster tool.
       - name: KUBEMOOT_GATEWAY_ENABLED
-        value: "false"
+        value: "true"
 [[- end ]]
 [[- end ]]
 `
@@ -290,7 +298,7 @@ spec:
 [[- end ]]
 `
 
-const toolsTemplate = `# The crew's one tool server: the Kubernetes MCP server in read-only mode, which
+const toolsTemplate = `# The crew's tool server: the Kubernetes MCP server in read-only mode, which
 # registers only tools that do not change the cluster. It runs as the
 # [[ .Name ]]-kubernetes-mcp ServiceAccount, whose RBAC grants read access to this
 # namespace. Agents reach it through the crew's MCPGateway, never directly, and
@@ -318,6 +326,50 @@ spec:
     limits:
       cpu: 500m
       memory: 256Mi
+[[- if .HasReviewer ]]
+---
+# The workspace server: reads slices of the results the toolers stored (head, tail,
+# grep), so the reviewer can check a result too large to post in the discussion
+# without a whole result entering its context. It reads the workspace from NATS only,
+# needs no cluster access, and takes its image from the operator (kubemootImage), so
+# the crew names no image or version for it.
+apiVersion: kubemoot.ai/v1alpha1
+kind: MCPServer
+metadata:
+  name: [[ .Name ]]-workspace-mcp
+  labels:
+    kubemoot.ai/crew: [[ .Name ]]
+spec:
+  kubemootImage: workspaceAccess
+  transport: stdio
+  command: ["/cnb/process/web"]
+  port: 3000
+  replicas: 1
+  env:
+    - name: WORKSPACE_MODE
+      value: "mcp"
+    # The NATS JetStream server Kubemoot runs on. [[ .NATSNote ]]
+    - name: NATS_URL
+      value: [[ .NATSURL ]]
+    - name: WORKSPACE_BUCKET
+      value: "kubemoot_workspace"
+  capabilities: [data-access, data-analysis]
+  securityContext:
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    seccompProfile:
+      type: RuntimeDefault
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+[[- end ]]
 ---
 apiVersion: kubemoot.ai/v1alpha1
 kind: MCPGateway
@@ -522,7 +574,7 @@ spec:
         ASSERT(discussion completes with "done" event within MAX_DURATION)
         ASSERT(at least 1 specialist contributes with signal=agree)
         ASSERT(synthesis CONTAINS "[[ .Name ]]-coordinator")
-        ASSERT(DEFER synthesis REFLECTS "The namespace runs the crew's own pods, all Running and ready: the [[ .Name ]]-coordinator pod, one pod per specialist ([[ range $i, $a := .Agents ]][[ if $i ]], [[ end ]][[ $a.Name ]][[ end ]]), the [[ .Name ]]-kubernetes-mcp tool server, and the [[ .Name ]]-gateway MCP gateway, plus the pods Kubemoot adds for the crew, such as its discussion gateway. Pod name suffixes and the number of supporting pods vary between installs; a correct answer lists the real pods by name with their status and invents none.")
+        ASSERT(DEFER synthesis REFLECTS "The namespace runs the crew's own pods, all Running and ready: the [[ .Name ]]-coordinator pod, one pod per specialist ([[ range $i, $a := .Agents ]][[ if $i ]], [[ end ]][[ $a.Name ]][[ end ]]), the [[ .Name ]]-kubernetes-mcp tool server, [[ if .HasReviewer ]]the [[ .Name ]]-workspace-mcp server the reviewer reads stored results with, [[ end ]]and the [[ .Name ]]-gateway MCP gateway, plus the pods Kubemoot adds for the crew, such as its discussion gateway. Pod name suffixes and the number of supporting pods vary between installs; a correct answer lists the real pods by name with their status and invents none.")
     - testRef: coordinator-deployment
       testContent: |
         DESCRIPTION Workloads: the crew explains the state of its own coordinator Deployment.
@@ -567,7 +619,7 @@ spec:
         ASSERT(discussion completes with "done" event within MAX_DURATION)
         ASSERT(at least 1 specialist contributes with signal=agree)
         ASSERT(synthesis CONTAINS "[[ .Name ]]-coordinator")
-        ASSERT(DEFER synthesis REFLECTS "The namespace has a ClusterIP Service for each of the crew's agents (the [[ .Name ]]-coordinator and each specialist), for the [[ .Name ]]-kubernetes-mcp tool server, and for the [[ .Name ]]-gateway MCP gateway, plus the Services Kubemoot adds for the crew, such as its discussion gateway. Each has ready endpoints because its pod is running. A correct answer lists the real Services by name with their ports and endpoint state and invents none.")
+        ASSERT(DEFER synthesis REFLECTS "The namespace has a ClusterIP Service for each of the crew's agents (the [[ .Name ]]-coordinator and each specialist), for the [[ .Name ]]-kubernetes-mcp tool server, [[ if .HasReviewer ]]for the [[ .Name ]]-workspace-mcp server, [[ end ]]and for the [[ .Name ]]-gateway MCP gateway, plus the Services Kubemoot adds for the crew, such as its discussion gateway. Each has ready endpoints because its pod is running. A correct answer lists the real Services by name with their ports and endpoint state and invents none.")
 [[- end ]]
 [[- if .Has.config ]]
     - testRef: config-and-accounts
@@ -615,6 +667,14 @@ access:
   # the release namespace; true has the specialists read every namespace and name
   # the namespace of each resource they report.
   clusterWide: false
+[[- if .HasReviewer ]]
+
+# The NATS JetStream server Kubemoot runs on. The reviewer's workspace server reads
+# the results the toolers stored from it. This is where the Kubemoot quickstart
+# installs NATS; change it when your cluster runs NATS elsewhere.
+nats:
+  url: "nats://nats.nats.svc.cluster.local:4222"
+[[- end ]]
 `
 
 // Markdown pieces the README repeats: the target namespace and the chart's
@@ -708,7 +768,7 @@ same question: the answer now ends with that line.
 - ` + "`templates/agents.yaml`" + `: the coordinator and the specialists. Agents declare capabilities,
   never a model.
 - ` + "`templates/promptmodules.yaml`" + `: every prompt, in ADL.
-- ` + "`templates/tools.yaml`" + `: the Kubernetes MCP server, read-only, and the MCP gateway the agents reach it through.
+- ` + "`templates/tools.yaml`" + `: the Kubernetes MCP server, read-only,[[ if .HasReviewer ]] the workspace server the reviewer reads stored results with,[[ end ]] and the MCP gateway the agents reach [[ if .HasReviewer ]]them[[ else ]]it[[ end ]] through.
 - ` + "`templates/rbac.yaml`" + `: the read-only Role the tool server runs with. Set ` + mdClusterWide + ` in
   ` + "`values.yaml`" + ` to let it read every namespace.
 - ` + "`fitness/fitness.yaml`" + `: the fitness suite, outside ` + "`templates/`" + ` so installing does not start a run.
@@ -720,7 +780,7 @@ same question: the answer now ends with that line.
 - ` + "`agents.yaml`" + `: the coordinator and the specialists. Agents declare capabilities, never a
   model.
 - ` + "`promptmodules.yaml`" + `: every prompt, in ADL.
-- ` + "`tools.yaml`" + `: the Kubernetes MCP server, read-only, and the MCP gateway the agents reach it through.
+- ` + "`tools.yaml`" + `: the Kubernetes MCP server, read-only,[[ if .HasReviewer ]] the workspace server the reviewer reads stored results with,[[ end ]] and the MCP gateway the agents reach [[ if .HasReviewer ]]them[[ else ]]it[[ end ]] through.
 - ` + "`access/rbac.yaml`" + `: the read-only Role the tool server runs with (apply it with kubectl).
 - ` + "`access/fitness-scenarios.yaml`" + `: the fitness scenarios as a ConfigMap, so the deployed crew carries
   its tests (apply it with kubectl).
@@ -761,4 +821,17 @@ The tool server runs with ` + "`--read-only`" + `, so it offers no tool that cha
 Role grants only get, list, and watch. Secrets are not readable at all: Kubernetes cannot
 grant a Secret's name without its data, so the crew names Secrets from the references in
 pod specs instead.
+
+## Its results are the workspace
+
+Every tool result a specialist gets is stored as a file in the discussion's workspace, and a
+small one is posted in the discussion as well. Each agent declares what it does with the
+workspace in ` + "`spec.workspace.access`" + `: the toolers declare ` + "`write`" + ` (they store what they fetched and
+read nothing), and the coordinator calls no tool, so it declares nothing.
+[[- if .HasReviewer ]] The reviewer declares ` + "`read`" + `: when a finding holds only a pointer to a stored result,
+it reads that result with ` + "`workspace_head`" + `, ` + "`workspace_tail`" + `, and ` + "`workspace_grep`" + ` from the crew's workspace server before it judges the claim. The server reads the workspace from NATS at
+` + "`" + defaultNATSURL + "`" + `, where Kubemoot's quickstart installs it. [[ .NATSNote ]]
+[[- else ]] With the ` + "`reviewer`" + ` (` + "`--members 5`" + `) the crew also has an analyst that reads those
+results to check what the toolers claim.
+[[- end ]]
 `

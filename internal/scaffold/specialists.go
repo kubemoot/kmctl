@@ -14,6 +14,19 @@ const (
 	capKubernetes  = "kubernetes"
 )
 
+// The workspace access each role declares on its Agent (spec.workspace.access),
+// as the reference crews do: a tooler fetches and hands off, so it stores what it
+// fetched and reads nothing; an analyst reads what the toolers stored and stores
+// nothing of its own.
+const (
+	accessTooler  = "write"
+	accessAnalyst = "read"
+)
+
+// workspaceReadTools are the tools that read a stored result by key. The analyst
+// enables exactly these, from the crew's workspace MCP server (tools.yaml).
+var workspaceReadTools = []string{"workspace_head", "workspace_tail", "workspace_grep"}
+
 // specialist is one member of the starter crew beside the coordinator. The crew
 // is a read-only guide to its own namespace, so every specialist owns one slice
 // of that namespace and carries only the tools for it.
@@ -23,7 +36,7 @@ type specialist struct {
 	Summary      string   // what the specialist covers, for people (Agent description, README, CrewForge)
 	Triage       string   // what the coordinator's selection step reads
 	Capabilities []string // declared capabilities; the scheduler binds a Model by these
-	Tools        []string // enabledTools on the crew's Kubernetes MCP server
+	Tools        []string // enabledTools: a tooler's Kubernetes MCP server tools, an analyst's workspace read tools
 	Keywords     []string // discussKeywords: words added to the resume the coordinator matches by meaning, not a routing gate
 	Namespaced   scope    // what it covers and how it gathers when the crew reads its own namespace
 	ClusterWide  scope    // the same with access.clusterWide; zero when its rules do not depend on scope (see scoped)
@@ -180,20 +193,24 @@ var reviewer = specialist{
 	Summary:      "Checks the answer against the data the other specialists gathered and flags unsupported claims.",
 	Triage:       "Reviews the findings the other specialists gathered: checks that each claim is supported by tool output, reconciles contradictions, and draws the conclusion (healthy or not, and why).",
 	Capabilities: []string{"reasoning"},
+	Tools:        workspaceReadTools,
 	Keywords:     []string{"healthy", "unhealthy", "why", "check", "review", "summary", "overall"},
 	Namespaced: scope{
 		Description: "Checks the specialists' findings before the answer goes to the user",
 	},
-	Rules: `ASSERT you are an analyst: you have NO tools, and the findings earlier in this discussion are your only data
-ASSERT a finding may describe the data instead of holding it: a [WORKSPACE agent=... calls=N ...] header with [CALL key=<key> tool=<tool> args=... bytes=... rows=... error=...] lines; a call line carries NO data, and the full data is stored under its key where you cannot read it; the coordinator reads the stored data when it writes the answer
+	Rules: `ASSERT you are an analyst: you call no cluster tools; your only tools are workspace_head, workspace_tail, and workspace_grep, which read results the other specialists stored, and the findings earlier in this discussion are your data
+ASSERT a finding may describe the data instead of holding it: a [WORKSPACE agent=... calls=N ...] header with [CALL key=<key> tool=<tool> args=... bytes=... rows=... error=...] lines; a call line carries NO data, and the full data is stored under its key
 ASSERT a [RESULT] block after a call line is the data the call returned; an [EMPTY RESULT] block means the call succeeded and returned nothing; a [FAILED RESULT] block is the error text of a failed call; args= may end with "(args cut at <n> of <m> chars)": the call ran with the full arguments
 ASSERT an agent that stores nothing has [CALL tool=<tool> ... stored=no] lines, with no key and no stored data: its [RESULT] block is the only place the result exists, and a [NOT STORED ...] line marks a result that is not available to anyone
-WHEN a finding is only [CALL ...] lines with no [RESULT], [EMPTY RESULT] or [FAILED RESULT] block THEN name that specialist as unseen, and NEVER conclude that its resources are missing, healthy, or unhealthy
+WHEN a finding is only [CALL ...] lines with no [RESULT], [EMPTY RESULT] or [FAILED RESULT] block THEN read the stored data before you conclude anything: use the key exactly as the call line shows it with workspace_head for the first lines, workspace_tail for the last, or workspace_grep for a name or a status
+WHEN you read stored data THEN ask for the slice you need (a few lines, or a match), never the whole result
+WHEN a read fails or returns nothing for a key THEN name that specialist as unseen, and NEVER conclude that its resources are missing, healthy, or unhealthy
+NEVER answer from a call line alone: it names the data and holds none of it
 ASSERT a Warning event records something that happened; a resource is unhealthy now only when its current state says so (not Running, containers not ready, replicas short)
 WHEN a Warning event names a pod AND no finding you can read shows that pod's current state THEN say the warning's current impact is unconfirmed; NEVER call the pod unhealthy from the event alone
 WHEN the findings answer the question THEN confirm that in one line and state the conclusion they support (a count, what is healthy, what is not and why)
 WHEN two findings contradict each other THEN name both and say which one the tool output supports
-WHEN a claim names a resource, number, or status that no finding contains THEN flag it as unsupported
+WHEN a claim names a resource, number, or status that no finding or stored result contains THEN flag it as unsupported
 WHEN the findings are not enough to answer THEN say exactly what is missing
 NEVER add a resource, number, or status of your own
 NEVER respond NOTHING_TO_ADD only because the question needs live data: the live data is already in the findings`,
@@ -209,6 +226,14 @@ type agent struct {
 func (a agent) CapabilityList() string { return flow(a.Capabilities) }
 func (a agent) ToolList() string       { return flow(a.Tools) }
 func (a agent) KeywordList() string    { return flow(a.Keywords) }
+
+// WorkspaceAccess is the access the agent declares: write for a tooler, read for an analyst.
+func (a agent) WorkspaceAccess() string {
+	if a.IsAnalyst() {
+		return accessAnalyst
+	}
+	return accessTooler
+}
 
 // IsAnalyst reports whether the specialist reasons over gathered data with no tools.
 func (a agent) IsAnalyst() bool { return a.Role == "analyst" }

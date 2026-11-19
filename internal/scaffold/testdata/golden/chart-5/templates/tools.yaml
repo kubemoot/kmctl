@@ -1,4 +1,4 @@
-# The crew's one tool server: the Kubernetes MCP server in read-only mode, which
+# The crew's tool server: the Kubernetes MCP server in read-only mode, which
 # registers only tools that do not change the cluster. It runs as the
 # hello-kubernetes-mcp ServiceAccount, whose RBAC grants read access to this
 # namespace. Agents reach it through the crew's MCPGateway, never directly, and
@@ -26,6 +26,48 @@ spec:
     limits:
       cpu: 500m
       memory: 256Mi
+---
+# The workspace server: reads slices of the results the toolers stored (head, tail,
+# grep), so the reviewer can check a result too large to post in the discussion
+# without a whole result entering its context. It reads the workspace from NATS only,
+# needs no cluster access, and takes its image from the operator (kubemootImage), so
+# the crew names no image or version for it.
+apiVersion: kubemoot.ai/v1alpha1
+kind: MCPServer
+metadata:
+  name: hello-workspace-mcp
+  labels:
+    kubemoot.ai/crew: hello
+spec:
+  kubemootImage: workspaceAccess
+  transport: stdio
+  command: ["/cnb/process/web"]
+  port: 3000
+  replicas: 1
+  env:
+    - name: WORKSPACE_MODE
+      value: "mcp"
+    # The NATS JetStream server Kubemoot runs on. Set nats.url in values.yaml for another server.
+    - name: NATS_URL
+      value: {{ .Values.nats.url | quote }}
+    - name: WORKSPACE_BUCKET
+      value: "kubemoot_workspace"
+  capabilities: [data-access, data-analysis]
+  securityContext:
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    seccompProfile:
+      type: RuntimeDefault
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
 ---
 apiVersion: kubemoot.ai/v1alpha1
 kind: MCPGateway
