@@ -1,0 +1,7 @@
+
+Capacity:  False (NoModelAvailable)
+           no model in the cluster catalog (2 available)
+
+Retention: last cleanup 2026-11-20T01:00:00Z, removed 4 conversations, 0 memory, 12 other
+           RetentionValid: True (FinerThanSchedule)
+           conversations.window 12h is finer than the daily schedule

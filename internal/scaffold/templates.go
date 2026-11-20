@@ -727,7 +727,7 @@ kubectl create namespace [[ .TargetNS ]]
 kubectl apply -n [[ .TargetNS ]] -f access/
 kmctl apply -n [[ .TargetNS ]] -f .
 [[- end ]]
-kmctl crew get [[ .Name ]] -n [[ .TargetNS ]]   # wait for Ready
+kmctl crew wait [[ .Name ]] -n [[ .TargetNS ]]   # wait until the crew can answer
 ` + "```" + `
 
 **2. Ask it something.**

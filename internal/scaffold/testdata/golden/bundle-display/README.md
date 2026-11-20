@@ -28,7 +28,7 @@ For another namespace, scaffold again with `kmctl create lab-ops-crew-2 -n <name
 kubectl create namespace crew-lab-ops-crew-2
 kubectl apply -n crew-lab-ops-crew-2 -f access/
 kmctl apply -n crew-lab-ops-crew-2 -f .
-kmctl crew get lab-ops-crew-2 -n crew-lab-ops-crew-2   # wait for Ready
+kmctl crew wait lab-ops-crew-2 -n crew-lab-ops-crew-2   # wait until the crew can answer
 ```
 
 **2. Ask it something.**

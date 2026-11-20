@@ -26,7 +26,7 @@ For another namespace, scaffold again with `kmctl create hello -n <namespace>`.
 kubectl create namespace crew-hello
 kubectl apply -n crew-hello -f access/
 kmctl apply -n crew-hello -f .
-kmctl crew get hello -n crew-hello   # wait for Ready
+kmctl crew wait hello -n crew-hello   # wait until the crew can answer
 ```
 
 **2. Ask it something.**

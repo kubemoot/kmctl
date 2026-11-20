@@ -1,0 +1,4 @@
+
+Retention: no cleanup has run yet
+           RetentionValid: True (FinerThanSchedule)
+           conversations.window 12h is finer than the daily schedule

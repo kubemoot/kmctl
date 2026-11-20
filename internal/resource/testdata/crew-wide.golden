@@ -1,0 +1,4 @@
+NAME        READY   PHASE                CAPACITY   COORDINATOR             AGENTS   CAPACITY-REASON
+available   true    Ready                True       available-coordinator   3        ModelAvailable
+waiting     true    WaitingForCapacity   False      waiting-coordinator     3        NoModelAvailable
+old         true    Ready                <none>     old-coordinator         3        <none>

@@ -7,10 +7,12 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"text/tabwriter"
 	"time"
 
+	"github.com/kubemoot/kmctl/internal/crewstate"
 	"github.com/kubemoot/kmctl/internal/output"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -32,6 +34,15 @@ const (
 	fieldStatusPhase               = "status.phase"
 	fieldStatusReady               = "status.ready"
 	fieldMetadataCreationTimestamp = "metadata.creationTimestamp"
+	fieldStatusConditions          = "status.conditions"
+)
+
+// Computed column headers: their cell is derived from several fields, so Cell does
+// not read the column's Path as a dot-path (the Path still names the status field
+// the value comes from, which the contract test checks against the CRD).
+const (
+	headerCapacity       = "CAPACITY"
+	headerCapacityReason = "CAPACITY-REASON"
 )
 
 // Column is one table column: a header and a dot-path into the object. The
@@ -41,12 +52,14 @@ type Column struct {
 	Path   string
 }
 
-// Kind describes a Kubemoot resource type for the generic commands. Details,
-// when set, writes more of one object's status after the row `get` prints.
+// Kind describes a Kubemoot resource type for the generic commands. Wide are the
+// columns `-o wide` adds after Columns. Details, when set, writes more of one
+// object's status after the row `get` prints.
 type Kind struct {
 	Plural   string
 	Singular string
 	Columns  []Column
+	Wide     []Column
 	Details  func(w io.Writer, obj map[string]any) error
 }
 
@@ -64,10 +77,13 @@ var (
 			{"NAME", fieldMetadataName},
 			{"READY", fieldStatusReady},
 			{"PHASE", fieldStatusPhase},
+			{headerCapacity, fieldStatusConditions},
 			{"COORDINATOR", "status.coordinatorRef"},
 			{"AGENTS", "status.agentCount"},
 			{"AGE", fieldMetadataCreationTimestamp},
 		},
+		Wide:    []Column{{headerCapacityReason, fieldStatusConditions}},
+		Details: RenderCrewDetails,
 	}
 	Agent = Kind{
 		Plural:   "agents",
@@ -162,11 +178,20 @@ func Get(ctx context.Context, dc dynamic.Interface, k Kind, namespace, name stri
 
 // RenderTable writes items as an aligned table using the kind's columns.
 func RenderTable(w io.Writer, k Kind, items []unstructured.Unstructured, withNamespace bool) error {
-	headers := make([]string, 0, len(k.Columns)+1)
+	return renderColumns(w, k.Columns, items, withNamespace)
+}
+
+// RenderTableWide is RenderTable with the kind's wide columns added.
+func RenderTableWide(w io.Writer, k Kind, items []unstructured.Unstructured, withNamespace bool) error {
+	return renderColumns(w, append(slices.Clone(k.Columns), k.Wide...), items, withNamespace)
+}
+
+func renderColumns(w io.Writer, columns []Column, items []unstructured.Unstructured, withNamespace bool) error {
+	headers := make([]string, 0, len(columns)+1)
 	if withNamespace {
 		headers = append(headers, "NAMESPACE")
 	}
-	for _, c := range k.Columns {
+	for _, c := range columns {
 		headers = append(headers, c.Header)
 	}
 	rows := make([][]string, 0, len(items))
@@ -175,7 +200,7 @@ func RenderTable(w io.Writer, k Kind, items []unstructured.Unstructured, withNam
 		if withNamespace {
 			cells = append(cells, items[i].GetNamespace())
 		}
-		for _, c := range k.Columns {
+		for _, c := range columns {
 			cells = append(cells, Cell(items[i].Object, c))
 		}
 		rows = append(rows, cells)
@@ -199,6 +224,12 @@ func writeTable(w io.Writer, headers []string, rows [][]string) error {
 
 // Cell extracts a column's display value from an object's map form.
 func Cell(obj map[string]any, c Column) string {
+	switch c.Header {
+	case headerCapacity:
+		return capacityCell(obj, func(cond *crewstate.Condition) string { return cond.Status })
+	case headerCapacityReason:
+		return capacityCell(obj, func(cond *crewstate.Condition) string { return cond.Reason })
+	}
 	v, found, err := unstructured.NestedFieldNoCopy(obj, strings.Split(c.Path, ".")...)
 	if err != nil || !found || v == nil {
 		return none
@@ -209,6 +240,16 @@ func Cell(obj map[string]any, c Column) string {
 		}
 	}
 	return fmt.Sprintf("%v", v)
+}
+
+// capacityCell reads one part of a Crew's CapacityAvailable condition. A Crew from a
+// Kubemoot that predates the condition shows <none>, as an absent field does.
+func capacityCell(obj map[string]any, part func(*crewstate.Condition) string) string {
+	cond := crewstate.FindCondition(obj, crewstate.ConditionCapacity)
+	if cond == nil || part(cond) == "" {
+		return none
+	}
+	return part(cond)
 }
 
 func humanAge(ts string) string {

@@ -9,6 +9,7 @@ package integration
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -89,7 +90,7 @@ func TestContract_Columns(t *testing.T) {
 			t.Errorf("%s: no openAPI schema for version", kc.kind.Singular)
 			continue
 		}
-		for _, col := range kc.kind.Columns {
+		for _, col := range append(slices.Clone(kc.kind.Columns), kc.kind.Wide...) {
 			if strings.HasPrefix(col.Path, "metadata.") {
 				continue // metadata fields are standard, not in the CRD's own properties
 			}
@@ -128,6 +129,22 @@ func TestContract_Calibration(t *testing.T) {
 	for _, path := range resource.CalibrationPaths {
 		if !schemaHasPath(schema, strings.Split(path, ".")) {
 			t.Errorf("modelserver: calibration path %q not found in CRD schema - drift?", path)
+		}
+	}
+}
+
+// TestContract_CrewDetails asserts every Crew status field `kmctl crew get` reads
+// for its capacity and retention sections exists in the CRD schema.
+func TestContract_CrewDetails(t *testing.T) {
+	dir := crdDir(t)
+	crd := loadCRD(t, dir, "kubemoot.ai_crews.yaml")
+	schema := versionSchema(crd, resource.Crew.GVR().Version)
+	if schema == nil {
+		t.Fatal("crew: no openAPI schema for version")
+	}
+	for _, path := range resource.CrewDetailPaths {
+		if !schemaHasPath(schema, strings.Split(path, ".")) {
+			t.Errorf("crew: details path %q not found in CRD schema - drift?", path)
 		}
 	}
 }
