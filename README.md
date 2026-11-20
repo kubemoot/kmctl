@@ -83,6 +83,26 @@ Shell completion for bash, zsh, fish, and PowerShell comes from `kmctl completio
 the [user guide](https://kubemoot.org/docs/user-guides/kmctl/#shell-completion) shows how
 to install it for each shell.
 
+## Crew status and waiting
+
+A crew reports two separate things. It is **reconciled** when its agents, gateways, and
+policies exist as declared (`READY`). It **can answer** when a model in the cluster catalog
+can run its agents now (`CAPACITY`, the `CapacityAvailable` condition). Accelerators come and
+go, so a crew can be reconciled and still wait for one (phase `WaitingForCapacity`).
+
+```bash
+kmctl crew get demo -o wide    # READY, PHASE, CAPACITY, and the capacity reason
+kmctl crew get demo            # also the capacity message and the last retention cleanup
+kmctl crew wait demo           # wait until the crew can answer
+kmctl crew wait demo --for reconciled   # wait only until it is reconciled as declared
+```
+
+While no model fits, `crew wait` prints `waiting for an accelerator:` and the scheduler's
+reason, and keeps waiting; the crew answers when a model returns. `conversation ask` prints the
+same note before it asks a crew that is waiting, and asks anyway. Against a Kubemoot that does
+not report `CapacityAvailable` (0.95), `CAPACITY` shows `<none>` and a crew can answer when it
+is reconciled and its phase is `Ready`.
+
 ## Documentation
 
 The [kmctl reference](https://kubemoot.org/docs/reference/kmctl/) describes every command,

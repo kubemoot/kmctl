@@ -23,7 +23,7 @@ networking, config, and a reviewer.
 
 ```bash
 helm upgrade --install homelab-health-guide . --namespace crew-homelab-health-guide --create-namespace
-kmctl crew get homelab-health-guide -n crew-homelab-health-guide   # wait for Ready
+kmctl crew wait homelab-health-guide -n crew-homelab-health-guide   # wait until the crew can answer
 ```
 
 **2. Ask it something.**

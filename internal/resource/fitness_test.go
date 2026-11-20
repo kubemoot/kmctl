@@ -149,7 +149,7 @@ func TestSuiteKindHasJudgeColumnsAndDetails(t *testing.T) {
 	if CrewFitnessSuite.Details == nil {
 		t.Error("a suite's get prints its results")
 	}
-	if Crew.Details != nil {
+	if Agent.Details != nil {
 		t.Error("other kinds have no details")
 	}
 }

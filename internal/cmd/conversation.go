@@ -78,6 +78,7 @@ as the last line, the command that asks a follow-up in the same conversation.
 			}
 			ctx, cancel := sf.overall(cmd.Context())
 			defer cancel()
+			noteIfCannotAnswer(ctx, f, cmd.ErrOrStderr(), crew, opts.Namespace)
 			rc, stop, err := openGateway(ctx, f, crew, opts.Namespace)
 			if err != nil {
 				return err

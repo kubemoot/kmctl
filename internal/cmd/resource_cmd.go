@@ -30,7 +30,7 @@ func newListCommand(f *client.Factory, noun string, k resource.Kind) *cobra.Comm
 		Example: fmt.Sprintf("  kmctl %s list\n  kmctl %s list -A -o yaml", noun, noun),
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if err := checkOutput(outFmt); err != nil {
+			if err := checkTableOutput(outFmt); err != nil {
 				return err
 			}
 			dc, err := f.Dynamic()
@@ -41,7 +41,7 @@ func newListCommand(f *client.Factory, noun string, k resource.Kind) *cobra.Comm
 			if err != nil {
 				return err
 			}
-			if outFmt != "" {
+			if outFmt != "" && outFmt != outputWide {
 				return output.Print(cmd.OutOrStdout(), output.Format(outFmt), list)
 			}
 			if len(list.Items) == 0 {
@@ -52,11 +52,11 @@ func newListCommand(f *client.Factory, noun string, k resource.Kind) *cobra.Comm
 				}
 				return err
 			}
-			return resource.RenderTable(cmd.OutOrStdout(), k, list.Items, allNS)
+			return renderTable(cmd.OutOrStdout(), k, list.Items, allNS, outFmt)
 		},
 	}
 	cmd.Flags().BoolVarP(&allNS, "all-namespaces", "A", false, "List across all namespaces")
-	cmd.Flags().StringVarP(&outFmt, "output", "o", "", output.FormatHelp("table"))
+	cmd.Flags().StringVarP(&outFmt, "output", "o", "", tableFlagHelp)
 	return cmd
 }
 
@@ -97,7 +97,7 @@ func newGetCommand(f *client.Factory, noun string, k resource.Kind) *cobra.Comma
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeNames(f, k),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := checkOutput(outFmt); err != nil {
+			if err := checkTableOutput(outFmt); err != nil {
 				return err
 			}
 			dc, err := f.Dynamic()
@@ -111,23 +111,45 @@ func newGetCommand(f *client.Factory, noun string, k resource.Kind) *cobra.Comma
 			return printObject(cmd.OutOrStdout(), k, obj, outFmt)
 		},
 	}
-	cmd.Flags().StringVarP(&outFmt, "output", "o", "", output.FormatHelp("table"))
+	cmd.Flags().StringVarP(&outFmt, "output", "o", "", tableFlagHelp)
 	return cmd
 }
 
 // printObject writes one object: the full object for -o yaml|json|kyaml, otherwise
 // its table row followed by the kind's details, if it has any.
 func printObject(w io.Writer, k resource.Kind, obj *unstructured.Unstructured, outFmt string) error {
-	if outFmt != "" {
+	if outFmt != "" && outFmt != outputWide {
 		return output.Print(w, output.Format(outFmt), obj)
 	}
-	if err := resource.RenderTable(w, k, []unstructured.Unstructured{*obj}, false); err != nil {
+	if err := renderTable(w, k, []unstructured.Unstructured{*obj}, false, outFmt); err != nil {
 		return err
 	}
 	if k.Details == nil {
 		return nil
 	}
 	return k.Details(w, obj.Object)
+}
+
+// outputWide is the -o value that prints the table with more columns.
+const outputWide = "wide"
+
+// tableFlagHelp is the -o help of commands that print a table by default.
+var tableFlagHelp = output.FormatHelp("table") + "; wide adds columns to the table"
+
+// renderTable prints the kind's table: -o wide adds the kind's wide columns.
+func renderTable(w io.Writer, k resource.Kind, items []unstructured.Unstructured, withNamespace bool, outFmt string) error {
+	if outFmt == outputWide {
+		return resource.RenderTableWide(w, k, items, withNamespace)
+	}
+	return resource.RenderTable(w, k, items, withNamespace)
+}
+
+// checkTableOutput is checkOutput for a command whose table has a wide form.
+func checkTableOutput(outFmt string) error {
+	if outFmt == outputWide {
+		return nil
+	}
+	return checkOutput(outFmt)
 }
 
 // checkOutput rejects an unsupported -o before kmctl calls the cluster; empty is

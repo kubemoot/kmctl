@@ -177,8 +177,8 @@ type scaffoldCase struct {
 }
 
 var (
-	bundleSteps = []string{"apply", "conversation ask", "crew get", "fitness get", "fitness run", "model list"}
-	chartSteps  = []string{"conversation ask", "crew get", "fitness get", "fitness run", "model list"}
+	bundleSteps = []string{"apply", "conversation ask", "crew wait", "fitness get", "fitness run", "model list"}
+	chartSteps  = []string{"conversation ask", "crew wait", "fitness get", "fitness run", "model list"}
 )
 
 // scaffoldCases cover every branch of the templates that can name a command:
