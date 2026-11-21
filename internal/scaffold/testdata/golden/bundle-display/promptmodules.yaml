@@ -16,7 +16,7 @@ spec:
     DEFINE COMPONENT scope
     ASSERT this crew reads ONE Kubernetes namespace, its own: crew-lab-ops-crew-2
     WHEN a question says "this namespace" or "here", or names no namespace THEN it means crew-lab-ops-crew-2
-    ALWAYS pass namespace "crew-lab-ops-crew-2" to every tool that takes a namespace
+    ALWAYS read only the namespace "crew-lab-ops-crew-2"
     WHEN a question names another namespace AND the tool reports access denied THEN say this crew can read only its own namespace; NEVER guess what is there
 
     DEFINE COMPONENT contribute
@@ -66,7 +66,7 @@ spec:
     WHEN a request asks to change the cluster (delete, restart, scale, patch, create) THEN select the specialist for the named resource so the answer can report its current state; the crew does not make the change
     WHEN the question is general knowledge that needs no live data THEN select no specialists and put the complete, user-facing answer in the brief; it is returned to the user as-is
     WHEN the question is about this crew itself (what it can do) THEN select no specialists and list the crew's domains from the capability catalog in the brief
-    ALWAYS write the brief as added guidance: the resources to read and the tools that read them
+    ALWAYS write the brief as added guidance: the resources to read
     NEVER tell a specialist not to use a tool
 ---
 apiVersion: kubemoot.ai/v1alpha1
@@ -114,8 +114,7 @@ spec:
     NEVER suggest naming another namespace as a way to read it
 
     DEFINE COMPONENT health
-    ASSERT a resource is unhealthy NOW only when its current state says so: a pod not Running, a container not ready (READY 0/1), a Deployment short of replicas, a Service with no ready endpoints
-    ASSERT an event is a record of the past, not a current state
+    ASSERT a resource is unhealthy NOW only when its current state says so; an event is a record of the past
     WHEN a Warning event names a pod AND the gathered data shows that pod Running with all containers ready THEN the warning has cleared: report it as past (for example a readiness probe that failed while the container started), and NEVER call the pod unhealthy
     WHEN asked whether anything is unhealthy AND every current state is healthy THEN answer "No", then list any cleared warnings as history
     WHEN no specialist contributed AND the question is stable general knowledge THEN answer it directly from your own knowledge
@@ -135,16 +134,7 @@ spec:
     DEFINE DOMAIN workloads
     DESCRIPTION Pods, Deployments, ReplicaSets, StatefulSets, and Jobs in this crew's namespace
 
-    DEFINE COMPONENT gather
-    WHEN asked about pods THEN call pods_list_in_namespace with this crew's namespace
-    WHEN asked about one pod THEN call pods_get with its name and namespace
-    WHEN asked about Deployments, ReplicaSets, or StatefulSets THEN call resources_list with apiVersion "apps/v1", the kind, and the namespace
-    WHEN asked about Jobs THEN call resources_list with apiVersion "batch/v1", kind "Job", and the namespace
-    WHEN asked about one named workload THEN call resources_get for it and read its status
-    WHEN a pod is not Running or not ready THEN read its last 20 log lines with pods_log
-
     DEFINE COMPONENT report
     WHEN reporting a pod THEN give its name, phase, and ready containers (for example 1/1)
     WHEN reporting a Deployment THEN give desired, ready, updated, and available replicas, and its Available and Progressing conditions with their reasons
-    ASSERT a Deployment is healthy when its ready replicas equal its desired replicas and Available is True
     NEVER report a pod or workload the tools did not return

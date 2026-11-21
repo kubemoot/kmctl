@@ -66,7 +66,7 @@ same question: the answer now ends with that line.
 - `crew.yaml`: the Crew and its CrewSchedulingPolicy.
 - `agents.yaml`: the coordinator and the specialists. Agents declare capabilities, never a
   model.
-- `promptmodules.yaml`: every prompt, in ADL.
+- `promptmodules.yaml`: every prompt, in ADL. The prompts hold behavior only (answer from tool output, report failures, stay read-only); how to call a tool is in its description (toolOverrides in tools.yaml).
 - `tools.yaml`: the Kubernetes MCP server, read-only, and the MCP gateway the agents reach it through.
 - `access/rbac.yaml`: the read-only Role the tool server runs with (apply it with kubectl).
 - `access/fitness-scenarios.yaml`: the fitness scenarios as a ConfigMap, so the deployed crew carries

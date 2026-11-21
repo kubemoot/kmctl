@@ -127,7 +127,7 @@ func TestChart_HelmRenders(t *testing.T) {
 		extra  []string
 		prompt string // how the prompts name the release namespace
 	}{
-		"Role":        {nil, `pass namespace "team-a"`},
+		"Role":        {nil, `read only the namespace "team-a"`},
 		"ClusterRole": {[]string{"--set", "access.clusterWide=true"}, "it is installed in the namespace team-a"},
 	}
 	for kind, c := range cases {
