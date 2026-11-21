@@ -188,6 +188,7 @@ func TestErrors_BadFlagsAndArgs(t *testing.T) {
 func TestErrors_ClusterUnreachable(t *testing.T) {
 	s := newFakeAPIServer(t)
 	s.srv.Close()
+	s.gw.Close()
 	for _, args := range [][]string{{"crew", "list"}, {"status"}, {"conversation", "ask", "demo", "hi"}} {
 		got, code := s.run(t, args...)
 		wantStderr(t, strings.Join(args, " "), got, code,
@@ -318,6 +319,7 @@ func TestErrors_MissingManifest(t *testing.T) {
 func TestErrors_VerboseShowsTheCause(t *testing.T) {
 	s := newFakeAPIServer(t)
 	s.srv.Close()
+	s.gw.Close()
 	const head = "Error: cannot reach the Kubernetes API server (context \"fake\")\n" +
 		"Hint: Check that the cluster is running and the context points at it: kmctl status\n"
 	for _, c := range []struct {

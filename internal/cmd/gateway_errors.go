@@ -20,14 +20,19 @@ import (
 	"k8s.io/client-go/rest"
 )
 
-// explainGateway explains a failed call to a crew's discussion gateway. A 404 or
-// 503 first checks that the crew exists in the namespace, and names the
-// namespaces where it does when it does not. Errors that are not an HTTP status
-// (an unreachable cluster) and rejected credentials are returned unchanged.
+// explainGateway explains a failed call to a crew's discussion gateway. A 401 or
+// 403 is the gateway refusing the caller (the crew verifies who is asking); a 404
+// that says the conversation was not found is explained as that; any other 404 or
+// 503 first checks that the crew exists in the namespace, and names the namespaces
+// where it does when it does not. Errors that are not an HTTP status (an
+// unreachable cluster) are returned unchanged.
 func explainGateway(ctx context.Context, f *client.Factory, err error, crew, namespace string) error {
 	var se *apierrors.StatusError
-	if !errors.As(err, &se) || apierrors.IsUnauthorized(err) {
+	if !errors.As(err, &se) {
 		return err
+	}
+	if refusal := gatewayRefusal(f, se, crew, namespace); refusal != nil {
+		return refusal
 	}
 	code := int(se.Status().Code)
 	if code == http.StatusNotFound || code == http.StatusServiceUnavailable {
@@ -39,12 +44,75 @@ func explainGateway(ctx context.Context, f *client.Factory, err error, crew, nam
 	return gatewayStatus(code, crew, namespace, err)
 }
 
+// conversationNotFound is the gateway's one answer for a conversation that does not
+// exist and one the caller may not see, so an id cannot be probed.
+const conversationNotFound = "conversation not found"
+
+// statusText is what the gateway said: the body of a reply that is not a Status.
+func statusText(se *apierrors.StatusError) string {
+	st := se.Status()
+	if st.Details != nil {
+		for _, c := range st.Details.Causes {
+			if c.Message != "" {
+				return c.Message
+			}
+		}
+	}
+	return st.Message
+}
+
+// gatewayUnauthorized explains a 401 from the gateway by what kmctl sent.
+func gatewayUnauthorized(f *client.Factory, crew, namespace string, err error) *clierr.Error {
+	switch {
+	case f.Caller.ServiceAccount != "":
+		return clierr.New(fmt.Sprintf("the discussion gateway of crew %q did not accept the token minted for service account %s", crew, f.Caller.ServiceAccount),
+			"The crew's spec.discussion.access.tokenAudiences may need --token-audience, and the account needs get on the Crew: kubectl auth can-i get crews.kubemoot.ai/"+crew+" -n "+namespace+" --as system:serviceaccount:"+strings.ReplaceAll(f.Caller.ServiceAccount, "/", ":"), err)
+	case f.SendsToken():
+		return clierr.New(fmt.Sprintf("the discussion gateway of crew %q did not accept your Kubernetes token", crew),
+			"The crew verifies who is asking (spec.discussion.access). A token that has expired or has the wrong audience is refused; a kubeconfig token cannot carry an audience, so for a crew with tokenAudiences use --token-service-account NAMESPACE/NAME with --token-audience", err)
+	}
+	return clierr.New(fmt.Sprintf("the crew %q requires a Kubernetes token, and your kubeconfig has none (it signs in with a client certificate)", crew),
+		"Name a ServiceAccount you may create tokens for: --token-service-account NAMESPACE/NAME (needs create on serviceaccounts/token)", err)
+}
+
+// gatewayForbidden explains a 403: the caller is known and may not use the crew.
+func gatewayForbidden(crew, namespace string, err error) *clierr.Error {
+	return clierr.New(fmt.Sprintf("the discussion gateway of crew %q refused your identity", crew),
+		"Using a crew needs get on the Crew; check yours with: kubectl auth can-i get crews.kubemoot.ai/"+crew+" -n "+namespace, err)
+}
+
+// conversationRefused explains the gateway's 404 for a conversation: it does not
+// exist, has expired, or belongs to another caller.
+func conversationRefused(crew string, err error) *clierr.Error {
+	return clierr.New(fmt.Sprintf("conversation not found on crew %q", crew),
+		`It does not exist, has expired, or belongs to another caller. An operator with get on crews/conversations (the ClusterRole kubemoot-conversation-reader) can read it with --reason "<why>"`, err)
+}
+
+// gatewayRefusal explains the gateway refusing the caller or the request: 401, 403, a
+// conversation that is not the caller's, or a missing reason. It is nil for any other answer.
+func gatewayRefusal(f *client.Factory, se *apierrors.StatusError, crew, namespace string) *clierr.Error {
+	text := statusText(se)
+	switch code := int(se.Status().Code); {
+	case code == http.StatusUnauthorized:
+		return gatewayUnauthorized(f, crew, namespace, se)
+	case code == http.StatusForbidden:
+		return gatewayForbidden(crew, namespace, se)
+	case code == http.StatusNotFound && strings.Contains(text, conversationNotFound):
+		return conversationRefused(crew, se)
+	case code == http.StatusBadRequest && strings.Contains(text, client.HeaderAccessReason):
+		return clierr.New("the gateway wants a reason to read another caller's conversations",
+			`Say why with --reason "<text>" (1 to 200 characters); the gateway audits it`, se)
+	}
+	return nil
+}
+
 // openGateway opens a client to the crew's discussion gateway through a
-// port-forward to one of its pods, as kubectl port-forward does; the caller closes
+// port-forward to one of its pods, as kubectl port-forward does, as the caller (it
+// sends the caller's Kubernetes token); the caller closes
 // it with the returned function. A failure is explained: the Service or crew is
 // missing, the forward is not allowed, or no pod is ready.
 func openGateway(ctx context.Context, f *client.Factory, crew, namespace string) (rest.Interface, func(), error) {
-	rc, stop, err := f.ServiceClient(ctx, namespace, discussion.ServiceName(crew), discussion.GatewayPort)
+	rc, stop, err := f.GatewayClient(ctx, namespace, discussion.ServiceName(crew), discussion.GatewayPort)
 	if err != nil {
 		return nil, nil, explainGatewayOpen(ctx, f, err, crew, namespace)
 	}
@@ -53,6 +121,10 @@ func openGateway(ctx context.Context, f *client.Factory, crew, namespace string)
 
 // explainGatewayOpen explains why the port-forward to the gateway could not open.
 func explainGatewayOpen(ctx context.Context, f *client.Factory, err error, crew, namespace string) error {
+	var caller *client.CallerError
+	if errors.As(err, &caller) {
+		return explainCaller(f, caller)
+	}
 	switch {
 	case apierrors.IsForbidden(err):
 		return clierr.New(fmt.Sprintf("you are not allowed to reach the discussion gateway of crew %q in namespace %q", crew, namespace),
@@ -67,6 +139,16 @@ func explainGatewayOpen(ctx context.Context, f *client.Factory, err error, crew,
 	}
 	return clierr.New(fmt.Sprintf("could not reach the discussion gateway of crew %q in namespace %q", crew, namespace),
 		"kmctl port-forwards to it, as kubectl port-forward does; check that you can with: kubectl port-forward -n "+namespace+" svc/"+discussion.ServiceName(crew)+" 8080:"+discussion.GatewayPort, err)
+}
+
+// explainCaller explains why kmctl could not be the caller asked for: the account it
+// may not mint a token for, or a flag that is not valid.
+func explainCaller(f *client.Factory, err *client.CallerError) error {
+	if apierrors.IsForbidden(err.Err) {
+		return clierr.New(fmt.Sprintf("you are not allowed to mint a token for service account %s", f.Caller.ServiceAccount),
+			"Minting takes create on serviceaccounts/token for that account; check yours with: kubectl auth can-i create serviceaccounts/token -n "+strings.SplitN(f.Caller.ServiceAccount, "/", 2)[0], err)
+	}
+	return err
 }
 
 // gatewayStatus explains the gateway's HTTP status once the crew is known to be

@@ -2,9 +2,11 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/kubemoot/kmctl/internal/client"
@@ -76,6 +78,7 @@ func completeCrewThen(f *client.Factory, second cobra.CompletionFunc) cobra.Comp
 
 func newConversationListCommand(f *client.Factory) *cobra.Command {
 	var outFmt string
+	var all bool
 	cmd := &cobra.Command{
 		Use:     "list CREW",
 		Aliases: []string{"ls"},
@@ -83,39 +86,65 @@ func newConversationListCommand(f *client.Factory) *cobra.Command {
 		Long: `List a crew's recent conversations, newest first, with each one's first question.
 The discussion gateway reads them from the discussion stream, which keeps about a
 day of discussions. Any unique prefix of a listed ID works wherever kmctl takes a
-conversation ID.`,
+conversation ID.
+
+On a crew that verifies who is asking you see the conversations you started. --all
+lists every caller's conversations, with each owner's id; it needs the list
+permission on crews/conversations and a --reason, which the gateway audits.`,
 		Example: `  kmctl conversation list homelab-pilot -n crew-homelab-pilot
-  kmctl conv ls homelab-pilot -o json`,
+  kmctl conv ls homelab-pilot -o json
+  kmctl conv ls homelab-pilot --all --reason "weekly review of unanswered questions"`,
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeCrewArg(f),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if all && strings.TrimSpace(f.Caller.Reason) == "" {
+				return errors.New(`--all lists other callers' conversations; say why with --reason "<text>"`)
+			}
 			rc, stop, err := openGateway(cmd.Context(), f, args[0], f.Namespace())
 			if err != nil {
 				return err
 			}
 			defer stop()
-			conversations, err := listConversations(cmd.Context(), rc, args[0])
+			conversations, err := discussion.ListAs(cmd.Context(), rc, args[0], discussion.ListLimit, all)
 			if err != nil {
 				return explainGateway(cmd.Context(), f, err, args[0], f.Namespace())
 			}
 			if outFmt != "" {
 				return output.Print(cmd.OutOrStdout(), output.Format(outFmt), conversations)
 			}
-			return printConversations(cmd.OutOrStdout(), conversations)
+			return printConversations(cmd.OutOrStdout(), conversations, all)
 		},
 	}
 	cmd.Flags().StringVarP(&outFmt, "output", "o", "", output.FormatHelp("table"))
+	cmd.Flags().BoolVar(&all, "all", false, "List every caller's conversations (an operator; needs --reason)")
 	return cmd
 }
 
-// printConversations writes the conversations as a table.
-func printConversations(w io.Writer, conversations []discussion.ConversationInfo) error {
+// printConversations writes the conversations as a table; withOwner adds the owner's
+// id, which only an operator's --all listing carries.
+func printConversations(w io.Writer, conversations []discussion.ConversationInfo, withOwner bool) error {
 	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "CONVERSATION ID\tLAST TURN\tTURNS\tFIRST QUESTION")
+	header, row := "CONVERSATION ID\tLAST TURN\tTURNS\tFIRST QUESTION", "%s\t%s\t%d\t%s\n"
+	if withOwner {
+		header, row = "CONVERSATION ID\tOWNER\tLAST TURN\tTURNS\tFIRST QUESTION", "%s\t%s\t%s\t%d\t%s\n"
+	}
+	_, _ = fmt.Fprintln(tw, header)
 	for _, c := range conversations {
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%d\t%s\n", c.ConversationID, c.LastTurnAt, c.Turns, discussion.Shorten(c.Question, 60))
+		q := discussion.Shorten(c.Question, 60)
+		if withOwner {
+			_, _ = fmt.Fprintf(tw, row, c.ConversationID, orDash(c.Owner), c.LastTurnAt, c.Turns, q)
+			continue
+		}
+		_, _ = fmt.Fprintf(tw, row, c.ConversationID, c.LastTurnAt, c.Turns, q)
 	}
 	return tw.Flush()
+}
+
+func orDash(s string) string {
+	if s == "" {
+		return "-"
+	}
+	return s
 }
 
 func newConversationWorkspaceCommand(f *client.Factory) *cobra.Command {

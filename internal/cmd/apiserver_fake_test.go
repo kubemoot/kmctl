@@ -23,11 +23,13 @@ import (
 // tests cover the path from flags to clients to output that the fake dynamic
 // client skips.
 type fakeAPIServer struct {
-	mu         sync.Mutex
-	objs       map[string]map[string]any   // by objKey
-	services   map[string][]map[string]any // by namespace
-	proxy      map[string]http.HandlerFunc // by "<service>/<path>"
-	noKubemoot bool                        // the cluster does not serve kubemoot.ai
+	mu            sync.Mutex
+	objs          map[string]map[string]any   // by objKey
+	services      map[string][]map[string]any // by namespace
+	proxy         map[string]http.HandlerFunc // by "<service>/<path>"
+	tokenRequests []string                    // each TokenRequest served: "<ns>/<name> <body>"
+	denyTokens    bool                        // a TokenRequest is forbidden
+	noKubemoot    bool                        // the cluster does not serve kubemoot.ai
 	// react, when set, stands in for the operator: it sees each object the server
 	// stores on create or apply and may change it (set a status) before it is stored.
 	react func(obj map[string]any)
@@ -38,7 +40,8 @@ type fakeAPIServer struct {
 	// openErr, when set, fails every port-forward to a Service.
 	openErr error
 
-	srv        *httptest.Server
+	srv        *httptest.Server // the API server, over TLS so client-go keeps a kubeconfig token
+	gw         *httptest.Server // the same handlers over HTTP, for the gateway clients that need no CA
 	kubeconfig string
 }
 
@@ -48,7 +51,7 @@ func (s *fakeAPIServer) openService(_ context.Context, namespace, service, port 
 	if s.openErr != nil {
 		return "", nil, s.openErr
 	}
-	return s.srv.URL + "/api/v1/namespaces/" + namespace + "/services/" + service + ":" + port + "/proxy", func() {}, nil
+	return s.gw.URL + "/api/v1/namespaces/" + namespace + "/services/" + service + ":" + port + "/proxy", func() {}, nil
 }
 
 // kubemootKinds maps each kubemoot.ai resource the fake serves to its kind.
@@ -77,8 +80,10 @@ func newFakeAPIServer(t *testing.T) *fakeAPIServer {
 		services: map[string][]map[string]any{},
 		proxy:    map[string]http.HandlerFunc{},
 	}
-	s.srv = httptest.NewServer(s)
+	s.srv = httptest.NewTLSServer(s)
 	t.Cleanup(s.srv.Close)
+	s.gw = httptest.NewServer(s)
+	t.Cleanup(s.gw.Close)
 	s.kubeconfig = filepath.Join(t.TempDir(), "kubeconfig")
 	kc := `apiVersion: v1
 kind: Config
@@ -86,6 +91,7 @@ clusters:
 - name: fake
   cluster:
     server: ` + s.srv.URL + `
+    insecure-skip-tls-verify: true
 users:
 - name: fake
   user:
@@ -301,6 +307,10 @@ func (s *fakeAPIServer) remove(w http.ResponseWriter, plural, ns, name string) {
 // serveCore serves <ns>/services[/<name>] and the service proxy,
 // <ns>/services/<name>:<port>/proxy/<path>.
 func (s *fakeAPIServer) serveCore(w http.ResponseWriter, r *http.Request, parts []string) {
+	if len(parts) == 4 && parts[1] == "serviceaccounts" && parts[3] == "token" && r.Method == http.MethodPost {
+		s.serveTokenRequest(w, r, parts[0], parts[2])
+		return
+	}
 	if len(parts) < 2 || parts[1] != "services" {
 		writeStatus(w, http.StatusNotFound, "NotFound", "only services are served")
 		return
@@ -315,6 +325,22 @@ func (s *fakeAPIServer) serveCore(w http.ResponseWriter, r *http.Request, parts 
 	items := s.services[ns]
 	s.mu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]any{"kind": "ServiceList", "apiVersion": "v1", "metadata": map[string]any{}, "items": items})
+}
+
+// serveTokenRequest answers a TokenRequest for a ServiceAccount with a token naming the
+// account, and records the request: "<ns>/<name>" and its body (which names the audiences).
+func (s *fakeAPIServer) serveTokenRequest(w http.ResponseWriter, r *http.Request, ns, name string) {
+	body, _ := io.ReadAll(r.Body)
+	s.mu.Lock()
+	s.tokenRequests = append(s.tokenRequests, ns+"/"+name+" "+string(body))
+	deny := s.denyTokens
+	s.mu.Unlock()
+	if deny {
+		writeStatus(w, http.StatusForbidden, "Forbidden", `serviceaccounts "`+name+`" is forbidden: cannot create resource "serviceaccounts/token"`)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"kind": "TokenRequest", "apiVersion": "authentication.k8s.io/v1",
+		"status": map[string]any{"token": "minted-" + name, "expirationTimestamp": "2099-01-01T00:10:00Z"}})
 }
 
 func (s *fakeAPIServer) serveProxy(w http.ResponseWriter, r *http.Request, key string) {
