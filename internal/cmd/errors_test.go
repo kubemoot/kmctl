@@ -174,7 +174,7 @@ func TestErrors_BadFlagsAndArgs(t *testing.T) {
 		{[]string{"conversation", "ask", "demo"},
 			"Error: accepts 2 arg(s), received 1\nHint: Usage: kmctl conversation ask CREW MESSAGE [flags] (see kmctl conversation ask --help)\n"},
 		{[]string{"conversation", "ask", "demo", "hi", "--timeout", "soon"},
-			"Error: invalid argument \"soon\" for \"--timeout\" flag: time: invalid duration \"soon\"\n" +
+			"Error: invalid argument \"soon\" for \"--timeout\" flag: must be a duration like \"30s\" or \"5m\"\n" +
 				"Hint: Usage: kmctl conversation ask CREW MESSAGE [flags] (see kmctl conversation ask --help)\n"},
 		{[]string{"frobnicate"},
 			"Error: unknown command \"frobnicate\" for \"kmctl\"\nHint: Usage: kmctl [flags] (see kmctl --help)\n"},

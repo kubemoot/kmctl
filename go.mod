@@ -13,7 +13,7 @@ require (
 	github.com/nats-io/nats-server/v2 v2.15.3
 	github.com/nats-io/nats.go v1.56.0
 	github.com/spf13/cobra v1.10.2
-	github.com/spf13/pflag v1.0.10
+	github.com/spf13/pflag v1.1.0
 	golang.org/x/term v0.48.0
 	k8s.io/api v0.37.2
 	k8s.io/apiextensions-apiserver v0.37.2
