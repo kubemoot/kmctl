@@ -11,14 +11,17 @@ import (
 
 	"github.com/kubemoot/kmctl/internal/client"
 	"github.com/kubemoot/kmctl/internal/clierr"
+	"github.com/kubemoot/kmctl/internal/discussion"
 	"github.com/kubemoot/kubemoot/operator/pkg/bus"
+	"github.com/kubemoot/kubemoot/operator/pkg/crewscope"
 	"github.com/spf13/cobra"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/client-go/rest"
 )
 
 // controlRole is the ClusterRole an operator needs to act on another caller's
 // conversations; the owner of a conversation needs no role.
-const controlRole = "kubemoot-conversation-controller"
+var controlRole = controlAction("stop").role
 
 // controlVerb is one of stop, pause and resume: the gateway route and how the result reads.
 type controlVerb struct {
@@ -62,7 +65,31 @@ a unique prefix.`,
 }
 
 func runControl(cmd *cobra.Command, f *client.Factory, v controlVerb, crew, id string) error {
+	act := controlAction(v.name)
+	return withResolvedConversation(cmd, f, crew, id, act, func(ctx context.Context, rc rest.Interface, id string) error {
+		raw, err := rc.Post().Suffix("api", "v1", "discussions", crew, id, v.name).Do(ctx).Raw()
+		if err != nil {
+			return explainControl(ctx, f, err, crew, f.Namespace(), act)
+		}
+		var res bus.ConversationControl
+		if err := json.Unmarshal(raw, &res); err != nil || res.ConversationID == "" {
+			return errors.New("the gateway's answer is not a control result; the request may still have been carried out")
+		}
+		_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s conversation %s of crew %s: %d thread(s)%s\n",
+			v.past, clean(res.ConversationID), crew, len(res.Threads), threadList(res.Threads))
+		return err
+	})
+}
+
+// withResolvedConversation validates the crew, opens its gateway as the caller, turns the
+// conversation ID or prefix into the full one, and runs fn with it. A failure to look the
+// conversation up is explained for the action.
+func withResolvedConversation(cmd *cobra.Command, f *client.Factory, crew, id string, act gatewayAction,
+	fn func(ctx context.Context, rc rest.Interface, id string) error) error {
 	ns := f.Namespace()
+	if _, err := crewscope.New(ns, crew); err != nil {
+		return usageError{err}
+	}
 	ctx := cmd.Context()
 	rc, stop, err := openGateway(ctx, f, crew, ns)
 	if err != nil {
@@ -70,55 +97,38 @@ func runControl(cmd *cobra.Command, f *client.Factory, v controlVerb, crew, id s
 	}
 	defer stop()
 	if id, err = resolveConversation(ctx, rc, crew, id); err != nil {
-		return explainControl(ctx, f, err, crew, ns, v.name)
+		return explainControl(ctx, f, err, crew, ns, act)
 	}
-	raw, err := rc.Post().Suffix("api", "v1", "discussions", crew, id, v.name).Do(ctx).Raw()
-	if err != nil {
-		return explainControl(ctx, f, err, crew, ns, v.name)
-	}
-	var res bus.ConversationControl
-	if err := json.Unmarshal(raw, &res); err != nil {
-		return fmt.Errorf("the gateway's answer is not a control result: %w", err)
-	}
-	_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s conversation %s of crew %s: %d thread(s)%s\n",
-		v.past, res.ConversationID, crew, len(res.Threads), threadList(res.Threads))
-	return err
+	return fn(ctx, rc, id)
 }
 
 func threadList(threads []string) string {
 	if len(threads) == 0 {
 		return ""
 	}
-	return " (" + strings.Join(threads, ", ") + ")"
+	return " (" + strings.Join(cleanAll(threads), ", ") + ")"
 }
 
-// explainControl explains a failed stop, pause, resume or delete. The gateway's 404, 400
-// and 409 mean something particular for a control; everything else is the gateway's usual.
-func explainControl(ctx context.Context, f *client.Factory, err error, crew, namespace, action string) error {
+// explainControl explains a failed stop, pause, resume or delete: the gateway's usual
+// refusals, named for the action, and the 409 a control alone can get.
+func explainControl(ctx context.Context, f *client.Factory, err error, crew, namespace string, act gatewayAction) error {
 	var se *apierrors.StatusError
-	if !errors.As(err, &se) {
-		return err
+	if errors.As(err, &se) && int(se.Status().Code) == http.StatusConflict {
+		return explainConflict(err, clean(statusText(se)), crew, namespace, act)
 	}
-	text := statusText(se)
-	switch code := int(se.Status().Code); {
-	case code == http.StatusNotFound && strings.Contains(text, conversationNotFound):
-		return clierr.New(fmt.Sprintf("conversation not found on crew %q, or you may not %s it", crew, action),
-			"It does not exist, has expired, or belongs to another caller. An operator needs the ClusterRole "+controlRole+" and --reason \"<why>\"", err)
-	case code == http.StatusBadRequest && strings.Contains(text, client.HeaderAccessReason):
-		return clierr.New(fmt.Sprintf("the gateway wants a reason to %s another caller's conversation", action),
-			`Say why with --reason "<text>" (1 to 200 characters); the gateway audits it`, err)
-	case code == http.StatusConflict:
-		return explainConflict(err, text, crew, namespace, action)
-	}
-	return explainGateway(ctx, f, err, crew, namespace)
+	return explainGatewayFor(ctx, f, err, crew, namespace, act)
 }
 
-func explainConflict(err error, text, crew, namespace, action string) error {
-	if action == "delete" {
+func explainConflict(err error, text, crew, namespace string, act gatewayAction) error {
+	switch {
+	case act.verb == "delete" && act.force:
+		return clierr.New(fmt.Sprintf("the gateway refused to delete a conversation of crew %q even with --force: %s", crew, text),
+			"The gateway may be older than this kmctl; see its logs with: kubectl logs -n "+namespace+" svc/"+discussion.ServiceName(crew), err)
+	case act.verb == "delete":
 		return clierr.New(fmt.Sprintf("conversation on crew %q has a running discussion", crew),
 			"Stop it first with: kmctl conversation stop "+crew+" <id> -n "+namespace+", or delete it anyway with --force (it stops the discussion, then erases)", err)
 	}
-	return clierr.New(fmt.Sprintf("nothing to %s: %s", action, text),
+	return clierr.New(fmt.Sprintf("nothing to %s: %s", act.verb, text),
 		"Only a conversation with a running discussion can be stopped, paused or resumed. See the crew's conversations with: kmctl conversation list "+crew+" -n "+namespace, err)
 }
 
@@ -167,35 +177,29 @@ gateway audits it. ID can be a unique prefix.`,
 }
 
 func runConversationDelete(cmd *cobra.Command, f *client.Factory, o deleteOptions, crew, id string) error {
-	ns := f.Namespace()
-	ctx := cmd.Context()
-	rc, stop, err := openGateway(ctx, f, crew, ns)
-	if err != nil {
-		return err
-	}
-	defer stop()
-	if id, err = resolveConversation(ctx, rc, crew, id); err != nil {
-		return explainControl(ctx, f, err, crew, ns, "delete")
-	}
-	question := fmt.Sprintf("Erase conversation %s of crew %s from every store? This cannot be undone.", id, crew)
-	if o.force {
-		question = fmt.Sprintf("Stop any running discussion, then erase conversation %s of crew %s from every store? This cannot be undone.", id, crew)
-	}
-	if err := confirmChange(cmd, o.yes, question); err != nil {
-		return err
-	}
-	req := rc.Delete().Suffix("api", "v1", "discussions", crew, id)
-	if o.force {
-		req = req.Param("force", "true")
-	}
-	var code int
-	raw, err := req.Do(ctx).StatusCode(&code).Raw()
-	return finishDelete(ctx, cmd.OutOrStdout(), f, raw, err, code, crew, ns)
+	act := controlAction("delete")
+	act.force = o.force
+	return withResolvedConversation(cmd, f, crew, id, act, func(ctx context.Context, rc rest.Interface, id string) error {
+		question := fmt.Sprintf("Erase conversation %s of crew %s from every store? This cannot be undone.", id, crew)
+		if o.force {
+			question = fmt.Sprintf("Stop any running discussion, then erase conversation %s of crew %s from every store? This cannot be undone.", id, crew)
+		}
+		if err := confirmChange(cmd, o.yes, question); err != nil {
+			return err
+		}
+		req := rc.Delete().Suffix("api", "v1", "discussions", crew, id)
+		if o.force {
+			req = req.Param("force", "true")
+		}
+		var code int
+		raw, err := req.Do(ctx).StatusCode(&code).Raw()
+		return finishDelete(ctx, cmd.OutOrStdout(), f, raw, err, code, crew, f.Namespace(), act)
+	})
 }
 
 // finishDelete prints the erasure report of a delete, and explains a refusal. A 500 carries
 // the report too: it says which stores could not be cleared.
-func finishDelete(ctx context.Context, w io.Writer, f *client.Factory, raw []byte, err error, code int, crew, ns string) error {
+func finishDelete(ctx context.Context, w io.Writer, f *client.Factory, raw []byte, err error, code int, crew, ns string, act gatewayAction) error {
 	if err == nil {
 		return printErasure(w, raw)
 	}
@@ -204,11 +208,19 @@ func finishDelete(ctx context.Context, w io.Writer, f *client.Factory, raw []byt
 			if perr := writeErasure(w, report); perr != nil {
 				return perr
 			}
-			return clierr.New(fmt.Sprintf("the gateway could not clear every store: %s", strings.Join(report.Failed, ", ")),
+			return clierr.New(fmt.Sprintf("the gateway could not clear every store: %s", strings.Join(cleanAll(report.Failed), ", ")),
 				"What was removed is above. Repeat the delete; it removes what is left.", err)
 		}
 	}
-	return explainControl(ctx, f, err, crew, ns, "delete")
+	return explainControl(ctx, f, err, crew, ns, act)
+}
+
+func cleanAll(values []string) []string {
+	out := make([]string, len(values))
+	for i, v := range values {
+		out[i] = clean(v)
+	}
+	return out
 }
 
 func parseErasure(raw []byte) (bus.ConversationErasure, bool) {
@@ -222,7 +234,7 @@ func parseErasure(raw []byte) (bus.ConversationErasure, bool) {
 func printErasure(w io.Writer, raw []byte) error {
 	report, ok := parseErasure(raw)
 	if !ok {
-		return errors.New("the gateway's answer is not an erasure report")
+		return errors.New("the gateway's answer is not an erasure report; the conversation may still have been erased")
 	}
 	return writeErasure(w, report)
 }
@@ -239,15 +251,15 @@ func writeErasure(w io.Writer, r bus.ConversationErasure) error {
 		{"scheduled follow-ups", d.Scheduled}, {"memory facts", d.MemoryFacts},
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "erased conversation %s (%d thread(s))\n", r.ConversationID, len(r.Threads))
+	fmt.Fprintf(&b, "erased conversation %s (%d thread(s))\n", clean(r.ConversationID), len(r.Threads))
 	for _, row := range rows {
 		fmt.Fprintf(&b, "  %-22s %d\n", row.store, row.n)
 	}
 	for _, k := range r.Kept {
-		fmt.Fprintf(&b, "not removed: %s\n", k)
+		fmt.Fprintf(&b, "not removed: %s\n", clean(k))
 	}
 	for _, s := range r.Failed {
-		fmt.Fprintf(&b, "failed: %s\n", s)
+		fmt.Fprintf(&b, "failed: %s\n", clean(s))
 	}
 	_, err := io.WriteString(w, b.String())
 	return err

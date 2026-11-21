@@ -10,6 +10,7 @@ import (
 
 	"github.com/kubemoot/kmctl/internal/client"
 	"github.com/kubemoot/kmctl/internal/clierr"
+	"github.com/kubemoot/kubemoot/operator/pkg/bus"
 )
 
 // errorText is what a person sees of err: the message, the hint and the cause.
@@ -95,8 +96,9 @@ func TestConversationControls_Errors(t *testing.T) {
 	}{
 		"401":        {"stop", 401, "unauthorized", []string{"did not accept your Kubernetes token"}},
 		"403":        {"stop", 403, "forbidden", []string{"refused your identity"}},
-		"404":        {"pause", 404, "conversation not found", []string{"conversation not found on crew", "may not pause it", "kubemoot-conversation-controller"}},
+		"404":        {"pause", 404, "conversation not found", []string{"conversation not found on crew", "update on crews/conversations", "can pause it with --reason", "kubemoot-conversation-controller"}},
 		"409 stop":   {"stop", 409, "the conversation has no running discussion", []string{"nothing to stop", "no running discussion", "kmctl conversation list demo"}},
+		"409 pause":  {"pause", 409, "the conversation has no running discussion", []string{"nothing to pause"}},
 		"409 resume": {"resume", 409, "the conversation has no running discussion", []string{"nothing to resume"}},
 		"400 reason": {"stop", 400, "acting on another caller's conversations needs a reason of 1 to 200 characters in the Kubemoot-Access-Reason header", []string{"wants a reason to stop", "--reason"}},
 	}
@@ -194,7 +196,7 @@ func TestConversationDelete_Errors(t *testing.T) {
 	}{
 		"401": {401, "unauthorized", []string{"did not accept your Kubernetes token"}},
 		"403": {403, "forbidden", []string{"refused your identity"}},
-		"404": {404, "conversation not found", []string{"conversation not found on crew", "may not delete it", "kubemoot-conversation-controller"}},
+		"404": {404, "conversation not found", []string{"conversation not found on crew", "delete on crews/conversations", "can delete it with --reason", "kubemoot-conversation-controller"}},
 		"409": {409, "the conversation has a running discussion; stop it first, or pass force=true", []string{"has a running discussion", "--force", "kmctl conversation stop demo"}},
 	}
 	for name, c := range cases {
@@ -230,4 +232,98 @@ func TestConversationDelete_ServerErrorWithoutReport(t *testing.T) {
 		t.Fatalf("err %v, out %q", err, out)
 	}
 	assertContains(t, "error", errorText(err), "answered HTTP 500")
+}
+
+func TestConversationControls_NoTokenInErrorsOrOutput(t *testing.T) {
+	for _, args := range [][]string{
+		{"conversation", "stop", "demo", convID},
+		{"conversation", "delete", "demo", convID, "--yes"},
+		{"conversation", "export", "demo", convID},
+	} {
+		s := newFakeAPIServer(t)
+		serveControl(s, controlBase+"/stop", 401, "unauthorized")
+		serveControl(s, controlBase, 401, "unauthorized")
+		refuseExport(s, 401, "unauthorized")
+		t.Chdir(t.TempDir())
+		out, errOut, err := s.kmctl(t, args...)
+		if err == nil {
+			t.Fatalf("%v: want an error", args)
+		}
+		for _, text := range []string{out, errOut, errorText(err)} {
+			if strings.Contains(text, "fake-token") {
+				t.Errorf("%v: the token appears in %q", args, text)
+			}
+		}
+	}
+}
+
+func TestConversationDelete_ConflictWithForce(t *testing.T) {
+	s := newFakeAPIServer(t)
+	serveControl(s, controlBase, 409, "the conversation has a running discussion; stop it first, or pass force=true")
+	_, _, err := s.kmctl(t, "conversation", "delete", "demo", convID, "--yes", "--force")
+	if err == nil {
+		t.Fatal("want an error")
+	}
+	text := errorText(err)
+	assertContains(t, "force conflict", text, "even with --force")
+	if strings.Contains(text, "or delete it anyway with --force") {
+		t.Errorf("the hint recommends the flag already given:\n%s", text)
+	}
+}
+
+func TestConversationControls_UnexpectedAnswers(t *testing.T) {
+	cases := map[string]struct {
+		args []string
+		key  string
+		body string
+	}{
+		"stop with no result":   {[]string{"conversation", "stop", "demo", convID}, controlBase + "/stop", `{"hello":1}`},
+		"stop with not JSON":    {[]string{"conversation", "stop", "demo", convID}, controlBase + "/stop", `ok`},
+		"delete with no report": {[]string{"conversation", "delete", "demo", convID, "--yes"}, controlBase, `{"deleted":{}}`},
+		"delete with not JSON":  {[]string{"conversation", "delete", "demo", convID, "--yes"}, controlBase, `ok`},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			s := newFakeAPIServer(t)
+			serveControl(s, c.key, 200, c.body)
+			out, _, err := s.kmctl(t, c.args...)
+			if err == nil || out != "" {
+				t.Fatalf("err %v, out %q", err, out)
+			}
+			assertContains(t, name, errorText(err), "not a")
+		})
+	}
+}
+
+func TestConversationControls_ServerErrorWithUnparseableReport(t *testing.T) {
+	s := newFakeAPIServer(t)
+	serveControl(s, controlBase, 500, `{"conversationId":`)
+	out, _, err := s.kmctl(t, "conversation", "delete", "demo", convID, "--yes")
+	if err == nil || out != "" {
+		t.Fatalf("err %v, out %q", err, out)
+	}
+}
+
+func TestConversationControls_InvalidCrewNameAsksNothing(t *testing.T) {
+	for _, verb := range []string{"stop", "pause", "resume", "delete"} {
+		s := newFakeAPIServer(t)
+		seen := serveControl(s, "Bad Crew-discussion/x", 200, "{}")
+		_, _, err := s.kmctl(t, "conversation", verb, "Bad Crew", convID, "--yes")
+		if err == nil || seen.calls != 0 {
+			t.Errorf("%s: err %v, calls %d", verb, err, seen.calls)
+		}
+	}
+}
+
+func TestClean_StripsControlCharacters(t *testing.T) {
+	if got := clean("a\x1b[31mb\nc d\te"); got != "a[31mbcde" {
+		t.Errorf("clean = %q", got)
+	}
+	var b bytes.Buffer
+	if err := writeErasure(&b, bus.ConversationErasure{ConversationID: "id\x1b[2J", Kept: []string{"k\rx"}}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.ContainsAny(b.String(), "\x1b\r") {
+		t.Errorf("control characters printed: %q", b.String())
+	}
 }

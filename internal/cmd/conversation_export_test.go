@@ -18,21 +18,8 @@ const (
 	exportID3 = "33333333-3333-4333-8333-333333333333"
 )
 
-// zipWith builds a zip holding one file.
-func zipWith(t *testing.T, content string) []byte {
-	t.Helper()
-	var buf bytes.Buffer
-	zw := zip.NewWriter(&buf)
-	w, err := zw.Create("manifest.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, _ = w.Write([]byte(content))
-	if err := zw.Close(); err != nil {
-		t.Fatal(err)
-	}
-	return buf.Bytes()
-}
+// zipWith builds a zip whose manifest.json holds content.
+func zipWith(t *testing.T, content string) []byte { return zipOf(t, "manifest.json", content) }
 
 type exportSeen struct {
 	query   map[string][]string
@@ -232,5 +219,166 @@ func TestConversationExport_ResolvesPrefixesThroughTheGateway(t *testing.T) {
 	}
 	if got := strings.Join(seen.query["id"], ","); got != exportID1+","+exportID2 {
 		t.Errorf("ids sent = %s", got)
+	}
+}
+
+// noTempFiles fails when a download left a file behind in dir.
+func noTempFiles(t *testing.T, dir string) {
+	t.Helper()
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		t.Errorf("left behind: %s", e.Name())
+	}
+}
+
+func TestConversationExport_StreamCutShort(t *testing.T) {
+	s := newFakeAPIServer(t)
+	s.proxy[exportKey] = func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Length", "100000")
+		_, _ = w.Write([]byte("PK partial"))
+	}
+	dir := t.TempDir()
+	_, _, err := s.kmctl(t, "conversation", "export", "demo", exportID1, "-o", filepath.Join(dir, "cut.zip"))
+	if err == nil {
+		t.Fatal("a cut transfer is an error")
+	}
+	noTempFiles(t, dir)
+}
+
+func TestConversationExport_OutputInMissingDirectory(t *testing.T) {
+	s := newFakeAPIServer(t)
+	seen := serveExport(s, zipWith(t, `{}`))
+	_, _, err := s.kmctl(t, "conversation", "export", "demo", exportID1, "-o", filepath.Join(t.TempDir(), "missing", "x.zip"))
+	if err == nil || !strings.Contains(errorText(err), "cannot write") {
+		t.Fatalf("err = %v", err)
+	}
+	if seen.query != nil {
+		t.Error("the operator was asked for an export that could not be written")
+	}
+}
+
+func TestConversationExport_InvalidInputsAskNothing(t *testing.T) {
+	many := make([]string, 51)
+	for i := range many {
+		many[i] = exportID1
+	}
+	cases := map[string][]string{
+		"too many ids":     append([]string{"conversation", "export", "demo"}, many...),
+		"invalid crew":     {"conversation", "export", "Bad Crew", exportID1},
+		"invalid timezone": {"conversation", "export", "demo", exportID1, "--time-zone", "Mars/Olympus"},
+	}
+	for name, args := range cases {
+		t.Run(name, func(t *testing.T) {
+			s := newFakeAPIServer(t)
+			seen := serveExport(s, zipWith(t, `{}`))
+			t.Chdir(t.TempDir())
+			if _, _, err := s.kmctl(t, args...); err == nil {
+				t.Fatal("want an error")
+			}
+			if seen.query != nil {
+				t.Error("the operator was asked")
+			}
+		})
+	}
+}
+
+func TestConversationExport_UnreadableManifestIsANoteNotAFailure(t *testing.T) {
+	var big bytes.Buffer
+	big.WriteString(`{"kind":"kubemoot.conversation-export","pad":"`)
+	big.Write(bytes.Repeat([]byte("x"), manifestLimit))
+	big.WriteString(`"}`)
+	cases := map[string]struct {
+		body []byte
+		want string
+	}{
+		"corrupt zip":      {[]byte("not a zip"), "could not read the manifest"},
+		"missing manifest": {zipOf(t, "other.txt", "x"), "has no manifest.json"},
+		"over the limit":   {zipOf(t, "manifest.json", big.String()), "is larger than"},
+		"not JSON":         {zipOf(t, "manifest.json", "<html>"), "not JSON"},
+		"unknown kind":     {zipOf(t, "manifest.json", `{"kind":"other"}`), `kind "other"`},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			s := newFakeAPIServer(t)
+			serveExport(s, c.body)
+			out := filepath.Join(t.TempDir(), "x.zip")
+			stdout, _, err := s.kmctl(t, "conversation", "export", "demo", exportID1, "-o", out)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertContains(t, name, stdout, "note: could not read the manifest", c.want, "wrote 1 conversation(s)")
+			if _, err := os.Stat(out); err != nil {
+				t.Error("the zip was not kept")
+			}
+		})
+	}
+}
+
+// zipOf builds a zip holding one named file.
+func zipOf(t *testing.T, name, content string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	w, _ := zw.Create(name)
+	_, _ = w.Write([]byte(content))
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+func TestConversationExport_ReportThatIsNotAManifest(t *testing.T) {
+	for name, body := range map[string]string{"html": "<html>", "other kind": `{"kind":"other"}`, "empty": ``} {
+		for _, extra := range [][]string{nil, {"--json"}} {
+			s := newFakeAPIServer(t)
+			serveExport(s, []byte(body))
+			args := append([]string{"conversation", "export", "demo", exportID1, "--report"}, extra...)
+			out, _, err := s.kmctl(t, args...)
+			if err == nil || out != "" {
+				t.Errorf("%s %v: err %v, out %q", name, extra, err, out)
+			}
+		}
+	}
+}
+
+func TestConversationExport_DoesNotOverwriteWhenTheFileAppearsMidTransfer(t *testing.T) {
+	s := newFakeAPIServer(t)
+	dir := t.TempDir()
+	out := filepath.Join(dir, "race.zip")
+	body := zipWith(t, `{"kind":"kubemoot.conversation-export"}`)
+	s.proxy[exportKey] = func(w http.ResponseWriter, _ *http.Request) {
+		// Another process creates the file after kmctl checked and before it publishes.
+		_ = os.WriteFile(out, []byte("theirs"), 0o600)
+		_, _ = w.Write(body)
+	}
+	_, _, err := s.kmctl(t, "conversation", "export", "demo", exportID1, "-o", out)
+	if err == nil || !strings.Contains(errorText(err), "already exists") {
+		t.Fatalf("err = %v", err)
+	}
+	if b, _ := os.ReadFile(out); string(b) != "theirs" {
+		t.Errorf("the file was overwritten: %q", b)
+	}
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 1 {
+		t.Errorf("temporary file left in %v", entries)
+	}
+}
+
+func TestWriteDownload_Overwrite(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "a")
+	if err := writeDownload(path, strings.NewReader("one"), downloadOptions{mode: 0o600}); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeDownload(path, strings.NewReader("two"), downloadOptions{mode: 0o600}); err == nil {
+		t.Error("a second write without overwrite should fail")
+	}
+	if err := writeDownload(path, strings.NewReader("three"), downloadOptions{overwrite: true, mode: 0o600}); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(path); string(b) != "three" {
+		t.Errorf("content = %q", b)
+	}
+	if err := checkDownloadTarget(filepath.Join(t.TempDir(), "gone", "a"), false); err == nil {
+		t.Error("a missing directory should fail")
 	}
 }

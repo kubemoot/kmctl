@@ -27,11 +27,17 @@ import (
 // where it does when it does not. Errors that are not an HTTP status (an
 // unreachable cluster) are returned unchanged.
 func explainGateway(ctx context.Context, f *client.Factory, err error, crew, namespace string) error {
+	return explainGatewayFor(ctx, f, err, crew, namespace, readAction)
+}
+
+// explainGatewayFor is explainGateway for a caller who acts on a conversation: the refusals
+// name the action and the role that allows it to an operator.
+func explainGatewayFor(ctx context.Context, f *client.Factory, err error, crew, namespace string, act gatewayAction) error {
 	var se *apierrors.StatusError
 	if !errors.As(err, &se) {
 		return err
 	}
-	if refusal := gatewayRefusal(f, se, crew, namespace); refusal != nil {
+	if refusal := gatewayRefusal(f, se, crew, namespace, act); refusal != nil {
 		return refusal
 	}
 	code := int(se.Status().Code)
@@ -81,16 +87,39 @@ func gatewayForbidden(crew, namespace string, err error) *clierr.Error {
 		"Using a crew needs get on the Crew; check yours with: kubectl auth can-i get crews.kubemoot.ai/"+crew+" -n "+namespace, err)
 }
 
+// gatewayAction is what a caller does to a conversation, which decides what an
+// operator needs to do it: the permission on crews/conversations and the ClusterRole
+// that grants it.
+type gatewayAction struct {
+	verb string // read, stop, pause, resume, delete
+	perm string // get, update, delete
+	role string
+	// force is set when a delete was told to stop a running discussion first.
+	force bool
+}
+
+var readAction = gatewayAction{verb: "read", perm: "get", role: "kubemoot-conversation-reader"}
+
+// controlAction is the action of a stop, pause, resume or delete.
+func controlAction(verb string) gatewayAction {
+	perm := "update"
+	if verb == "delete" {
+		perm = "delete"
+	}
+	return gatewayAction{verb: verb, perm: perm, role: "kubemoot-conversation-controller"}
+}
+
 // conversationRefused explains the gateway's 404 for a conversation: it does not
 // exist, has expired, or belongs to another caller.
-func conversationRefused(crew string, err error) *clierr.Error {
+func conversationRefused(crew string, act gatewayAction, err error) *clierr.Error {
 	return clierr.New(fmt.Sprintf("conversation not found on crew %q", crew),
-		`It does not exist, has expired, or belongs to another caller. An operator with get on crews/conversations (the ClusterRole kubemoot-conversation-reader) can read it with --reason "<why>"`, err)
+		fmt.Sprintf(`It does not exist, has expired, or belongs to another caller. An operator with %s on crews/conversations (the ClusterRole %s) can %s it with --reason "<why>"`,
+			act.perm, act.role, act.verb), err)
 }
 
 // gatewayRefusal explains the gateway refusing the caller or the request: 401, 403, a
 // conversation that is not the caller's, or a missing reason. It is nil for any other answer.
-func gatewayRefusal(f *client.Factory, se *apierrors.StatusError, crew, namespace string) *clierr.Error {
+func gatewayRefusal(f *client.Factory, se *apierrors.StatusError, crew, namespace string, act gatewayAction) *clierr.Error {
 	text := statusText(se)
 	switch code := int(se.Status().Code); {
 	case code == http.StatusUnauthorized:
@@ -98,9 +127,9 @@ func gatewayRefusal(f *client.Factory, se *apierrors.StatusError, crew, namespac
 	case code == http.StatusForbidden:
 		return gatewayForbidden(crew, namespace, se)
 	case code == http.StatusNotFound && strings.Contains(text, conversationNotFound):
-		return conversationRefused(crew, se)
+		return conversationRefused(crew, act, se)
 	case code == http.StatusBadRequest && strings.Contains(text, client.HeaderAccessReason):
-		return clierr.New("the gateway wants a reason to read another caller's conversations",
+		return clierr.New(fmt.Sprintf("the gateway wants a reason to %s another caller's conversation", act.verb),
 			`Say why with --reason "<text>" (1 to 200 characters); the gateway audits it`, se)
 	}
 	return nil

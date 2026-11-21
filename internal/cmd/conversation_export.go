@@ -2,15 +2,16 @@ package cmd
 
 import (
 	"archive/zip"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/kubemoot/kmctl/internal/client"
 	"github.com/kubemoot/kmctl/internal/clierr"
@@ -98,25 +99,22 @@ conversation IDs that "kmctl conversation list" prints, or a unique prefix of ea
 }
 
 func runConversationExport(cmd *cobra.Command, f *client.Factory, o conversationExportOptions) error {
-	scope, err := crewscope.New(o.namespace, o.crew)
+	scope, err := validateExport(o)
 	if err != nil {
-		return usageError{err}
-	}
-	if len(o.ids) > conversationexport.MaxBundle {
-		return usageError{fmt.Errorf("ask for at most %d conversations at once", conversationexport.MaxBundle)}
+		return err
 	}
 	if o.out == "" {
 		o.out = defaultExportName(scope, o.ids)
 	}
-	if _, err := os.Stat(o.out); !o.report && err == nil {
-		return clierr.New(fmt.Sprintf("%s already exists", o.out), "Nothing was written. Choose another file with -o, or remove it.", nil)
+	if !o.report {
+		if err := checkDownloadTarget(o.out, false); err != nil {
+			return exportTargetError(o.out, err)
+		}
 	}
 	ctx := cmd.Context()
-	ids, err := resolveExportIDs(ctx, f, o)
-	if err != nil {
+	if o.ids, err = resolveExportIDs(ctx, f, o); err != nil {
 		return err
 	}
-	o.ids = ids
 	rc, stop, err := openReport(ctx, f, o)
 	if err != nil {
 		return err
@@ -126,6 +124,29 @@ func runConversationExport(cmd *cobra.Command, f *client.Factory, o conversation
 		return runExportReport(ctx, cmd.OutOrStdout(), rc, o)
 	}
 	return runExportZip(ctx, cmd.OutOrStdout(), rc, o, scope)
+}
+
+// validateExport checks what the flags and arguments say before anything is asked of the cluster.
+func validateExport(o conversationExportOptions) (crewscope.Scope, error) {
+	scope, err := crewscope.New(o.namespace, o.crew)
+	if err != nil {
+		return scope, usageError{err}
+	}
+	if len(o.ids) > conversationexport.MaxBundle {
+		return scope, usageError{fmt.Errorf("ask for at most %d conversations at once", conversationexport.MaxBundle)}
+	}
+	if _, err := time.LoadLocation(o.timeZone); o.timeZone != "" && err != nil {
+		return scope, usageError{fmt.Errorf("--time-zone %q is not an IANA time zone name", o.timeZone)}
+	}
+	return scope, nil
+}
+
+// exportTargetError explains a file the export cannot be written to.
+func exportTargetError(path string, err error) error {
+	if errors.Is(err, fs.ErrExist) {
+		return clierr.New(fmt.Sprintf("%s already exists", path), "Nothing was written. Choose another file with -o, or remove it.", err)
+	}
+	return clierr.New(fmt.Sprintf("cannot write %s", path), "Nothing was written. Choose a file in a directory that exists with -o.", err)
 }
 
 func defaultExportName(scope crewscope.Scope, ids []string) string {
@@ -180,7 +201,10 @@ func runExportZip(ctx context.Context, stdout io.Writer, rc rest.Interface, o co
 		return explainReport(err, o)
 	}
 	defer func() { _ = body.Close() }()
-	if err := writeFileWhole(o.out, body); err != nil {
+	if err := writeDownload(o.out, body, downloadOptions{mode: 0o600}); err != nil {
+		if errors.Is(err, fs.ErrExist) {
+			return exportTargetError(o.out, err)
+		}
 		return clierr.New(fmt.Sprintf("could not write %s", o.out), "Nothing was kept; the file is written whole or not at all.", err)
 	}
 	if err := printZipManifest(stdout, o.out); err != nil {
@@ -190,41 +214,22 @@ func runExportZip(ctx context.Context, stdout io.Writer, rc rest.Interface, o co
 	return err
 }
 
-// writeFileWhole writes the body to path through a temporary file in the same directory,
-// so a transfer that is cut short leaves no file that looks whole.
-func writeFileWhole(path string, body io.Reader) (err error) {
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".kmctl-export-*")
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err != nil {
-			_ = os.Remove(tmp.Name())
-		}
-	}()
-	if _, err = io.Copy(tmp, body); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err = tmp.Close(); err != nil {
-		return err
-	}
-	if err = os.Chmod(tmp.Name(), 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp.Name(), path)
-}
-
 // printZipManifest prints what the zip's own manifest says was left out, before the
 // summary line. A zip with no readable manifest is noted, not an error: the file is whole.
 func printZipManifest(w io.Writer, path string) error {
 	raw, err := readZipManifest(path)
-	if err != nil {
-		_, werr := fmt.Fprintf(w, "note: could not read the manifest of %s: %v\n", path, err)
-		return werr
+	if err == nil {
+		var m any
+		if m, err = decodeManifest(raw); err == nil {
+			return printLeftOut(w, m)
+		}
 	}
-	return printManifest(w, raw)
+	_, werr := fmt.Fprintf(w, "note: could not read the manifest of %s: %v\n", path, err)
+	return werr
 }
+
+// manifestLimit bounds how much of a manifest kmctl reads.
+const manifestLimit = 4 << 20
 
 func readZipManifest(path string) ([]byte, error) {
 	zr, err := zip.OpenReader(path)
@@ -241,43 +246,44 @@ func readZipManifest(path string) ([]byte, error) {
 			return nil, err
 		}
 		defer func() { _ = rc.Close() }()
-		return io.ReadAll(io.LimitReader(rc, manifestLimit))
+		raw, err := io.ReadAll(io.LimitReader(rc, manifestLimit+1))
+		if err == nil && len(raw) > manifestLimit {
+			err = fmt.Errorf("%s is larger than %d bytes", conversationexport.FileManifest, manifestLimit)
+		}
+		return raw, err
 	}
-	return nil, errors.New("no " + conversationexport.FileManifest)
+	return nil, errors.New("the zip has no " + conversationexport.FileManifest)
 }
 
-// manifestLimit bounds how much of a manifest kmctl reads.
-const manifestLimit = 4 << 20
-
-// printManifest prints the left-out entries of a bundle's or one conversation's manifest.
-func printManifest(w io.Writer, raw []byte) error {
+// decodeManifest reads the manifest the operator wrote, a bundle's or one conversation's,
+// into the operator's own type.
+func decodeManifest(raw []byte) (any, error) {
 	var kind struct {
 		Kind string `json:"kind"`
 	}
 	if err := json.Unmarshal(raw, &kind); err != nil {
-		return err
+		return nil, fmt.Errorf("the manifest is not JSON: %w", err)
 	}
-	if kind.Kind == conversationexport.KindBundle {
+	switch kind.Kind {
+	case conversationexport.KindBundle:
 		var m conversationexport.BundleManifest
-		if err := json.Unmarshal(raw, &m); err != nil {
-			return err
-		}
-		return printBundleLeftOut(w, m)
+		return m, json.Unmarshal(raw, &m)
+	case conversationexport.KindConversation:
+		var m conversationexport.Manifest
+		return m, json.Unmarshal(raw, &m)
 	}
-	var m conversationexport.Manifest
-	if err := json.Unmarshal(raw, &m); err != nil {
-		return err
-	}
-	return printConversationLeftOut(w, m)
+	return nil, fmt.Errorf("the manifest is of kind %q, which kmctl does not know", clean(kind.Kind))
 }
 
-func printBundleLeftOut(w io.Writer, m conversationexport.BundleManifest) error {
-	for _, g := range []struct {
-		word    string
-		entries []conversationexport.Entry
-	}{{"refused", m.Refused}, {"expired", m.Expired}, {"failed", m.Failed}} {
-		for _, e := range g.entries {
-			if _, err := fmt.Fprintf(w, "%s %s: %s\n", g.word, e.ConversationID, orDash(e.Reason)); err != nil {
+// printLeftOut prints what a manifest says was not included: the refused, expired and
+// failed conversations of a bundle, or the facts one conversation's export left out.
+func printLeftOut(w io.Writer, m any) error {
+	switch m := m.(type) {
+	case conversationexport.BundleManifest:
+		return printEntries(w, m)
+	case conversationexport.Manifest:
+		for _, l := range m.LeftOut {
+			if _, err := fmt.Fprintf(w, "left out %q: %s\n", clean(l.Key), clean(l.Reason)); err != nil {
 				return err
 			}
 		}
@@ -285,10 +291,15 @@ func printBundleLeftOut(w io.Writer, m conversationexport.BundleManifest) error 
 	return nil
 }
 
-func printConversationLeftOut(w io.Writer, m conversationexport.Manifest) error {
-	for _, l := range m.LeftOut {
-		if _, err := fmt.Fprintf(w, "left out %q: %s\n", l.Key, l.Reason); err != nil {
-			return err
+func printEntries(w io.Writer, m conversationexport.BundleManifest) error {
+	for _, g := range []struct {
+		word    string
+		entries []conversationexport.Entry
+	}{{"refused", m.Refused}, {"expired", m.Expired}, {"failed", m.Failed}} {
+		for _, e := range g.entries {
+			if _, err := fmt.Fprintf(w, "%s %s: %s\n", g.word, clean(e.ConversationID), orDash(clean(e.Reason))); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -300,51 +311,42 @@ func runExportReport(ctx context.Context, stdout io.Writer, rc rest.Interface, o
 	if err != nil {
 		return explainReport(err, o)
 	}
+	m, err := decodeManifest(raw)
+	if err != nil {
+		return fmt.Errorf("the operator's report is not a manifest: %w", err)
+	}
 	if o.asJSON {
-		var pretty any
-		if err := json.Unmarshal(raw, &pretty); err != nil {
+		var b bytes.Buffer
+		if err := json.Indent(&b, raw, "", "  "); err != nil {
 			return fmt.Errorf("the operator's report is not JSON: %w", err)
 		}
-		b, _ := json.MarshalIndent(pretty, "", "  ")
-		_, err = fmt.Fprintln(stdout, string(b))
+		b.WriteByte('\n')
+		_, err = stdout.Write(b.Bytes())
 		return err
 	}
-	return printReport(stdout, raw)
+	return printReport(stdout, m)
 }
 
-// printReport prints the manifest of a report: what is included, then what is left out.
-func printReport(w io.Writer, raw []byte) error {
-	var m struct {
-		Kind     string                       `json:"kind"`
-		Turns    int                          `json:"turns"`
-		Parts    []conversationexport.Part    `json:"parts"`
-		Included []conversationexport.Entry   `json:"included"`
-		Refused  []conversationexport.Entry   `json:"refused"`
-		Expired  []conversationexport.Entry   `json:"expired"`
-		Failed   []conversationexport.Entry   `json:"failed"`
-		LeftOut  []conversationexport.LeftOut `json:"leftOut"`
-		ID       string                       `json:"conversationId"`
-	}
-	if err := json.Unmarshal(raw, &m); err != nil {
-		return fmt.Errorf("the operator's report is not JSON: %w", err)
-	}
-	if m.Kind == conversationexport.KindBundle {
+// printReport prints a report: what is included, then what is left out.
+func printReport(w io.Writer, m any) error {
+	switch m := m.(type) {
+	case conversationexport.BundleManifest:
 		for _, e := range m.Included {
-			if _, err := fmt.Fprintf(w, "included %s\n", e.ConversationID); err != nil {
+			if _, err := fmt.Fprintf(w, "included %s\n", clean(e.ConversationID)); err != nil {
 				return err
 			}
 		}
-		return printBundleLeftOut(w, conversationexport.BundleManifest{Refused: m.Refused, Expired: m.Expired, Failed: m.Failed})
-	}
-	if _, err := fmt.Fprintf(w, "conversation %s: %d turn(s)\n", m.ID, m.Turns); err != nil {
-		return err
-	}
-	for _, p := range m.Parts {
-		if _, err := fmt.Fprintf(w, "  %-12s %s (%d)%s\n", p.Path, p.Status, p.Count, reasonSuffix(p.Reason)); err != nil {
+	case conversationexport.Manifest:
+		if _, err := fmt.Fprintf(w, "conversation %s: %d turn(s)\n", clean(m.ConversationID), m.Turns); err != nil {
 			return err
 		}
+		for _, p := range m.Parts {
+			if _, err := fmt.Fprintf(w, "  %-12s %s (%d)%s\n", clean(p.Path), clean(p.Status), p.Count, reasonSuffix(clean(p.Reason))); err != nil {
+				return err
+			}
+		}
 	}
-	return printConversationLeftOut(w, conversationexport.Manifest{LeftOut: m.LeftOut})
+	return printLeftOut(w, m)
 }
 
 func reasonSuffix(reason string) string {
@@ -375,7 +377,7 @@ func explainReport(err error, o conversationExportOptions) error {
 	if !errors.As(err, &se) {
 		return err
 	}
-	text := statusText(se)
+	text := clean(statusText(se))
 	switch int(se.Status().Code) {
 	case http.StatusUnauthorized:
 		return clierr.New("the operator did not accept your Kubernetes token",
