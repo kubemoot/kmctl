@@ -114,6 +114,7 @@ and each one that cannot be undone asks first unless you pass `--yes`.
 | Pause, resume or stop a fitness suite | `kmctl fitness pause\|resume\|stop SUITE` | a merge patch of the suite's spec (you need `patch` on `crewfitnesssuites`) |
 | Pin or remove an MCP server report verdict | `kmctl mcp report pin REPORT --verdict use\|caution\|avoid`, `kmctl mcp report unpin REPORT` | a merge patch of the report's spec (you need `patch` on `mcpserverreports`) |
 | Add, change, delete or clear crew memory | `kmctl memory add\|edit\|delete\|clear CREW ...` | the crew-memory NATS bucket, through a port-forward to the NATS Service (you need `create` on `pods/portforward` there) or `--nats-url` |
+| Stop, pause or resume a conversation, or erase it | `kmctl conversation stop\|pause\|resume\|delete CREW ID` | the crew's discussion gateway, as the caller |
 | Ask a conversation's first question again | `kmctl conversation replay CREW ID` | the crew's discussion gateway, like `conversation ask` |
 | Remove a crew or a suite run | `kmctl delete crew NAME`, `kmctl delete crewfitnesssuite NAME` | a delete of the resource; the operator cleans up |
 
@@ -123,10 +124,39 @@ kmctl memory add demo hardware gpu0 "RTX 5090" -n crew-demo
 kmctl memory clear demo -n crew-demo                 # asks, then deletes every fact of the crew
 ```
 
-A value that looks like a credential is refused for `memory add` and `memory edit`. Deleting
-a discussion, stopping or pausing one, and loading or unloading a model are not kmctl
-commands: they need an endpoint on the Kubemoot side that checks who is asking, and kmctl
-does not publish raw messages to the bus or call a model server itself.
+A value that looks like a credential is refused for `memory add` and `memory edit`.
+
+Stopping, pausing, resuming and deleting a conversation go through the crew's discussion
+gateway, which checks who is asking; kmctl does not publish raw messages to the bus or
+purge a stream. The owner of a conversation may do all four. An operator needs the
+ClusterRole `kubemoot-conversation-controller` and a `--reason`, which the gateway audits.
+
+```bash
+kmctl conversation stop|pause|resume homelab-pilot 6733c361 -n crew-homelab-pilot
+kmctl conversation delete homelab-pilot 6733c361     # asks, then erases and prints what it removed
+kmctl conversation delete homelab-pilot 6733c361 --force --yes --reason "erasure request 88"
+```
+
+`delete` removes the conversation from every store that holds it and prints the gateway's
+report: what it removed per store, and what it cannot remove (logs and backups). A
+conversation with a running discussion is refused (409) unless you pass `--force`, which stops
+it first. If a store could not be cleared the report names it; repeat the delete. The gateway
+has no dry run, so `delete` has no `--dry-run`; `conversation export --report` shows what a
+conversation holds. Unloading a model is still not a kmctl command.
+
+## Taking conversations away
+
+```bash
+kmctl conversation export homelab-pilot 6733c361                    # ./homelab-pilot-conversation-<id>.zip
+kmctl conversation export homelab-pilot 6733c361 9f1e22a0 -o review.zip   # a zip of zips plus a manifest
+kmctl conversation export homelab-pilot 6733c361 9f1e22a0 --report  # the manifest only, no zip
+```
+
+The operator's report service builds the zip on request and keeps no copy. kmctl port-forwards
+to it (`kubemoot/kubemoot-operator-report`; `--operator-namespace` and `--operator-service`
+name another) with your kubeconfig token, and you need `get` on the Crew. After a download of
+several conversations, kmctl prints each ID the manifest lists as refused, expired or failed.
+The file is written whole or not at all and never overwrites an existing one.
 
 ## Who is asking
 

@@ -4,7 +4,7 @@ conversation 6733c361-aa0c-4bde-85c6-e143af23b251
 [   3.0s] pilot-proxmox          waking
 [   4.0s] pilot-proxmox          triaging on rig1-gpu0
 [   5.0s] pilot-metrics          triaging on rig2-gpu0
-[   6.0s] pilot-gpu              waiting for GPU capacity for qwen3:8b: gpu-busy
+[   6.0s] pilot-gpu              waiting for an accelerator for qwen3:8b: gpu-busy
 [   8.0s] pilot-proxmox          evaluating on rig1-gpu0 (triage 4.0s)
 [   9.0s] pilot-gpu              stood aside: gpu-busy
 [  10.0s] pilot-metrics          evaluating on rig2-gpu0 (triage 5.0s)
@@ -34,7 +34,7 @@ ANSWER:
 - Signals: 2 agree, 1 concern, 1 stand_aside
 - Accelerators: rig1-gpu0, rig2-gpu0
 - Models: qwen3:8b
-- Waited for GPU capacity: pilot-gpu
+- Waited for an accelerator: pilot-gpu
 - Workspace object from pilot-metrics (8.3 KB): `kmctl conversation workspace homelab-pilot crew-homelab-pilot/homelab-pilot/t-42/pilot-metrics/agree-1b2c -n crew-homelab-pilot`
 
 Next: kmctl conversation ask homelab-pilot "<next question>" -n crew-homelab-pilot --conversation-id 6733c361-aa0c-4bde-85c6-e143af23b251

@@ -116,6 +116,9 @@ func missingEndpoint(err error) bool {
 // as given without asking the gateway.
 var fullID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
+// IsFullID reports whether id is a whole conversation ID, which kmctl uses as given.
+func IsFullID(id string) bool { return fullID.MatchString(id) }
+
 // ResolveConversationID turns a conversation ID or a unique prefix of one into the
 // full ID, the way git resolves a short hash. A full UUID is used as given; anything
 // else is looked up in the crew's recent conversations, which list returns.

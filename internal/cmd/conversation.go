@@ -50,7 +50,8 @@ the crew's gateway lists conversations ("kmctl conversation list").`,
 		Args: cobra.NoArgs,
 	}
 	registerCallerFlags(cmd, f)
-	cmd.AddCommand(newAskCommand(f), newWatchCommand(f), newConversationListCommand(f), newConversationPlacementsCommand(f), newConversationWorkspaceCommand(f), newConversationArtifactAliasCommand(f))
+	cmd.AddCommand(newAskCommand(f), newWatchCommand(f), newConversationListCommand(f), newConversationPlacementsCommand(f), newConversationWorkspaceCommand(f), newConversationArtifactAliasCommand(f), newConversationExportCommand(f), newConversationDeleteCommand(f))
+	cmd.AddCommand(newConversationControlCommands(f)...)
 	return cmd
 }
 

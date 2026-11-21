@@ -109,7 +109,7 @@ func phaseText(e discussion.Event, c Change) string {
 	}
 	text := e.Status
 	if e.Status == "waiting" {
-		text = "waiting for GPU capacity"
+		text = "waiting for an accelerator"
 		if e.Model != "" {
 			text += " for " + e.Model
 		}
