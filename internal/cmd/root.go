@@ -53,9 +53,12 @@ kmctl is early. Commands are added as the tool grows.`,
 	root.AddCommand(newAgentCommand(f))
 	root.AddCommand(newPromptCommand(f))
 	root.AddCommand(newModelCommand(f))
-	root.AddCommand(newConversationCommand(f))
+	conversation := newConversationCommand(f)
+	addConversationReplay(conversation, f)
+	root.AddCommand(conversation)
 	root.AddCommand(newFitnessCommand(f))
 	root.AddCommand(newMemoryCommand(f))
+	root.AddCommand(newMCPCommand(f))
 	root.AddCommand(newApplyCommand(f))
 	root.AddCommand(newDeleteCommand(f))
 

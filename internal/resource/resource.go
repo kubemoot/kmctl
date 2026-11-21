@@ -149,6 +149,18 @@ var (
 		},
 		Details: RenderSuiteResults,
 	}
+	// MCPServerReport is what the MCP gateway learned about an MCP server: the
+	// verdict it computed and the one an administrator pinned.
+	MCPServerReport = Kind{
+		Plural:   "mcpserverreports",
+		Singular: "mcpserverreport",
+		Columns: []Column{
+			{"NAME", fieldMetadataName},
+			{"VERDICT", "status.verdict"},
+			{"PINNED", "spec.adminVerdict"},
+			{"AGE", fieldMetadataCreationTimestamp},
+		},
+	}
 	CrewFitness = Kind{
 		Plural:   "crewfitnesses",
 		Singular: "crewfitness",

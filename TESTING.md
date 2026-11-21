@@ -1,7 +1,7 @@
 # Testing strategy
 
 kmctl is a thin client over Kubemoot's Kubernetes CRDs (via the dynamic client, no
-compile-time dependency on the operator's CRD Go types; `memory export` imports only
+compile-time dependency on the operator's CRD Go types; the `memory` commands import only
 the operator's public crew-memory packages). The risk that comes with that
 freedom is **drift**: if Kubemoot's CRDs change, kmctl can break silently. The testing
 tiers below are designed around that risk and around one hard constraint:
@@ -18,6 +18,13 @@ Runs on every push/PR via `go test ./...` (and `make test`). Fast, fully isolate
 - CLI mechanics: command construction, flag/arg validation, help, completion presence.
 - **Mocked cluster paths**: the client-go **fake dynamic client** + a static RESTMapper
   exercise the real `resource.List`/`Get` and `deleteByKindName` code paths in memory.
+
+- **Commands that change state**: patches go to the fake dynamic client, which records
+  the patch and its options, so a test proves the exact spec change, that `--dry-run`
+  sends a server-side dry run and stores nothing, and that a Forbidden answer reads as
+  "you are not allowed to patch ...". The `memory` write commands run against an
+  in-memory bucket, and one test runs them against an in-process NATS server with
+  JetStream (`nats-server`, a test-only dependency), so the key-value calls are real.
 
 This is where coverage is maximized. Mocks let us test the cluster-calling code without a
 cluster. What mocks can NOT model: real CRD schema validation and server-side-apply

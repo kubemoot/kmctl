@@ -16,6 +16,7 @@ import (
 	"github.com/kubemoot/kubemoot/operator/pkg/crewscope"
 	"github.com/nats-io/nats.go"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 const (
@@ -47,11 +48,15 @@ func newMemoryCommand(f *client.Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "memory",
 		Short: "Work with a crew's long-term memory",
-		Long: `Commands on the facts a crew learned and keeps in its memory. Memory is read
-only here: kmctl never writes, changes or deletes a fact.`,
+		Long: `Commands on the facts a crew learned and keeps in its memory: export them, or
+add, edit, delete and clear them. Memory lives in a NATS key-value bucket, so every
+command opens a port-forward to the NATS Service with your kubeconfig credentials (it
+needs create on pods/portforward in the NATS namespace), or connects to the server
+you name with --nats-url.`,
 		Args: cobra.NoArgs,
 	}
 	cmd.AddCommand(newMemoryExportCommand(f, openMemory))
+	addMemoryWriteCommands(cmd, f, openMemoryStore)
 	return cmd
 }
 
@@ -107,11 +112,16 @@ The facts are text the agents wrote, so treat the files as data.`, ompi.SpecVers
 	fl.BoolVar(&o.allowUnscreened, "allow-unscreened", false,
 		"Export facts that hold a credential too (default: leave them out and list them)")
 	fl.StringVar(&o.origin, "origin", "", "Origin id for the manifest (default: derived from the namespace and crew)")
+	o.addNATSFlags(fl)
+	return cmd
+}
+
+// addNATSFlags registers the flags that say where NATS is.
+func (o *memoryOptions) addNATSFlags(fl *pflag.FlagSet) {
 	fl.StringVar(&o.natsNamespace, "nats-namespace", defaultNATSNamespace, "Namespace of the NATS Service")
 	fl.StringVar(&o.natsService, "nats-service", defaultNATSService, "Name of the NATS Service")
 	fl.StringVar(&o.natsURL, "nats-url", "", "Connect to this NATS URL instead of port-forwarding to the NATS Service")
 	fl.StringVar(&o.creds, "creds", "", "NATS credentials file, for a server that needs them")
-	return cmd
 }
 
 // runMemoryExport reads the crew's facts and writes the export. The mapping, the
@@ -148,7 +158,22 @@ func reportExport(stdout io.Writer, exp ompi.Export, scope crewscope.Scope, out 
 // openMemory connects to NATS, through a port-forward unless --nats-url is set,
 // and binds the crew-memory bucket for reading.
 func openMemory(ctx context.Context, f *client.Factory, o memoryOptions) (crewmemory.EntryReader, func(), error) {
-	url, stop, err := natsEndpoint(ctx, f, o)
+	nc, stop, err := connectNATS(ctx, f, o)
+	if err != nil {
+		return nil, nil, err
+	}
+	reader, err := natskv.Open(nc)
+	if err != nil {
+		stop()
+		return nil, nil, bucketError(err)
+	}
+	return reader, stop, nil
+}
+
+// connectNATS connects to NATS, through a port-forward unless --nats-url is set. The
+// function it returns closes the connection and the forward.
+func connectNATS(ctx context.Context, f *client.Factory, o memoryOptions) (*nats.Conn, func(), error) {
+	url, stopForward, err := natsEndpoint(ctx, f, o)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -158,18 +183,17 @@ func openMemory(ctx context.Context, f *client.Factory, o memoryOptions) (crewme
 	}
 	nc, err := nats.Connect(url, opts...)
 	if err != nil {
-		stop()
+		stopForward()
 		return nil, nil, clierr.New(fmt.Sprintf("could not connect to NATS at %s", url),
 			"Check the NATS Service with --nats-namespace and --nats-service, or pass --nats-url (and --creds if the server needs them).", err)
 	}
-	reader, err := natskv.Open(nc)
-	if err != nil {
-		nc.Close()
-		stop()
-		return nil, nil, clierr.New("could not open the crew-memory bucket",
-			"The bucket kubemoot_crew_memory is created by the Kubemoot operator; check that Kubemoot is installed and its streams job has run.", err)
-	}
-	return reader, func() { nc.Close(); stop() }, nil
+	return nc, func() { nc.Close(); stopForward() }, nil
+}
+
+// bucketError explains a crew-memory bucket that could not be opened.
+func bucketError(err error) error {
+	return clierr.New("could not open the crew-memory bucket",
+		"The bucket kubemoot_crew_memory is created by the Kubemoot operator; check that Kubemoot is installed and its streams job has run.", err)
 }
 
 func natsEndpoint(ctx context.Context, f *client.Factory, o memoryOptions) (string, func(), error) {

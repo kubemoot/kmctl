@@ -30,6 +30,7 @@ func newFitnessCommand(f *client.Factory) *cobra.Command {
 	cmd.AddCommand(newScenariosCommand(f))
 	cmd.AddCommand(newRunCommand(f))
 	cmd.AddCommand(newDownloadCommand(f))
+	addSuiteControlCommands(cmd, f, f.Dynamic)
 	return cmd
 }
 

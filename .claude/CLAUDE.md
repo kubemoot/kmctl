@@ -23,7 +23,8 @@ ASSERT use Cobra + genericclioptions; global flags --kubeconfig, --context, -n/-
 ASSERT every command has a short + long description and runnable Examples in --help
 ASSERT shell completion (bash/zsh/fish/powershell) stays enabled (Cobra built-in completion command)
 ASSERT live discussion/fitness streaming is over HTTP/SSE using the active kubectl context + credentials - NEVER client-side NATS
-ASSERT the one exception is `memory export`: crew memory lives only in a NATS key-value bucket, so it port-forwards to the NATS Service with the kubeconfig credentials and reads Keys and Get only; it imports the operator's public operator/pkg/crewmemory packages (the one OMPI mapping) and never copies them
+ASSERT the one exception is the `memory` commands: crew memory lives only in a NATS key-value bucket, so they port-forward to the NATS Service with the kubeconfig credentials; `memory export` reads Keys and Get only and imports the operator's public operator/pkg/crewmemory packages (the one OMPI mapping) and never copies them; add, edit, delete and clear write only that bucket, through internal/memorywrite
+NEVER publish a message on the discussion subjects or purge a discussion stream from kmctl: stopping, pausing and deleting a discussion, and unloading a model, need an endpoint on the Kubemoot side that checks the caller; kmctl asks through the gateway or does not do it
 ASSERT loosely bound - no homelab topology baked in; discover model servers/models/namespaces from the cluster at runtime
 
 # Quality and tests
