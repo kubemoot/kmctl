@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"text/tabwriter"
 
@@ -197,23 +196,11 @@ func runFetchWorkspace(cmd *cobra.Command, f *client.Factory, file, crew, key st
 }
 
 // writeWorkspaceObject copies the workspace object to file, or to stdout when file is empty. A file
-// that could not be written whole is removed.
+// that could not be written whole is never left, and the file it would replace stays as it was.
 func writeWorkspaceObject(stdout io.Writer, file string, body io.Reader) error {
 	if file == "" {
 		_, err := io.Copy(stdout, body)
 		return err
 	}
-	out, err := os.Create(file)
-	if err != nil {
-		return err
-	}
-	_, err = io.Copy(out, body)
-	if cerr := out.Close(); err == nil {
-		err = cerr
-	}
-	if err != nil {
-		// A partial file would look like the whole object.
-		_ = os.Remove(file)
-	}
-	return err
+	return writeDownload(file, body, downloadOptions{overwrite: true, mode: 0o644})
 }
