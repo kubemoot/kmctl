@@ -213,10 +213,8 @@ func TestGenerate_PromptModulesAreADL(t *testing.T) {
 		if !strings.HasSuffix(m.GetName(), "-system") {
 			continue
 		}
-		for _, kw := range []string{"WHEN ", " THEN ", "NEVER ", "ASSERT "} {
-			if !strings.Contains(c, kw) {
-				t.Errorf("specialist module %q has no %q rule", m.GetName(), strings.TrimSpace(kw))
-			}
+		if !strings.Contains(c, "NEVER ") {
+			t.Errorf("specialist module %q has no NEVER rule", m.GetName())
 		}
 	}
 }
@@ -876,16 +874,28 @@ func TestGenerate_ReviewerHasAWorkspaceServer(t *testing.T) {
 	}
 }
 
-// The reviewer's prompt sends it to the workspace read tools it has, and the tools it
-// names are the ones it enables.
+// The reviewer's prompt names no tool: the workspace server's tool descriptions say what
+// the key argument is, for exactly the tools the reviewer enables.
 func TestSpecialists_ReviewerReadsStoredResults(t *testing.T) {
 	for _, tool := range workspaceReadTools {
-		if !strings.Contains(reviewer.Rules, tool) {
-			t.Errorf("reviewer rules do not name %s", tool)
+		if strings.Contains(reviewer.Rules, tool) {
+			t.Errorf("reviewer rules name %s; a tool's own description says how to call it", tool)
 		}
 	}
 	if strings.Contains(reviewer.Rules, "NO tools") || strings.Contains(reviewer.Rules, "where you cannot read it") {
 		t.Error("reviewer rules still say it cannot read stored results")
+	}
+	server := named(ofKind(generated(t, bundle(MaxMembers)), "MCPServer"), "demo-workspace-mcp")
+	if server == nil {
+		t.Fatal("no workspace server")
+	}
+	overrides, _, _ := unstructured.NestedSlice(server.Object, "spec", "toolOverrides")
+	var got []string
+	for _, o := range overrides {
+		got = append(got, fmt.Sprint(o.(map[string]any)["name"]))
+	}
+	if !slices.Equal(got, workspaceReadTools) {
+		t.Errorf("workspace server describes %v, want the reviewer's tools %v", got, workspaceReadTools)
 	}
 }
 

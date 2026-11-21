@@ -145,14 +145,14 @@ spec:
 {{- if .Values.access.clusterWide }}
     ASSERT this crew reads every namespace in the cluster, read-only and without Secrets; it is installed in the namespace [[ .NS ]]
     WHEN a question says "this namespace" or "here" THEN it means [[ .NS ]]
-    WHEN a question names a namespace THEN pass that namespace to every tool that takes one
-    WHEN a question names no namespace THEN read every namespace: leave the namespace out of resources_list and events_list
+    WHEN a question names a namespace THEN read that namespace
+    WHEN a question names no namespace THEN read every namespace
     ALWAYS report the namespace of every resource
 {{- else }}
 [[- end ]]
     ASSERT this crew reads ONE Kubernetes namespace, its own: [[ .NS ]]
     WHEN a question says "this namespace" or "here", or names no namespace THEN it means [[ .NS ]]
-    ALWAYS pass namespace "[[ .NS ]]" to every tool that takes a namespace
+    ALWAYS read only the namespace "[[ .NS ]]"
     WHEN a question names another namespace AND the tool reports access denied THEN say this crew can read only its own namespace; NEVER guess what is there
 [[- if .Chart ]]
 {{- end }}
@@ -208,7 +208,7 @@ spec:
     WHEN a request asks to change the cluster (delete, restart, scale, patch, create) THEN select the specialist for the named resource so the answer can report its current state; the crew does not make the change
     WHEN the question is general knowledge that needs no live data THEN select no specialists and put the complete, user-facing answer in the brief; it is returned to the user as-is
     WHEN the question is about this crew itself (what it can do) THEN select no specialists and list the crew's domains from the capability catalog in the brief
-    ALWAYS write the brief as added guidance: the resources to read and the tools that read them
+    ALWAYS write the brief as added guidance: the resources to read
     NEVER tell a specialist not to use a tool
 ---
 apiVersion: kubemoot.ai/v1alpha1
@@ -272,8 +272,7 @@ spec:
 [[- end ]]
 
     DEFINE COMPONENT health
-    ASSERT a resource is unhealthy NOW only when its current state says so: a pod not Running, a container not ready (READY 0/1), a Deployment short of replicas, a Service with no ready endpoints
-    ASSERT an event is a record of the past, not a current state
+    ASSERT a resource is unhealthy NOW only when its current state says so; an event is a record of the past
     WHEN a Warning event names a pod AND the gathered data shows that pod Running with all containers ready THEN the warning has cleared: report it as past (for example a readiness probe that failed while the container started), and NEVER call the pod unhealthy
     WHEN asked whether anything is unhealthy AND every current state is healthy THEN answer "No", then list any cleared warnings as history
 [[- if .HasReviewer ]]
@@ -319,6 +318,22 @@ spec:
   securityMode: relaxed
   command: ["/app/kubernetes-mcp-server", "--read-only"]
   capabilities: [kubernetes, pods, resources, events]
+  # How to call a tool belongs in the tool's own description, not in an agent's prompt.
+  # These add what the server's descriptions leave out; the gateway serves them to the
+  # agents with the tool list. The prompts keep behavior only.
+  toolOverrides:
+    - name: resources_list
+      parameters:
+        namespace:
+          description: "Namespace to list from. Omit it to list every namespace this server can read."
+    - name: resources_get
+      parameters:
+        namespace:
+          description: "Namespace of the resource. Pass it for a namespaced kind; when omitted, the server uses its own namespace, not the one you mean."
+    - name: pods_log
+      parameters:
+        tail:
+          description: "Number of lines to read from the end of the log, 100 by default. Ask for only as many as the question needs, for example 20."
   resources:
     requests:
       cpu: 50m
@@ -354,6 +369,20 @@ spec:
     - name: WORKSPACE_BUCKET
       value: "kubemoot_workspace"
   capabilities: [data-access, data-analysis]
+  # What the key argument is, in the tool's own description; the reviewer's prompt names no tool.
+  toolOverrides:
+    - name: workspace_head
+      parameters:
+        key:
+          description: "The key of a stored result, exactly as the [CALL key=...] line shows it."
+    - name: workspace_tail
+      parameters:
+        key:
+          description: "The key of a stored result, exactly as the [CALL key=...] line shows it."
+    - name: workspace_grep
+      parameters:
+        key:
+          description: "The key of a stored result, exactly as the [CALL key=...] line shows it."
   securityContext:
     readOnlyRootFilesystem: true
     allowPrivilegeEscalation: false
@@ -767,7 +796,7 @@ same question: the answer now ends with that line.
 - ` + "`templates/crew.yaml`" + `: the Crew and its CrewSchedulingPolicy.
 - ` + "`templates/agents.yaml`" + `: the coordinator and the specialists. Agents declare capabilities,
   never a model.
-- ` + "`templates/promptmodules.yaml`" + `: every prompt, in ADL.
+- ` + "`templates/promptmodules.yaml`" + `: every prompt, in ADL. The prompts hold behavior only (answer from tool output, report failures, stay read-only); how to call a tool is in its description (toolOverrides in tools.yaml).
 - ` + "`templates/tools.yaml`" + `: the Kubernetes MCP server, read-only,[[ if .HasReviewer ]] the workspace server the reviewer reads stored results with,[[ end ]] and the MCP gateway the agents reach [[ if .HasReviewer ]]them[[ else ]]it[[ end ]] through.
 - ` + "`templates/rbac.yaml`" + `: the read-only Role the tool server runs with. Set ` + mdClusterWide + ` in
   ` + "`values.yaml`" + ` to let it read every namespace.
@@ -779,7 +808,7 @@ same question: the answer now ends with that line.
 - ` + "`crew.yaml`" + `: the Crew and its CrewSchedulingPolicy.
 - ` + "`agents.yaml`" + `: the coordinator and the specialists. Agents declare capabilities, never a
   model.
-- ` + "`promptmodules.yaml`" + `: every prompt, in ADL.
+- ` + "`promptmodules.yaml`" + `: every prompt, in ADL. The prompts hold behavior only (answer from tool output, report failures, stay read-only); how to call a tool is in its description (toolOverrides in tools.yaml).
 - ` + "`tools.yaml`" + `: the Kubernetes MCP server, read-only,[[ if .HasReviewer ]] the workspace server the reviewer reads stored results with,[[ end ]] and the MCP gateway the agents reach [[ if .HasReviewer ]]them[[ else ]]it[[ end ]] through.
 - ` + "`access/rbac.yaml`" + `: the read-only Role the tool server runs with (apply it with kubectl).
 - ` + "`access/fitness-scenarios.yaml`" + `: the fitness scenarios as a ConfigMap, so the deployed crew carries

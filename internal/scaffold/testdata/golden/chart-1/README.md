@@ -59,7 +59,7 @@ same question: the answer now ends with that line.
 - `templates/crew.yaml`: the Crew and its CrewSchedulingPolicy.
 - `templates/agents.yaml`: the coordinator and the specialists. Agents declare capabilities,
   never a model.
-- `templates/promptmodules.yaml`: every prompt, in ADL.
+- `templates/promptmodules.yaml`: every prompt, in ADL. The prompts hold behavior only (answer from tool output, report failures, stay read-only); how to call a tool is in its description (toolOverrides in tools.yaml).
 - `templates/tools.yaml`: the Kubernetes MCP server, read-only, and the MCP gateway the agents reach it through.
 - `templates/rbac.yaml`: the read-only Role the tool server runs with. Set `access.clusterWide: true` in
   `values.yaml` to let it read every namespace.
