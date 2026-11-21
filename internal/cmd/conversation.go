@@ -33,12 +33,37 @@ credentials; that works under any network policy.
 Pass the crew's namespace with -n (the crew and its <crew>-discussion service
 live there, e.g. -n crew-homelab-pilot).
 
+Your kubeconfig's bearer token goes with every request. A crew that sets
+spec.discussion.access uses it to know who is asking and keeps each conversation
+for the caller that started it; a crew that sets nothing stays open and ignores
+it. kmctl never prints the token.
+
+A kubeconfig that signs in with a client certificate has no bearer token. Name a
+ServiceAccount you may create tokens for with --token-service-account
+NAMESPACE/NAME and kmctl mints a ten-minute token for it (the Kubernetes audit log
+records who asked). An operator reads another caller's conversations with the
+get or list permission on crews/conversations and a --reason, which the gateway
+audits.
+
 A conversation ID can be shortened to any unique prefix, as with git hashes, when
 the crew's gateway lists conversations ("kmctl conversation list").`,
 		Args: cobra.NoArgs,
 	}
+	registerCallerFlags(cmd, f)
 	cmd.AddCommand(newAskCommand(f), newWatchCommand(f), newConversationListCommand(f), newConversationPlacementsCommand(f), newConversationWorkspaceCommand(f), newConversationArtifactAliasCommand(f))
 	return cmd
+}
+
+// registerCallerFlags adds the flags that say who kmctl is at the gateway, to every
+// conversation command.
+func registerCallerFlags(cmd *cobra.Command, f *client.Factory) {
+	pf := cmd.PersistentFlags()
+	pf.StringVar(&f.Caller.ServiceAccount, "token-service-account", "",
+		"NAMESPACE/NAME of a ServiceAccount to mint a ten-minute token for, when your kubeconfig has no bearer token (client certificate)")
+	pf.StringSliceVar(&f.Caller.Audiences, "token-audience", nil,
+		"Audience of the minted token, when the crew declares spec.discussion.access.tokenAudiences")
+	pf.StringVar(&f.Caller.Reason, "reason", "",
+		"Why you read another caller's conversation (sent as "+client.HeaderAccessReason+", audited; 1 to 200 characters)")
 }
 
 func newAskCommand(f *client.Factory) *cobra.Command {

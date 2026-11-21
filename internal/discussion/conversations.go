@@ -33,15 +33,29 @@ type ConversationInfo struct {
 	StartedAt      string `json:"startedAt,omitempty"`
 	LastTurnAt     string `json:"lastTurnAt,omitempty"`
 	Turns          int    `json:"turns,omitempty"`
+	// Owner is the pseudonymous id of the caller that started the conversation; the
+	// gateway names it only to an operator listing every caller's conversations.
+	Owner string `json:"owner,omitempty"`
 }
 
-// List returns the crew's recent conversations, newest first.
+// List returns the crew's recent conversations, newest first: the caller's own on a
+// crew that verifies callers.
 func List(ctx context.Context, rc rest.Interface, crew string, limit int) ([]ConversationInfo, error) {
-	raw, err := rc.Get().
+	return ListAs(ctx, rc, crew, limit, false)
+}
+
+// ListAs is List; with all it asks for every caller's conversations, which the gateway
+// allows an operator with a reason. A 404 then means refused, not that the gateway
+// cannot list, so it is returned as the gateway's status.
+func ListAs(ctx context.Context, rc rest.Interface, crew string, limit int, all bool) ([]ConversationInfo, error) {
+	req := rc.Get().
 		Suffix("api", "v1", "discussions", crew).
-		Param("limit", strconv.Itoa(limit)).
-		DoRaw(ctx)
-	if missingEndpoint(err) {
+		Param("limit", strconv.Itoa(limit))
+	if all {
+		req = req.Param("all", "true")
+	}
+	raw, err := req.DoRaw(ctx)
+	if !all && missingEndpoint(err) {
 		return nil, ErrListUnsupported
 	}
 	if err != nil {

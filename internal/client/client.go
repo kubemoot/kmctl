@@ -29,6 +29,9 @@ type Factory struct {
 	// OpenService, when set, replaces the port-forward ServiceClient opens; tests
 	// point it at a local server.
 	OpenService BaseOpener
+	// Caller is who the commands that talk to a crew's gateway are there; the
+	// conversation command's flags set it.
+	Caller Caller
 }
 
 // NewFactory returns a Factory backed by the standard kubectl config flags
@@ -123,6 +126,12 @@ type BaseOpener func(ctx context.Context, namespace, service, port string) (stri
 // credentials to the Service; request paths are relative to the Service's root.
 // The returned function closes the forward; the forward also ends with ctx.
 func (f *Factory) ServiceClient(ctx context.Context, namespace, service, port string) (rest.Interface, func(), error) {
+	return f.serviceClient(ctx, namespace, service, port, nil)
+}
+
+// serviceClient is ServiceClient with credentials: a non-nil auth sets them on the
+// client's configuration once the forward is open.
+func (f *Factory) serviceClient(ctx context.Context, namespace, service, port string, auth func(context.Context, *rest.Config) error) (rest.Interface, func(), error) {
 	open := f.OpenService
 	if open == nil {
 		open = f.forwardService
@@ -131,10 +140,17 @@ func (f *Factory) ServiceClient(ctx context.Context, namespace, service, port st
 	if err != nil {
 		return nil, nil, err
 	}
-	rc, err := rest.UnversionedRESTClientFor(&rest.Config{
+	cfg := &rest.Config{
 		Host:          base,
 		ContentConfig: rest.ContentConfig{NegotiatedSerializer: scheme.Codecs.WithoutConversion()},
-	})
+	}
+	if auth != nil {
+		if err = auth(ctx, cfg); err != nil {
+			stop()
+			return nil, nil, err
+		}
+	}
+	rc, err := rest.UnversionedRESTClientFor(cfg)
 	if err != nil {
 		stop()
 		return nil, nil, err

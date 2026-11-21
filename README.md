@@ -128,6 +128,40 @@ a discussion, stopping or pausing one, and loading or unloading a model are not 
 commands: they need an endpoint on the Kubemoot side that checks who is asking, and kmctl
 does not publish raw messages to the bus or call a model server itself.
 
+## Who is asking
+
+`kmctl conversation` reaches a crew's discussion gateway through a port-forward to its pod
+and sends your kubeconfig's bearer token with each request. A crew that sets
+`spec.discussion.access` uses the token to know who you are: each conversation belongs to
+the caller that started it, and `conversation list` shows yours. A crew that sets nothing
+stays open and ignores the token. kmctl never prints or logs the token.
+
+**Operators.** Reading another caller's conversation needs `get` (to read one) or `list`
+(to list all) on the crew's virtual `crews/conversations` resource in the `kubemoot.ai`
+group, which the Kubemoot chart's ClusterRole `kubemoot-conversation-reader` grants, and a
+reason of 1 to 200 characters, which the gateway audits:
+
+```bash
+kmctl conversation list homelab-pilot --all --reason "weekly review of unanswered questions"
+kmctl conversation watch homelab-pilot 6733c361-aa0c-4bde-85c6-e143af23b251 --reason "ticket 1234: wrong answer"
+```
+
+Without the permission, another caller's conversation answers 404, the same as one that does
+not exist.
+
+**Client-certificate kubeconfigs** (Talos, kind, k3s) carry no bearer token. When the crew
+requires one, name a ServiceAccount you may `create` on `serviceaccounts/token`:
+
+```bash
+kmctl conversation ask homelab-pilot "hello" --token-service-account ops/crew-operator
+```
+
+kmctl requests a ten-minute token for that ServiceAccount (TokenRequest) and sends it. The
+crew sees the ServiceAccount as the caller, and the Kubernetes audit log records who
+requested the token. When the crew declares `tokenAudiences`, add `--token-audience`.
+Without `--token-service-account`, kmctl sends no token, and a crew that requires one
+answers 401 with a message that names this flag.
+
 ## Documentation
 
 The [kmctl reference](https://kubemoot.org/docs/reference/kmctl/) describes every command,
