@@ -29,12 +29,12 @@ type Agent struct {
 	Signal  string
 	Summary string
 	// Reason is why the agent stood aside; WaitReason is why it last waited for
-	// GPU capacity. They are kept apart because the stream gives them separately.
+	// accelerator capacity. They are kept apart because the stream gives them separately.
 	Reason     string
 	WaitReason string
 	Artifact   *Artifact
 	StoodAside bool
-	// Waited reports whether the agent waited for GPU capacity at least once.
+	// Waited reports whether the agent waited for an accelerator at least once.
 	Waited bool
 	// Triage and Evaluation are how long the agent spent in each step; zero when
 	// the stream did not show both ends of the step.

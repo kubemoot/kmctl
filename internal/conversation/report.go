@@ -169,7 +169,7 @@ func (s Summary) Markdown() string {
 	optional := []string{
 		s.crewTimeLine(), s.subcommitteeLine(), s.agentsLine(), s.signalsLine(), s.tokensLine(),
 		joinLine("Accelerators", s.Accelerators), joinLine("Models", s.Models),
-		joinLine("Waited for GPU capacity", s.WaitedForGPU), joinLine("Tool errors", s.ToolErrors),
+		joinLine("Waited for an accelerator", s.WaitedForGPU), joinLine("Tool errors", s.ToolErrors),
 		joinLine("Errors", s.Errors),
 	}
 	optional = append(optional, s.workspaceLines()...)

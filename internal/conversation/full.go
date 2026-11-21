@@ -146,7 +146,7 @@ func (m liveModel) row(a *Agent) string {
 }
 
 // rowNote is the agent's summary or stand-aside reason once it has signalled,
-// or why it waits while it waits for GPU capacity.
+// or why it waits while it waits for an accelerator.
 func rowNote(a *Agent) string {
 	if a.Done() {
 		return firstNonEmpty(shownSummary(a), a.Reason)
