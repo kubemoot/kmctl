@@ -103,6 +103,31 @@ same note before it asks a crew that is waiting, and asks anyway. Against a Kube
 not report `CapacityAvailable` (0.95), `CAPACITY` shows `<none>` and a crew can answer when it
 is reconciled and its phase is `Ready`.
 
+## Changing things
+
+The Kubemoot dashboard only reads. A change is made with your own credentials, and kmctl
+makes the ones the dashboard used to. Each command that changes state takes `--dry-run`,
+and each one that cannot be undone asks first unless you pass `--yes`.
+
+| To do this | Run | It writes through |
+|------------|-----|-------------------|
+| Pause, resume or stop a fitness suite | `kmctl fitness pause\|resume\|stop SUITE` | a merge patch of the suite's spec (you need `patch` on `crewfitnesssuites`) |
+| Pin or remove an MCP server report verdict | `kmctl mcp report pin REPORT --verdict use\|caution\|avoid`, `kmctl mcp report unpin REPORT` | a merge patch of the report's spec (you need `patch` on `mcpserverreports`) |
+| Add, change, delete or clear crew memory | `kmctl memory add\|edit\|delete\|clear CREW ...` | the crew-memory NATS bucket, through a port-forward to the NATS Service (you need `create` on `pods/portforward` there) or `--nats-url` |
+| Ask a conversation's first question again | `kmctl conversation replay CREW ID` | the crew's discussion gateway, like `conversation ask` |
+| Remove a crew or a suite run | `kmctl delete crew NAME`, `kmctl delete crewfitnesssuite NAME` | a delete of the resource; the operator cleans up |
+
+```bash
+kmctl fitness stop demo-starter --dry-run            # the API server checks it and your access
+kmctl memory add demo hardware gpu0 "RTX 5090" -n crew-demo
+kmctl memory clear demo -n crew-demo                 # asks, then deletes every fact of the crew
+```
+
+A value that looks like a credential is refused for `memory add` and `memory edit`. Deleting
+a discussion, stopping or pausing one, and loading or unloading a model are not kmctl
+commands: they need an endpoint on the Kubemoot side that checks who is asking, and kmctl
+does not publish raw messages to the bus or call a model server itself.
+
 ## Documentation
 
 The [kmctl reference](https://kubemoot.org/docs/reference/kmctl/) describes every command,
