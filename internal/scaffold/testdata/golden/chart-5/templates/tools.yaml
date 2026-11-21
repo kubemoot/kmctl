@@ -19,22 +19,6 @@ spec:
   securityMode: relaxed
   command: ["/app/kubernetes-mcp-server", "--read-only"]
   capabilities: [kubernetes, pods, resources, events]
-  # How to call a tool belongs in the tool's own description, not in an agent's prompt.
-  # These add what the server's descriptions leave out; the gateway serves them to the
-  # agents with the tool list. The prompts keep behavior only.
-  toolOverrides:
-    - name: resources_list
-      parameters:
-        namespace:
-          description: "Namespace to list from. Omit it to list every namespace this server can read."
-    - name: resources_get
-      parameters:
-        namespace:
-          description: "Namespace of the resource. Pass it for a namespaced kind; when omitted, the server uses its own namespace, not the one you mean."
-    - name: pods_log
-      parameters:
-        tail:
-          description: "Number of lines to read from the end of the log, 100 by default. Ask for only as many as the question needs, for example 20."
   resources:
     requests:
       cpu: 50m
@@ -69,20 +53,6 @@ spec:
     - name: WORKSPACE_BUCKET
       value: "kubemoot_workspace"
   capabilities: [data-access, data-analysis]
-  # What the key argument is, in the tool's own description; the reviewer's prompt names no tool.
-  toolOverrides:
-    - name: workspace_head
-      parameters:
-        key:
-          description: "The key of a stored result, exactly as the [CALL key=...] line shows it."
-    - name: workspace_tail
-      parameters:
-        key:
-          description: "The key of a stored result, exactly as the [CALL key=...] line shows it."
-    - name: workspace_grep
-      parameters:
-        key:
-          description: "The key of a stored result, exactly as the [CALL key=...] line shows it."
   securityContext:
     readOnlyRootFilesystem: true
     allowPrivilegeEscalation: false
