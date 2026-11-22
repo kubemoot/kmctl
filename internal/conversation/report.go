@@ -2,6 +2,7 @@ package conversation
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -118,7 +119,7 @@ func (s *Summary) addAgent(a *Agent) {
 	s.Participants = append(s.Participants, a.Name)
 	s.StoodAside = appendIf(s.StoodAside, a.StoodAside, a.Name)
 	s.WaitedForAccelerator = appendIf(s.WaitedForAccelerator, a.Waited, a.Name)
-	s.WaitedForGPU = s.WaitedForAccelerator
+	s.WaitedForGPU = slices.Clone(s.WaitedForAccelerator)
 	s.ToolErrors = appendIf(s.ToolErrors, a.ToolError != "", a.Name+": "+a.ToolError)
 	s.InputTokens += a.InputTokens
 	s.OutputTokens += a.OutputTokens
