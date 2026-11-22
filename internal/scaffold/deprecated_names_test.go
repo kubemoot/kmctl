@@ -86,3 +86,25 @@ func TestCurrentNamesAreNotFlagged(t *testing.T) {
 		t.Errorf("current names flagged: %v", got)
 	}
 }
+
+// TestFindDeprecatedFlagsTheOldAcceleratorNames shows the published list carries the accelerator
+// renames: a Model that sets vramMib, or a manifest that names the gpu-busy reason, is reported,
+// and the current names are not.
+func TestFindDeprecatedFlagsTheOldAcceleratorNames(t *testing.T) {
+	files := map[string]string{
+		"templates/model.yaml":  "spec:\n  model: qwen3:14b\n  vramMib: 11000",
+		"templates/reason.yaml": "reason: gpu-busy",
+		"templates/ok.yaml":     "spec:\n  acceleratorMemoryMiB: 11000\nreason: accelerator-busy",
+	}
+	got := findDeprecated(files, deprecatedNames())
+	for _, want := range []string{"templates/model.yaml: vramMib", "templates/reason.yaml: gpu-busy"} {
+		if !slices.Contains(got, want) {
+			t.Errorf("findDeprecated missed %q; found %v", want, got)
+		}
+	}
+	for _, hit := range got {
+		if strings.HasPrefix(hit, "templates/ok.yaml") {
+			t.Errorf("a file with only current names was flagged: %s", hit)
+		}
+	}
+}

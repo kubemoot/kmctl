@@ -216,6 +216,16 @@ together with Kubemoot, then:
 kmctl asks the gateway's workspace route first and falls back to the old route when the gateway
 does not have it, so a newer kmctl works against an older Kubemoot.
 
+## Migrating to the accelerator names
+
+Kubemoot names the accelerator, not the GPU. Update kmctl together with Kubemoot, then read
+`accelerator` (per event, per activity and per agent) and `waitedForAccelerator` (in the summary)
+from `kmctl conversation -o json`. The old `gpu` and `waitedForGpu` keys carry the same content
+for one release and are removed in the next. kmctl reads `accelerator` from a gateway and falls
+back to `gpu` from an older one. The `kmctl create` scaffold check flags `vramMib` (now
+`acceleratorMemoryMiB`) and the `gpu-busy` reason (now `accelerator-busy`) through Kubemoot's
+published deprecated names.
+
 ## Contributing
 
 To build kmctl from source, run its tests, or send a change, see

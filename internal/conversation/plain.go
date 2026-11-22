@@ -89,8 +89,8 @@ func busyText(agents []discussion.Activity) string {
 		part := a.Agent + " " + doing
 		if a.Model != "" && a.Doing == "waiting_for_accelerator" {
 			part += " for " + a.Model
-		} else if a.GPU != "" {
-			part += " on " + a.GPU
+		} else if name := a.AcceleratorName(); name != "" {
+			part += " on " + name
 		}
 		parts = append(parts, part)
 	}
@@ -115,8 +115,8 @@ func phaseText(e discussion.Event, c Change) string {
 		}
 		return withReason(text, e.Reason)
 	}
-	if e.GPU != "" {
-		text += " on " + e.GPU
+	if name := e.AcceleratorName(); name != "" {
+		text += " on " + name
 	}
 	return text + durations(c)
 }

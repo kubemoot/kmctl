@@ -22,12 +22,12 @@ const (
 
 // Agent is what the stream has shown about one agent so far.
 type Agent struct {
-	Name    string
-	Step    string
-	GPU     string
-	Model   string
-	Signal  string
-	Summary string
+	Name        string
+	Step        string
+	Accelerator string
+	Model       string
+	Signal      string
+	Summary     string
 	// Reason is why the agent stood aside; WaitReason is why it last waited for
 	// accelerator capacity. They are kept apart because the stream gives them separately.
 	Reason     string
@@ -181,7 +181,7 @@ var phaseSteps = map[string]func(*Tracker, *Agent, discussion.Event, time.Time) 
 
 func (t *Tracker) applyPhase(e discussion.Event, at time.Time) Change {
 	a := t.agent(e.Agent)
-	setIfPresent(&a.GPU, e.GPU)
+	setIfPresent(&a.Accelerator, e.AcceleratorName())
 	if e.StoodAside {
 		a.StoodAside, a.Reason = true, e.Reason
 		a.addSignalMeta(e.SignalMeta)
@@ -225,7 +225,7 @@ func (t *Tracker) applyActivity(e discussion.Event, _ time.Time) Change {
 	t.Busy = e.Agents
 	for _, b := range e.Agents {
 		if a, ok := t.byName[b.Agent]; ok {
-			setIfPresent(&a.GPU, b.GPU)
+			setIfPresent(&a.Accelerator, b.AcceleratorName())
 			setIfPresent(&a.Model, b.Model)
 		}
 	}
@@ -234,7 +234,7 @@ func (t *Tracker) applyActivity(e discussion.Event, _ time.Time) Change {
 
 func (t *Tracker) applyFinding(e discussion.Event, at time.Time) Change {
 	a := t.agent(e.Agent)
-	setIfPresent(&a.GPU, e.GPU)
+	setIfPresent(&a.Accelerator, e.AcceleratorName())
 	text := e.Content
 	if text == "" {
 		text = e.Summary

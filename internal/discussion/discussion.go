@@ -25,9 +25,11 @@ func ServiceName(crew string) string { return crew + "-discussion" }
 
 // Event mirrors the gateway's SSE event shape.
 type Event struct {
-	Type       string `json:"type"`
-	Agent      string `json:"agent,omitempty"`
-	Status     string `json:"status,omitempty"`
+	Type        string `json:"type"`
+	Agent       string `json:"agent,omitempty"`
+	Status      string `json:"status,omitempty"`
+	Accelerator string `json:"accelerator,omitempty"`
+	// GPU is the deprecated old name of Accelerator; a gateway older than this release sends only it.
 	GPU        string `json:"gpu,omitempty"`
 	Signal     string `json:"signal,omitempty"`
 	Summary    string `json:"summary,omitempty"`
@@ -99,11 +101,38 @@ type SubcommitteeMember struct {
 // triaging, evaluating, waiting_for_accelerator, reasoning, waiting_for_agents,
 // synthesizing), where, and since when.
 type Activity struct {
-	Agent string `json:"agent"`
-	Doing string `json:"doing"`
+	Agent       string `json:"agent"`
+	Doing       string `json:"doing"`
+	Accelerator string `json:"accelerator,omitempty"`
+	// GPU is the deprecated old name of Accelerator; a gateway older than this release sends only it.
 	GPU   string `json:"gpu,omitempty"`
 	Model string `json:"model,omitempty"`
 	Since string `json:"since,omitempty"`
+}
+
+// AcceleratorName is the accelerator the event names: Accelerator, else the deprecated GPU.
+func (e Event) AcceleratorName() string { return firstSet(e.Accelerator, e.GPU) }
+
+// AcceleratorName is the accelerator the activity names: Accelerator, else the deprecated GPU.
+func (a Activity) AcceleratorName() string { return firstSet(a.Accelerator, a.GPU) }
+
+// fillAcceleratorNames sets Accelerator and the deprecated GPU of the event and its agents to
+// the same name, so a reader of either field, and the JSON kmctl prints, see the name whichever
+// one the gateway sent. Remove it with the deprecated GPU fields in the release after this one.
+func (e *Event) fillAcceleratorNames() {
+	e.Accelerator = e.AcceleratorName()
+	e.GPU = e.Accelerator
+	for i := range e.Agents {
+		e.Agents[i].Accelerator = e.Agents[i].AcceleratorName()
+		e.Agents[i].GPU = e.Agents[i].Accelerator
+	}
+}
+
+func firstSet(current, deprecated string) string {
+	if current != "" {
+		return current
+	}
+	return deprecated
 }
 
 // Ask starts a turn against a crew and returns the conversationId. A non-empty
@@ -158,6 +187,7 @@ func ParseSSE(r io.Reader, handle func(Event) bool) error {
 		if err := json.Unmarshal([]byte(payload), &e); err != nil {
 			return false
 		}
+		e.fillAcceleratorNames()
 		return handle(e)
 	}
 	for sc.Scan() {
