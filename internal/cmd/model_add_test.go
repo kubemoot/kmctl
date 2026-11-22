@@ -176,7 +176,6 @@ func TestModelAdd_FindsTheServerOrSaysWhy(t *testing.T) {
 
 func TestModelAdd_RejectsBadInputBeforeTheCluster(t *testing.T) {
 	s := newFakeAPIServer(t)
-	s.srv.Close() // a request would fail with a connection error instead
 	cases := map[string][]string{
 		`required flag(s) "model-server" not set`: {"model", "add", "m"},
 		"accepts 1 arg(s)":                        {"model", "add", "--model-server", "s"},

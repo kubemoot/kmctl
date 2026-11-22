@@ -59,8 +59,9 @@ func addSuiteControlCommands(parent *cobra.Command, f *client.Factory, dyn func(
 func newSuiteControlCommand(f *client.Factory, dyn func() (dynamic.Interface, error), c suiteControl) *cobra.Command {
 	var dryRun, yes bool
 	cmd := &cobra.Command{
-		Use:   c.verb + " SUITE",
-		Short: c.short,
+		Use:         c.verb + " SUITE",
+		Annotations: changesState(),
+		Short:       c.short,
 		Long: c.long + `
 
 It changes the suite with your kubeconfig credentials, so you need patch on

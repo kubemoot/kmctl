@@ -36,8 +36,9 @@ func newModelAddCommand(f *client.Factory) *cobra.Command {
 	var add modelAddition
 	var dryRun bool
 	cmd := &cobra.Command{
-		Use:   "add MODEL --model-server NAME",
-		Short: "Add a model to the cluster's model catalog (for cluster owners)",
+		Use:         "add MODEL --model-server NAME",
+		Annotations: changesState(),
+		Short:       "Add a model to the cluster's model catalog (for cluster owners)",
 		Long: `Add writes a Model object into the namespace of the model server --model-server names:
 the cluster owner's way to put a model in the cluster's model catalog. Crews carry
 no Models; they select from the catalog by label.

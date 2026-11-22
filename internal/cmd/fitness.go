@@ -110,8 +110,9 @@ func newRunCommand(f *client.Factory) *cobra.Command {
 	var filename string
 	var timeout time.Duration
 	cmd := &cobra.Command{
-		Use:   "run [SUITE]",
-		Short: "Run a fitness suite (or one scenario) and wait for completion",
+		Use:         "run [SUITE]",
+		Annotations: changesState(),
+		Short:       "Run a fitness suite (or one scenario) and wait for completion",
 		Long: `Run waits for a fitness suite's iterations to finish (phase Completed, or
 Cancelled when the suite is stopped), printing progress. The deferred judge scores
 the run after that: when run returns while the judge is still scoring, it says so,

@@ -22,8 +22,9 @@ func newApplyCommand(f *client.Factory) *cobra.Command {
 	var dryRun bool
 	var force bool
 	cmd := &cobra.Command{
-		Use:   "apply -f FILE|DIR|-",
-		Short: "Apply Kubemoot resource manifests (server-side apply)",
+		Use:         "apply -f FILE|DIR|-",
+		Annotations: changesState(),
+		Short:       "Apply Kubemoot resource manifests (server-side apply)",
 		Long: `Apply creates or updates Kubemoot custom resources via server-side apply.
 
 It manages kubemoot.ai resources only (Crew, Agent, PromptModule, and the rest);
