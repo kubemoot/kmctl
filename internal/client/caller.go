@@ -76,7 +76,13 @@ func HasToken(cfg *rest.Config) bool {
 // (TokenRequest). The caller needs create on serviceaccounts/token; the API server's
 // audit log records who asked.
 func MintToken(ctx context.Context, cs kubernetes.Interface, namespace, name string, audiences []string) (string, error) {
-	ttl := int64(MintedTokenTTL / time.Second)
+	return MintTokenFor(ctx, cs, namespace, name, audiences, MintedTokenTTL)
+}
+
+// MintTokenFor is MintToken for a token that lives for lifetime; the API server accepts
+// nothing shorter than ten minutes.
+func MintTokenFor(ctx context.Context, cs kubernetes.Interface, namespace, name string, audiences []string, lifetime time.Duration) (string, error) {
+	ttl := int64(lifetime / time.Second)
 	tr, err := cs.CoreV1().ServiceAccounts(namespace).CreateToken(ctx, name, &authenticationv1.TokenRequest{
 		Spec: authenticationv1.TokenRequestSpec{Audiences: audiences, ExpirationSeconds: &ttl},
 	}, metav1.CreateOptions{})
