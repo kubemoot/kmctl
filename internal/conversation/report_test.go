@@ -1,8 +1,11 @@
 package conversation
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/kubemoot/kmctl/internal/discussion"
 )
 
 func TestFollowUp(t *testing.T) {
@@ -41,5 +44,37 @@ func TestSummary_WatchLabelsItsClock(t *testing.T) {
 	md := NewTracker(testStart).Summarize(SinceWatch).Markdown()
 	if !strings.Contains(md, "Time since watch began (as received by kmctl)") {
 		t.Errorf("a watch says its clock starts when it attached:\n%s", md)
+	}
+}
+
+// A gateway that sends accelerator gets both names in the JSON summary, with the same content, for
+// the release that keeps the old gpu and waitedForGpu.
+func TestSummary_PrintsTheAcceleratorNamesBesideTheDeprecatedOnes(t *testing.T) {
+	tr := NewTracker(testStart)
+	tr.Apply(discussion.Event{Type: "phase", Agent: "a", Status: "evaluating", Accelerator: "rig0"}, testStart)
+	tr.Apply(discussion.Event{Type: "phase", Agent: "b", Status: "waiting", Model: "m", Reason: "accelerator-busy"}, testStart)
+	out, err := json.Marshal(tr.Summarize(SinceAsk))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		WaitedForAccelerator []string `json:"waitedForAccelerator"`
+		WaitedForGPU         []string `json:"waitedForGpu"`
+		Agents               []struct {
+			Name        string `json:"name"`
+			Accelerator string `json:"accelerator"`
+			GPU         string `json:"gpu"`
+		} `json:"agents"`
+	}
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(got.WaitedForAccelerator, ",") != "b" || strings.Join(got.WaitedForGPU, ",") != "b" {
+		t.Errorf("waited = %v / %v, want [b] under both names", got.WaitedForAccelerator, got.WaitedForGPU)
+	}
+	for _, a := range got.Agents {
+		if a.Name == "a" && (a.Accelerator != "rig0" || a.GPU != "rig0") {
+			t.Errorf("agent a accelerator = %q, gpu = %q, want rig0 under both", a.Accelerator, a.GPU)
+		}
 	}
 }
