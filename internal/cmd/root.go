@@ -61,6 +61,7 @@ kmctl is early. Commands are added as the tool grows.`,
 	root.AddCommand(newMCPCommand(f))
 	root.AddCommand(newApplyCommand(f))
 	root.AddCommand(newDeleteCommand(f))
+	root.AddCommand(newDashboardCommand(f))
 
 	markUsageErrors(root)
 	return root

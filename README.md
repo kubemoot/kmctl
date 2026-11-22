@@ -105,8 +105,10 @@ is reconciled and its phase is `Ready`.
 
 ## Changing things
 
-The Kubemoot dashboard only reads. A change is made with your own credentials, and kmctl
-makes the ones the dashboard used to. Each command that changes state takes `--dry-run`,
+The Kubemoot dashboard changes nothing in Kubernetes: it acts as you when you sign in with a
+token (`kmctl dashboard token --token-service-account NAMESPACE/NAME` prints an eight-hour one) and
+asks a crew through its gateway, nothing more. A change is made with your own credentials, and
+kmctl makes the ones the dashboard used to. Each command that changes state takes `--dry-run`,
 and each one that cannot be undone asks first unless you pass `--yes`.
 
 | To do this | Run | It writes through |
