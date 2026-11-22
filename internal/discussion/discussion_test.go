@@ -78,12 +78,31 @@ func TestShowsCrewActivity(t *testing.T) {
 }
 
 func TestParseSSE_DecodesActivity(t *testing.T) {
-	stream := `data: {"type":"activity","at":"2026-10-15T12:00:00Z","agents":[{"agent":"compute","doing":"evaluating","gpu":"g0","since":"2026-10-15T11:59:00Z"}]}` + "\n\n"
+	stream := `data: {"type":"activity","at":"2026-10-15T12:00:00Z","agents":[{"agent":"compute","doing":"evaluating","accelerator":"g0","since":"2026-10-15T11:59:00Z"}]}` + "\n\n"
 	var got Event
 	_ = ParseSSE(strings.NewReader(stream), func(e Event) bool { got = e; return true })
 	if got.At != "2026-10-15T12:00:00Z" || len(got.Agents) != 1 ||
-		got.Agents[0] != (Activity{Agent: "compute", Doing: "evaluating", GPU: "g0", Since: "2026-10-15T11:59:00Z"}) {
+		got.Agents[0] != (Activity{Agent: "compute", Doing: "evaluating", Accelerator: "g0", GPU: "g0", Since: "2026-10-15T11:59:00Z"}) {
 		t.Errorf("decoded %+v", got)
+	}
+}
+
+func TestEventAndActivityReadTheDeprecatedGPUOfAnOlderGateway(t *testing.T) {
+	parse := func(line string) Event {
+		var got Event
+		_ = ParseSSE(strings.NewReader("data: "+line+"\n\n"), func(e Event) bool { got = e; return true })
+		return got
+	}
+	old := parse(`{"type":"activity","agents":[{"agent":"a","doing":"evaluating","gpu":"old"}]}`)
+	if len(old.Agents) != 1 || old.Agents[0].Accelerator != "old" || old.Agents[0].GPU != "old" {
+		t.Errorf("an older gateway's activity decoded as %+v", old)
+	}
+	both := parse(`{"type":"phase","agent":"a","status":"evaluating","accelerator":"new","gpu":"stale"}`)
+	if both.Accelerator != "new" || both.GPU != "new" {
+		t.Errorf("the new name wins, got %q", both.AcceleratorName())
+	}
+	if (Event{}).AcceleratorName() != "" || (Activity{}).AcceleratorName() != "" {
+		t.Errorf("no name is empty")
 	}
 }
 

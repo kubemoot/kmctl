@@ -30,20 +30,21 @@ type Summary struct {
 	// CrewSeconds is from the thread's start to its answer, by published times.
 	CrewSeconds *float64 `json:"crewSeconds,omitempty"`
 	// Subcommittee is the agents the coordinator convened, when the gateway says.
-	Subcommittee *discussion.Subcommittee `json:"subcommittee,omitempty"`
-	Participants []string                 `json:"participants"`
-	StoodAside   []string                 `json:"stoodAside,omitempty"`
-	Signals      map[string]int           `json:"signals,omitempty"`
-	Accelerators []string                 `json:"accelerators,omitempty"`
-	Models       []string                 `json:"models,omitempty"`
-	WaitedForGPU []string                 `json:"waitedForGpu,omitempty"`
-	InputTokens  int64                    `json:"inputTokens,omitempty"`
-	OutputTokens int64                    `json:"outputTokens,omitempty"`
-	ToolErrors   []string                 `json:"toolErrors,omitempty"`
-	Errors       []string                 `json:"errors,omitempty"`
-	Workspaces   []ArtifactReport         `json:"workspaces,omitempty"`
-	Artifacts    []ArtifactReport         `json:"artifacts,omitempty"` // the old name of workspaces, same content, removed in the next release
-	Agents       []AgentReport            `json:"agents"`
+	Subcommittee         *discussion.Subcommittee `json:"subcommittee,omitempty"`
+	Participants         []string                 `json:"participants"`
+	StoodAside           []string                 `json:"stoodAside,omitempty"`
+	Signals              map[string]int           `json:"signals,omitempty"`
+	Accelerators         []string                 `json:"accelerators,omitempty"`
+	Models               []string                 `json:"models,omitempty"`
+	WaitedForAccelerator []string                 `json:"waitedForAccelerator,omitempty"`
+	WaitedForGPU         []string                 `json:"waitedForGpu,omitempty"` // the old name of waitedForAccelerator, same content, removed in the next release
+	InputTokens          int64                    `json:"inputTokens,omitempty"`
+	OutputTokens         int64                    `json:"outputTokens,omitempty"`
+	ToolErrors           []string                 `json:"toolErrors,omitempty"`
+	Errors               []string                 `json:"errors,omitempty"`
+	Workspaces           []ArtifactReport         `json:"workspaces,omitempty"`
+	Artifacts            []ArtifactReport         `json:"artifacts,omitempty"` // the old name of workspaces, same content, removed in the next release
+	Agents               []AgentReport            `json:"agents"`
 }
 
 // ArtifactReport is a workspace object an agent stored, with the command that fetches it.
@@ -60,7 +61,8 @@ type AgentReport struct {
 	Signal            string    `json:"signal,omitempty"`
 	Summary           string    `json:"summary,omitempty"`
 	Reason            string    `json:"reason,omitempty"`
-	GPU               string    `json:"gpu,omitempty"`
+	Accelerator       string    `json:"accelerator,omitempty"`
+	GPU               string    `json:"gpu,omitempty"` // the old name of accelerator, same content, removed in the next release
 	Model             string    `json:"model,omitempty"`
 	TriageSeconds     *float64  `json:"triageSeconds,omitempty"`
 	EvaluationSeconds *float64  `json:"evaluationSeconds,omitempty"`
@@ -103,7 +105,7 @@ func (t *Tracker) Summarize(since string) Summary {
 	accelerators, models := set{}, set{}
 	for _, a := range t.agents {
 		s.addAgent(a)
-		accelerators.add(a.GPU)
+		accelerators.add(a.Accelerator)
 		models.add(a.Model)
 	}
 	s.Accelerators, s.Models = accelerators.sorted(), models.sorted()
@@ -115,7 +117,8 @@ func (t *Tracker) Summarize(since string) Summary {
 func (s *Summary) addAgent(a *Agent) {
 	s.Participants = append(s.Participants, a.Name)
 	s.StoodAside = appendIf(s.StoodAside, a.StoodAside, a.Name)
-	s.WaitedForGPU = appendIf(s.WaitedForGPU, a.Waited, a.Name)
+	s.WaitedForAccelerator = appendIf(s.WaitedForAccelerator, a.Waited, a.Name)
+	s.WaitedForGPU = s.WaitedForAccelerator
 	s.ToolErrors = appendIf(s.ToolErrors, a.ToolError != "", a.Name+": "+a.ToolError)
 	s.InputTokens += a.InputTokens
 	s.OutputTokens += a.OutputTokens
@@ -153,7 +156,7 @@ func appendIf(list []string, ok bool, v string) []string {
 func reportAgent(a *Agent) AgentReport {
 	return AgentReport{
 		Name: a.Name, Signal: a.Signal, Summary: a.Summary, Reason: a.Reason,
-		GPU: a.GPU, Model: a.Model, Workspace: a.Artifact, Artifact: a.Artifact,
+		Accelerator: a.Accelerator, GPU: a.Accelerator, Model: a.Model, Workspace: a.Artifact, Artifact: a.Artifact,
 		TriageSeconds:     optionalSeconds(a.Triage),
 		EvaluationSeconds: optionalSeconds(a.Evaluation),
 		InferenceSeconds:  optionalSeconds(a.Inference),
@@ -169,7 +172,7 @@ func (s Summary) Markdown() string {
 	optional := []string{
 		s.crewTimeLine(), s.subcommitteeLine(), s.agentsLine(), s.signalsLine(), s.tokensLine(),
 		joinLine("Accelerators", s.Accelerators), joinLine("Models", s.Models),
-		joinLine("Waited for an accelerator", s.WaitedForGPU), joinLine("Tool errors", s.ToolErrors),
+		joinLine("Waited for an accelerator", s.WaitedForAccelerator), joinLine("Tool errors", s.ToolErrors),
 		joinLine("Errors", s.Errors),
 	}
 	optional = append(optional, s.workspaceLines()...)

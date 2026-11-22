@@ -23,7 +23,7 @@ func feed(m liveModel, events ...discussion.Event) liveModel {
 func TestLiveModel_RowsSettleToSignals(t *testing.T) {
 	m := newLiveModel(testOptions(ModeFull))
 	m = feed(m,
-		discussion.Event{Type: "phase", Agent: "pilot-k8s", Status: "triaging", GPU: "rig1-gpu0"},
+		discussion.Event{Type: "phase", Agent: "pilot-k8s", Status: "triaging", Accelerator: "rig1-gpu0"},
 		discussion.Event{Type: "phase", Agent: "pilot-gpu", Status: "triaging"},
 	)
 	running := ansi.Strip(m.render())

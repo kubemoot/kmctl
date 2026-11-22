@@ -10,14 +10,14 @@ import (
 func TestTracker_StepDurations(t *testing.T) {
 	tr := NewTracker(testStart)
 	at := func(s int) time.Time { return testStart.Add(time.Duration(s) * time.Second) }
-	tr.Apply(discussion.Event{Type: "phase", Agent: "a", Status: "triaging", GPU: "g0"}, at(1))
+	tr.Apply(discussion.Event{Type: "phase", Agent: "a", Status: "triaging", Accelerator: "g0"}, at(1))
 	c := tr.Apply(discussion.Event{Type: "phase", Agent: "a", Status: "evaluating"}, at(4))
 	if c.Triage != 3*time.Second {
 		t.Errorf("triage = %s, want 3s", c.Triage)
 	}
 	c = tr.Apply(discussion.Event{Type: "finding", Agent: "a", Signal: "agree", Content: "ok"}, at(10))
-	if c.Evaluation != 6*time.Second || c.Agent.GPU != "g0" {
-		t.Errorf("evaluation = %s on %q, want 6s on g0", c.Evaluation, c.Agent.GPU)
+	if c.Evaluation != 6*time.Second || c.Agent.Accelerator != "g0" {
+		t.Errorf("evaluation = %s on %q, want 6s on g0", c.Evaluation, c.Agent.Accelerator)
 	}
 	tr.Apply(discussion.Event{Type: "phase", Agent: "b", Status: "triaging"}, at(2))
 	c = tr.Apply(discussion.Event{Type: "phase", Agent: "b", Status: "done", StoodAside: true, Reason: "not relevant"}, at(5))

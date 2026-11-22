@@ -11,7 +11,7 @@ import (
 )
 
 var busyEvent = discussion.Event{Type: "activity", At: "2026-10-15T12:04:37Z", Agents: []discussion.Activity{
-	{Agent: "compute", Doing: "evaluating", GPU: "ollama-rig0"},
+	{Agent: "compute", Doing: "evaluating", Accelerator: "ollama-rig0"},
 	{Agent: "rules", Doing: "waiting_for_accelerator", Model: "qwen3:14b", GPU: "ollama-rig1"},
 	{Agent: "coordinator", Doing: "waiting_for_agents"},
 	{Agent: "next", Doing: "some_new_step"},
@@ -32,7 +32,7 @@ func TestTrackerActivityFillsRowsAndClearsOnTheAnswer(t *testing.T) {
 	tr := NewTracker(testOptions(ModePlain).start())
 	tr.Apply(discussion.Event{Type: "phase", Agent: "compute", Status: "evaluating"}, tr.Start)
 	tr.Apply(busyEvent, tr.Start)
-	if len(tr.Busy) != 4 || tr.byName["compute"].GPU != "ollama-rig0" {
+	if len(tr.Busy) != 4 || tr.byName["compute"].Accelerator != "ollama-rig0" {
 		t.Fatalf("busy = %+v, compute = %+v", tr.Busy, tr.byName["compute"])
 	}
 	if _, ok := tr.byName["coordinator"]; ok {
@@ -87,7 +87,7 @@ func TestPlainAndJSONShowActivity(t *testing.T) {
 			t.Fatalf("not JSON: %s", line)
 		}
 		if e.Type == "activity" {
-			found = e.At == "2026-10-15T12:04:37Z" && len(e.Agents) == 1 && e.Agents[0].GPU == "ollama-rig0"
+			found = e.At == "2026-10-15T12:04:37Z" && len(e.Agents) == 1 && e.Agents[0].Accelerator == "ollama-rig0"
 		}
 	}
 	if !found {

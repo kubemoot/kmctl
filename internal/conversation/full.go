@@ -174,7 +174,7 @@ func signalMarkFor(signal string) string {
 // runsOn is the accelerator and model an agent runs on, as far as the stream says.
 func runsOn(a *Agent) string {
 	parts := []string{}
-	for _, v := range []string{a.GPU, a.Model} {
+	for _, v := range []string{a.Accelerator, a.Model} {
 		if v != "" {
 			parts = append(parts, v)
 		}
