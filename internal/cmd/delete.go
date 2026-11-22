@@ -20,8 +20,9 @@ import (
 func newDeleteCommand(f *client.Factory) *cobra.Command {
 	var filename string
 	cmd := &cobra.Command{
-		Use:   "delete (KIND NAME | -f FILE)",
-		Short: "Delete Kubemoot resources",
+		Use:         "delete (KIND NAME | -f FILE)",
+		Annotations: changesState(),
+		Short:       "Delete Kubemoot resources",
 		Long: `Delete removes Kubemoot custom resources, either by kind and name
 (e.g. "kmctl delete crew demo") or from a manifest (-f). It manages kubemoot.ai
 resources only. The operator's finalizers and owner refs handle cascading

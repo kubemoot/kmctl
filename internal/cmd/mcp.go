@@ -44,8 +44,9 @@ func newMCPPinCommand(f *client.Factory, dyn func() (dynamic.Interface, error)) 
 	var verdict, notes, author string
 	var dryRun bool
 	cmd := &cobra.Command{
-		Use:   "pin REPORT --verdict use|caution|avoid",
-		Short: "Pin an administrator verdict on an MCP server report",
+		Use:         "pin REPORT --verdict use|caution|avoid",
+		Annotations: changesState(),
+		Short:       "Pin an administrator verdict on an MCP server report",
 		Long: `Pin sets spec.adminVerdict (and the notes and author that explain it) on an MCP
 server report. The controller keeps a pinned verdict whatever the trials find. The
 author defaults to the user of your kubeconfig context. Remove the pin with
@@ -84,8 +85,9 @@ change and your access and stores nothing.`,
 func newMCPUnpinCommand(f *client.Factory, dyn func() (dynamic.Interface, error)) *cobra.Command {
 	var dryRun bool
 	cmd := &cobra.Command{
-		Use:   "unpin REPORT",
-		Short: "Remove the pinned verdict from an MCP server report",
+		Use:         "unpin REPORT",
+		Annotations: changesState(),
+		Short:       "Remove the pinned verdict from an MCP server report",
 		Long: `Unpin removes spec.adminVerdict, spec.adminNotes and spec.adminAuthor, so the
 controller computes the verdict from the trials again. It needs patch on
 mcpserverreports in the report's namespace. With --dry-run the API server checks the

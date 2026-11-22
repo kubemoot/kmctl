@@ -36,8 +36,9 @@ kmctl is early. Commands are added as the tool grows.`,
   kmctl conversation ask demo "hello"   # ask it something
   kmctl fitness run demo-starter        # run its fitness suite`,
 		// Errors are surfaced once by Execute; usage noise on error is unhelpful.
-		SilenceUsage:  true,
-		SilenceErrors: true,
+		SilenceUsage:      true,
+		SilenceErrors:     true,
+		PersistentPreRunE: requireContext(f),
 	}
 
 	// Standard kubectl-style connection flags: --kubeconfig, --context,

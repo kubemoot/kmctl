@@ -102,13 +102,14 @@ func newMemoryPutCommand(f *client.Factory, open memoryStoreOpener, mode memoryP
 	sp := mode.spec()
 	cmd := &cobra.Command{
 		Use: sp.use, Short: sp.short, Example: sp.example,
+		Annotations: changesState(),
 		Long: sp.long + `
 
 The facts are text agents read and trust, so a value that holds a credential (a bearer
 token, an API key, a password in a URL, a private key header) is refused; pass
 --allow-unscreened only when you accept that. Nothing is written with --dry-run.
 Facts live in NATS: kmctl opens a port-forward to the NATS Service with your
-kubeconfig credentials, or connects to --nats-url.`,
+kubeconfig credentials; --nats-url is refused because the command changes state.`,
 		Args:              cobra.RangeArgs(3, 4),
 		ValidArgsFunction: completeCrewArg(f),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -137,7 +138,7 @@ kubeconfig credentials, or connects to --nats-url.`,
 	fl.StringVar(&o.fromFile, "from-file", "", "Read the value from this file (- for stdin) instead of the VALUE argument")
 	fl.BoolVar(&o.allowUnscreened, "allow-unscreened", false, "Store a value that holds a credential too (default: refuse it)")
 	addDryRunFlag(cmd, &o.dryRun)
-	o.addNATSFlags(fl)
+	o.addNATSFlags(fl, refusedNATSURL)
 	return cmd
 }
 
@@ -239,11 +240,12 @@ func reportFact(w io.Writer, res memorywrite.Result, past string, f memorywrite.
 func newMemoryDeleteCommand(f *client.Factory, open memoryStoreOpener) *cobra.Command {
 	var o memoryWriteOptions
 	cmd := &cobra.Command{
-		Use:   "delete CREW TOPIC KEY",
-		Short: "Delete one fact from a crew's memory",
+		Use:         "delete CREW TOPIC KEY",
+		Annotations: changesState(),
+		Short:       "Delete one fact from a crew's memory",
 		Long: `Delete the fact a crew holds under TOPIC and KEY. It fails when there is no such
 fact. Facts live in NATS: kmctl opens a port-forward to the NATS Service with your
-kubeconfig credentials, or connects to --nats-url. It asks first unless --yes is
+kubeconfig credentials; --nats-url is refused because the command changes state. It asks first unless --yes is
 given, and removes nothing with --dry-run.`,
 		Example: `  kmctl memory delete homelab-pilot hardware gpu0 -n crew-homelab-pilot
   kmctl memory delete homelab-pilot hardware gpu0 --dry-run -n crew-homelab-pilot
@@ -275,21 +277,22 @@ given, and removes nothing with --dry-run.`,
 	}
 	addDryRunFlag(cmd, &o.dryRun)
 	addYesFlag(cmd, &o.yes)
-	o.addNATSFlags(cmd.Flags())
+	o.addNATSFlags(cmd.Flags(), refusedNATSURL)
 	return cmd
 }
 
 func newMemoryClearCommand(f *client.Factory, open memoryStoreOpener) *cobra.Command {
 	var o memoryWriteOptions
 	cmd := &cobra.Command{
-		Use:   "clear CREW",
-		Short: "Delete every fact in a crew's memory",
+		Use:         "clear CREW",
+		Annotations: changesState(),
+		Short:       "Delete every fact in a crew's memory",
 		Long: `Delete every fact one crew holds in the namespace in effect. A crew of the same
 name in another namespace, and a crew whose name only starts with this one, keep their
 facts. This cannot be undone: export the memory first with "kmctl memory export" to
 keep a copy. It asks first unless --yes is given, and removes nothing with --dry-run.
 Facts live in NATS: kmctl opens a port-forward to the NATS Service with your
-kubeconfig credentials, or connects to --nats-url.`,
+kubeconfig credentials; --nats-url is refused because the command changes state.`,
 		Example: `  kmctl memory export homelab-pilot -n crew-homelab-pilot && kmctl memory clear homelab-pilot -n crew-homelab-pilot
   kmctl memory clear homelab-pilot --dry-run -n crew-homelab-pilot`,
 		Args:              cobra.ExactArgs(1),
@@ -306,7 +309,7 @@ kubeconfig credentials, or connects to --nats-url.`,
 	}
 	addDryRunFlag(cmd, &o.dryRun)
 	addYesFlag(cmd, &o.yes)
-	o.addNATSFlags(cmd.Flags())
+	o.addNATSFlags(cmd.Flags(), refusedNATSURL)
 	return cmd
 }
 
