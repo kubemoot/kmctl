@@ -13,6 +13,7 @@ import (
 	"github.com/nats-io/nats-server/v2/server"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+	"github.com/spf13/cobra"
 )
 
 // natsURL starts an in-process NATS server with JetStream and the crew-memory
@@ -59,17 +60,36 @@ func kmctlNATS(t *testing.T, url string, args ...string) (string, error) {
 	return out.String(), err
 }
 
+// kmctlNATSWrite runs a memory write command against the NATS server at url. The
+// root command refuses --nats-url for a write, so this builds the memory commands
+// without the root's context check.
+func kmctlNATSWrite(t *testing.T, url string, args ...string) (string, error) {
+	t.Helper()
+	f := client.NewFactory()
+	ns := memNamespace
+	f.ConfigFlags.Namespace = &ns
+	memory := &cobra.Command{Use: "memory"}
+	addMemoryWriteCommands(memory, f, openMemoryStore)
+	var out bytes.Buffer
+	memory.SetOut(&out)
+	memory.SetErr(&out)
+	memory.SetIn(strings.NewReader(""))
+	memory.SetArgs(append(args[1:], "--nats-url", url))
+	err := memory.Execute()
+	return out.String(), err
+}
+
 // The write commands and the export go through the same NATS connection code and the
 // same bucket: what add and edit write, export reads back, and clear removes.
 func TestMemoryWritesAreReadBackByExportOverRealNATS(t *testing.T) {
 	url := natsURL(t)
-	if _, err := kmctlNATS(t, url, "memory", "add", "demo", "hardware", "gpu0", "RTX 5090"); err != nil {
+	if _, err := kmctlNATSWrite(t, url, "memory", "add", "demo", "hardware", "gpu0", "RTX 5090"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := kmctlNATS(t, url, "memory", "edit", "demo", "hardware", "gpu0", "RTX 5090, 32 GiB"); err != nil {
+	if _, err := kmctlNATSWrite(t, url, "memory", "edit", "demo", "hardware", "gpu0", "RTX 5090, 32 GiB"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := kmctlNATS(t, url, "memory", "add", "demo", "hardware", "gpu0", "again"); err == nil {
+	if _, err := kmctlNATSWrite(t, url, "memory", "add", "demo", "hardware", "gpu0", "again"); err == nil {
 		t.Fatal("a second add must fail")
 	}
 	dir := filepath.Join(t.TempDir(), "out")
@@ -77,16 +97,16 @@ func TestMemoryWritesAreReadBackByExportOverRealNATS(t *testing.T) {
 	if err != nil || !strings.Contains(out, "wrote 1 memory object(s)") {
 		t.Fatalf("export: %v\n%s", err, out)
 	}
-	if out, err := kmctlNATS(t, url, "memory", "clear", "demo", "--yes"); err != nil || !strings.Contains(out, "1 fact(s)") {
+	if out, err := kmctlNATSWrite(t, url, "memory", "clear", "demo", "--yes"); err != nil || !strings.Contains(out, "1 fact(s)") {
 		t.Fatalf("clear: %v\n%s", err, out)
 	}
-	if out, err := kmctlNATS(t, url, "memory", "clear", "demo", "--yes"); err != nil || !strings.Contains(out, "holds no facts") {
+	if out, err := kmctlNATSWrite(t, url, "memory", "clear", "demo", "--yes"); err != nil || !strings.Contains(out, "holds no facts") {
 		t.Fatalf("second clear: %v\n%s", err, out)
 	}
 }
 
 func TestMemoryWriteToAnUnreachableNATSIsAnError(t *testing.T) {
-	_, err := kmctlNATS(t, "nats://127.0.0.1:1", "memory", "add", "demo", "t", "k", "v")
+	_, err := kmctlNATSWrite(t, "nats://127.0.0.1:1", "memory", "add", "demo", "t", "k", "v")
 	if err == nil || !strings.Contains(explained(t, err), "could not connect to NATS") {
 		t.Fatalf("err = %v", err)
 	}

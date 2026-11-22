@@ -45,8 +45,9 @@ func newConversationControlCommands(f *client.Factory) []*cobra.Command {
 
 func newControlCommand(f *client.Factory, v controlVerb) *cobra.Command {
 	return &cobra.Command{
-		Use:   v.name + " CREW ID",
-		Short: v.short,
+		Use:         v.name + " CREW ID",
+		Annotations: changesState(),
+		Short:       v.short,
 		Long: v.about + `
 
 The request goes to the crew's discussion gateway, which checks who is asking: the
@@ -139,8 +140,9 @@ type deleteOptions struct {
 func newConversationDeleteCommand(f *client.Factory) *cobra.Command {
 	var o deleteOptions
 	cmd := &cobra.Command{
-		Use:   "delete CREW ID",
-		Short: "Erase a conversation from every store that holds it",
+		Use:         "delete CREW ID",
+		Annotations: changesState(),
+		Short:       "Erase a conversation from every store that holds it",
 		Long: `Erase a conversation: its history, owner record, discussion messages, coordinator log,
 workspace objects, scheduled follow-ups and the crew memory learned in it. The crew's
 discussion gateway does the erasing and answers with a report of what it removed per store,

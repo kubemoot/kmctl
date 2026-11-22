@@ -20,8 +20,9 @@ func addConversationReplay(conversation *cobra.Command, f *client.Factory) {
 func newReplayCommand(f *client.Factory) *cobra.Command {
 	var sf streamFlags
 	cmd := &cobra.Command{
-		Use:   "replay CREW CONVERSATION_ID",
-		Short: "Ask a conversation's first question again, in a new conversation",
+		Use:         "replay CREW CONVERSATION_ID",
+		Annotations: changesState(),
+		Short:       "Ask a conversation's first question again, in a new conversation",
 		Long: `Replay reads the first question of a recent conversation from the crew's gateway and
 asks it again in a new conversation, streaming the discussion as "kmctl conversation
 ask" does. The original conversation is left as it is, and the new one is not marked as

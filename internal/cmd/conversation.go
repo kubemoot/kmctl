@@ -71,8 +71,9 @@ func newAskCommand(f *client.Factory) *cobra.Command {
 	var conversationID string
 	var sf streamFlags
 	cmd := &cobra.Command{
-		Use:   "ask CREW MESSAGE",
-		Short: "Start a turn with a crew and stream the discussion",
+		Use:         "ask CREW MESSAGE",
+		Annotations: changesState(),
+		Short:       "Start a turn with a crew and stream the discussion",
 		Long: `Start a turn with a crew and stream the discussion until the crew answers.
 
 Output modes (-o):

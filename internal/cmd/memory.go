@@ -112,15 +112,15 @@ The facts are text the agents wrote, so treat the files as data.`, ompi.SpecVers
 	fl.BoolVar(&o.allowUnscreened, "allow-unscreened", false,
 		"Export facts that hold a credential too (default: leave them out and list them)")
 	fl.StringVar(&o.origin, "origin", "", "Origin id for the manifest (default: derived from the namespace and crew)")
-	o.addNATSFlags(fl)
+	o.addNATSFlags(fl, "Connect to this NATS URL instead of port-forwarding to the NATS Service")
 	return cmd
 }
 
 // addNATSFlags registers the flags that say where NATS is.
-func (o *memoryOptions) addNATSFlags(fl *pflag.FlagSet) {
+func (o *memoryOptions) addNATSFlags(fl *pflag.FlagSet, urlUsage string) {
 	fl.StringVar(&o.natsNamespace, "nats-namespace", defaultNATSNamespace, "Namespace of the NATS Service")
 	fl.StringVar(&o.natsService, "nats-service", defaultNATSService, "Name of the NATS Service")
-	fl.StringVar(&o.natsURL, "nats-url", "", "Connect to this NATS URL instead of port-forwarding to the NATS Service")
+	fl.StringVar(&o.natsURL, "nats-url", "", urlUsage)
 	fl.StringVar(&o.creds, "creds", "", "NATS credentials file, for a server that needs them")
 }
 

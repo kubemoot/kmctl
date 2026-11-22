@@ -109,11 +109,21 @@ The Kubemoot dashboard only reads. A change is made with your own credentials, a
 makes the ones the dashboard used to. Each command that changes state takes `--dry-run`,
 and each one that cannot be undone asks first unless you pass `--yes`.
 
+Every command in this section, and `apply`, `delete`, `conversation ask` and `model add`,
+needs a usable Kubernetes context and fails before doing anything without one: no
+kubeconfig, no current context, a `--context` that is not in the kubeconfig, a context
+whose user has no credentials, a cluster that cannot be reached, or credentials the API
+server refuses. The error says what is missing; fix it with `kubectl config use-context NAME`,
+`--context NAME` or `--kubeconfig PATH`. These commands refuse `--nats-url`, which would
+write to a server that does not check who you are. Reading commands, and `create`,
+`version` and `completion`, keep working as before (`memory export --nats-url` still reads
+without a context).
+
 | To do this | Run | It writes through |
 |------------|-----|-------------------|
 | Pause, resume or stop a fitness suite | `kmctl fitness pause\|resume\|stop SUITE` | a merge patch of the suite's spec (you need `patch` on `crewfitnesssuites`) |
 | Pin or remove an MCP server report verdict | `kmctl mcp report pin REPORT --verdict use\|caution\|avoid`, `kmctl mcp report unpin REPORT` | a merge patch of the report's spec (you need `patch` on `mcpserverreports`) |
-| Add, change, delete or clear crew memory | `kmctl memory add\|edit\|delete\|clear CREW ...` | the crew-memory NATS bucket, through a port-forward to the NATS Service (you need `create` on `pods/portforward` there) or `--nats-url` |
+| Add, change, delete or clear crew memory | `kmctl memory add\|edit\|delete\|clear CREW ...` | the crew-memory NATS bucket, through a port-forward to the NATS Service (you need `create` on `pods/portforward` there) |
 | Stop, pause or resume a conversation, or erase it | `kmctl conversation stop\|pause\|resume\|delete CREW ID` | the crew's discussion gateway, as the caller |
 | Ask a conversation's first question again | `kmctl conversation replay CREW ID` | the crew's discussion gateway, like `conversation ask` |
 | Remove a crew or a suite run | `kmctl delete crew NAME`, `kmctl delete crewfitnesssuite NAME` | a delete of the resource; the operator cleans up |
