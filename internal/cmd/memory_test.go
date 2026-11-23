@@ -244,8 +244,8 @@ func TestMemoryExportFlagDefaults(t *testing.T) {
 			t.Errorf("--%s default = %q, want %q", flag, got, want)
 		}
 	}
-	if cmd.Flags().Lookup("output").Shorthand != "o" {
-		t.Error("--output has no -o shorthand")
+	if cmd.Flags().Lookup("dir") == nil {
+		t.Error("memory export has no --dir")
 	}
 }
 

@@ -109,7 +109,18 @@ The Kubemoot dashboard changes nothing in Kubernetes: it acts as you when you si
 token (`kmctl dashboard token --token-service-account NAMESPACE/NAME` prints an eight-hour one) and
 asks a crew through its gateway, nothing more. A change is made with your own credentials, and
 kmctl makes the ones the dashboard used to. Each command that changes state takes `--dry-run`,
-and each one that cannot be undone asks first unless you pass `--yes`.
+and each one that cannot be undone asks first unless you pass `--yes`. That includes
+`kmctl delete`: it names what it will delete (`Delete crew/demo in namespace crew-demo?`) and
+waits for `y`; `--yes` skips the question for scripts and `--dry-run` has the API server check
+the delete and changes nothing. A mistyped subcommand in a group (`kmctl crew lst`) is an error
+with a suggestion and exit code 1, not help.
+
+`-o` means the output format (`table`, `yaml`, `json`, ...) on every command that has it.
+A command that writes a file or a directory names it with its own flag: `--dir` for
+`create` and `memory export`, `--output-file` for `fitness download` and
+`conversation export`. The old `-o`/`--output` spelling on those four still works for one
+release, prints a deprecation message, and is hidden from help. A value of `-` is refused:
+these commands write a file or directory, never standard output.
 
 Every command in this section, and `apply`, `delete`, `conversation ask` and `model add`,
 needs a usable Kubernetes context and fails before doing anything without one: no
@@ -128,7 +139,7 @@ without a context).
 | Add, change, delete or clear crew memory | `kmctl memory add\|edit\|delete\|clear CREW ...` | the crew-memory NATS bucket, through a port-forward to the NATS Service (you need `create` on `pods/portforward` there) |
 | Stop, pause or resume a conversation, or erase it | `kmctl conversation stop\|pause\|resume\|delete CREW ID` | the crew's discussion gateway, as the caller |
 | Ask a conversation's first question again | `kmctl conversation replay CREW ID` | the crew's discussion gateway, like `conversation ask` |
-| Remove a crew or a suite run | `kmctl delete crew NAME`, `kmctl delete crewfitnesssuite NAME` | a delete of the resource; the operator cleans up |
+| Remove a crew or a suite run (asks first; `--yes`, `--dry-run`) | `kmctl delete crew NAME`, `kmctl delete crewfitnesssuite NAME` | a delete of the resource; the operator cleans up |
 
 ```bash
 kmctl fitness stop demo-starter --dry-run            # the API server checks it and your access
@@ -160,7 +171,7 @@ conversation holds. Unloading a model is still not a kmctl command.
 
 ```bash
 kmctl conversation export homelab-pilot 6733c361                    # ./homelab-pilot-conversation-<id>.zip
-kmctl conversation export homelab-pilot 6733c361 9f1e22a0 -o review.zip   # a zip of zips plus a manifest
+kmctl conversation export homelab-pilot 6733c361 9f1e22a0 --output-file review.zip   # a zip of zips plus a manifest
 kmctl conversation export homelab-pilot 6733c361 9f1e22a0 --report  # the manifest only, no zip
 ```
 

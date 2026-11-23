@@ -93,7 +93,7 @@ func TestMemoryWritesAreReadBackByExportOverRealNATS(t *testing.T) {
 		t.Fatal("a second add must fail")
 	}
 	dir := filepath.Join(t.TempDir(), "out")
-	out, err := kmctlNATS(t, url, "memory", "export", "demo", "-o", dir)
+	out, err := kmctlNATS(t, url, "memory", "export", "demo", "--dir", dir)
 	if err != nil || !strings.Contains(out, "wrote 1 memory object(s)") {
 		t.Fatalf("export: %v\n%s", err, out)
 	}

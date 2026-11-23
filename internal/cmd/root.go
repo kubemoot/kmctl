@@ -64,6 +64,7 @@ kmctl is early. Commands are added as the tool grows.`,
 	root.AddCommand(newDeleteCommand(f))
 	root.AddCommand(newDashboardCommand(f))
 
+	markGroups(root)
 	markUsageErrors(root)
 	return root
 }

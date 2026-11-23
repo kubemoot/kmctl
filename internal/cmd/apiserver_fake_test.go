@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -13,8 +12,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-
-	"github.com/kubemoot/kmctl/internal/client"
 )
 
 // fakeAPIServer is an in-memory stand-in for the Kubernetes API server: discovery
@@ -114,16 +111,7 @@ current-context: fake
 // to stdout and stderr.
 func (s *fakeAPIServer) kmctl(t *testing.T, args ...string) (stdout, stderr string, err error) {
 	t.Helper()
-	f := client.NewFactory()
-	f.OpenService = s.openService
-	root := newRootCommand(f)
-	var out, errOut bytes.Buffer
-	root.SetOut(&out)
-	root.SetErr(&errOut)
-	root.SetIn(strings.NewReader(""))
-	root.SetArgs(append([]string{"--kubeconfig", s.kubeconfig, "--cache-dir", t.TempDir()}, args...))
-	err = root.Execute()
-	return out.String(), errOut.String(), err
+	return s.kmctlWithInput(t, "", args...)
 }
 
 // add stores a kubemoot.ai object, keyed by its resource, namespace, and name.
@@ -224,7 +212,7 @@ func (s *fakeAPIServer) serveKubemoot(w http.ResponseWriter, r *http.Request, re
 	case http.MethodPatch:
 		s.apply(w, r, plural, ns)
 	case http.MethodDelete:
-		s.remove(w, plural, ns, name)
+		s.remove(w, r, plural, ns, name)
 	default:
 		writeStatus(w, http.StatusMethodNotAllowed, "MethodNotAllowed", r.Method)
 	}
@@ -294,13 +282,19 @@ func (s *fakeAPIServer) store(plural string, obj map[string]any) {
 	s.objs[objKey(plural, meta["namespace"].(string), meta["name"].(string))] = obj
 }
 
-func (s *fakeAPIServer) remove(w http.ResponseWriter, plural, ns, name string) {
+// remove deletes an object; a dry run (in the query or the DeleteOptions body)
+// answers without deleting.
+func (s *fakeAPIServer) remove(w http.ResponseWriter, r *http.Request, plural, ns, name string) {
+	body, _ := io.ReadAll(r.Body)
+	dry := r.URL.Query().Get("dryRun") != "" || strings.Contains(string(body), "dryRun")
 	key := objKey(plural, ns, name)
 	if _, ok := s.objs[key]; !ok {
 		writeNotFound(w, plural, name)
 		return
 	}
-	delete(s.objs, key)
+	if !dry {
+		delete(s.objs, key)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"kind": "Status", "apiVersion": "v1", "status": "Success"})
 }
 

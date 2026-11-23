@@ -48,11 +48,14 @@ under any network policy. The dashboard Service is found in
 --dashboard-namespace by its labels (` + dashboard.Selector + `);
 --dashboard-service names it instead.`,
 		Example: `  kmctl fitness download demo-starter
-  kmctl fitness download demo-starter -o results.xlsx
+  kmctl fitness download demo-starter --output-file results.xlsx
   kmctl fitness download demo-starter --dashboard-namespace ops --dashboard-service my-dashboard`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			suite := args[0]
+			if err := checkPath(cmd, outputFileFlag, outFile); err != nil {
+				return err
+			}
 			cs, err := f.Clientset()
 			if err != nil {
 				return err
@@ -71,7 +74,7 @@ under any network policy. The dashboard Service is found in
 			return err
 		},
 	}
-	cmd.Flags().StringVarP(&outFile, "output", "o", "", "Output file (default <suite>.xlsx)")
+	outputFileFlag.add(cmd.Flags(), &outFile, "", "File to write (default <suite>.xlsx)")
 	cmd.Flags().StringVar(&dashNS, "dashboard-namespace", "kubemoot", "Namespace of the Kubemoot dashboard Service")
 	cmd.Flags().StringVar(&dashSvc, "dashboard-service", "", "Name of the dashboard Service (default: found by label)")
 	return cmd

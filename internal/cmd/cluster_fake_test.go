@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"context"
-	"io"
+	"strings"
 	"testing"
 
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -58,22 +58,28 @@ func newCrew(name string) *unstructured.Unstructured {
 	}}
 }
 
-func TestDeleteByKindName_FakeClient(t *testing.T) {
+func TestKindNameTarget_FakeClient(t *testing.T) {
 	dc := fakeDyn(newCrew("demo"))
 	ctx := context.Background()
 
-	if err := deleteByKindName(ctx, dc, staticMapper(), "crew", "demo", "default", io.Discard); err != nil {
-		t.Fatalf("deleteByKindName: %v", err)
+	targets, err := kindNameTarget(dc, staticMapper(), "crew", "demo", "default")
+	if err != nil || len(targets) != 1 {
+		t.Fatalf("kindNameTarget: %v, %v", targets, err)
 	}
-	_, err := dc.Resource(crewGVR).Namespace("default").Get(ctx, "demo", metav1.GetOptions{})
+	if got := deleteQuestion(targets); !strings.Contains(got, "crew/demo in namespace default") {
+		t.Errorf("question %q does not name the crew and namespace", got)
+	}
+	if err := targets[0].ri.Delete(ctx, "demo", metav1.DeleteOptions{}); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	_, err = dc.Resource(crewGVR).Namespace("default").Get(ctx, "demo", metav1.GetOptions{})
 	if !errors.IsNotFound(err) {
 		t.Errorf("expected NotFound after delete, got %v", err)
 	}
 }
 
-func TestDeleteByKindName_UnknownKind(t *testing.T) {
-	err := deleteByKindName(context.Background(), fakeDyn(), staticMapper(), "nonsense", "x", "default", io.Discard)
-	if err == nil {
+func TestKindNameTarget_UnknownKind(t *testing.T) {
+	if _, err := kindNameTarget(fakeDyn(), staticMapper(), "nonsense", "x", "default"); err == nil {
 		t.Fatal("expected error for unknown kind, got nil")
 	}
 }
