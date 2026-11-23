@@ -57,7 +57,7 @@ func TestBuildCrewFitness(t *testing.T) {
 }
 
 func TestIsTerminalPhase(t *testing.T) {
-	for _, p := range []string{"Completed", "Cancelled", "Passed", "Failed", "Error"} {
+	for _, p := range []string{"Completed", "Cancelled", "Passed", "Failed", "Error", "ToolSmokeFailed"} {
 		if !isTerminalPhase(p) {
 			t.Errorf("%q should be terminal", p)
 		}

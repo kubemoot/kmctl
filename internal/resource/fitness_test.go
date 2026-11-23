@@ -42,7 +42,7 @@ func TestRenderSuiteResultsJudgeAndScenarios(t *testing.T) {
 	out := renderResults(t, completedSuite())
 	for _, want := range []string{
 		"Judge: Complete, 2 of 2 scenarios judged, mean 44, 1 scored 0, completed 2026-10-02T14:31:07Z",
-		"SCENARIO", "MEAN DURATION", "REASON",
+		"SCENARIO", "MEAN DURATION", "GATES PASSED", "JUDGE SCORE", "JUDGE REASON", "GATES are the scenario",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %q:\n%s", want, out)
@@ -68,7 +68,8 @@ func TestRenderSuiteResultsWhileJudging(t *testing.T) {
 	if !strings.Contains(out, "Judge: Judging, 0 of 3 scenarios judged\n") {
 		t.Errorf("an in-progress judge reads 0 of N with no mean:\n%s", out)
 	}
-	row := strings.Fields(strings.Split(strings.TrimSpace(out), "\n")[3])
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	row := strings.Fields(lines[len(lines)-1])
 	if strings.Join(row, " ") != "a 0 0 0 0 <none> <none>" {
 		t.Errorf("an unjudged scenario row = %v", row)
 	}
@@ -143,7 +144,7 @@ func TestSuiteKindHasJudgeColumnsAndDetails(t *testing.T) {
 	for _, c := range CrewFitnessSuite.Columns {
 		headers[c.Header] = c.Path
 	}
-	if headers["JUDGE"] != "status.judge.phase" || headers["QUALITY"] != "status.judge.mean" {
+	if headers["JUDGE"] != "status.judge.phase" || headers["JUDGE SCORE"] != "status.judge.mean" || headers["GATES PASSED"] != "status.passed" || headers["GATES FAILED"] != "status.failed" {
 		t.Errorf("suite columns = %v", headers)
 	}
 	if CrewFitnessSuite.Details == nil {
@@ -151,5 +152,58 @@ func TestSuiteKindHasJudgeColumnsAndDetails(t *testing.T) {
 	}
 	if Agent.Details != nil {
 		t.Error("other kinds have no details")
+	}
+}
+
+func TestRenderSuiteResultsExplainsGatesAndJudge(t *testing.T) {
+	out := renderResults(t, completedSuite())
+	for _, want := range []string{"GATES are the scenario's deterministic assertions", "JUDGE SCORE is the judge's 0-100 rating", "They are independent"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "Gate failures:") || strings.Contains(out, "Failure:") {
+		t.Errorf("a suite with no failure reason prints none:\n%s", out)
+	}
+}
+
+func TestRenderSuiteResultsShowsGateFailureReason(t *testing.T) {
+	obj := completedSuite()
+	scenarios := obj["status"].(map[string]any)["scenarios"].([]any)
+	scenarios[0].(map[string]any)["failureReason"] = "agree floor not met: 1 of 3 agreed"
+	out := renderResults(t, obj)
+	if !strings.Contains(out, "Gate failures:\n  gpu-live: agree floor not met: 1 of 3 agreed\n") {
+		t.Errorf("a scenario's failure reason is listed:\n%s", out)
+	}
+	if strings.Contains(out, "node-count: ") {
+		t.Errorf("a scenario without a failure reason is not listed:\n%s", out)
+	}
+}
+
+func TestRenderSuiteResultsShowsSuiteFailureReason(t *testing.T) {
+	smoke := map[string]any{"status": map[string]any{
+		"phase": "ToolSmokeFailed",
+		"conditions": []any{
+			map[string]any{"type": "Other", "message": "no"},
+			map[string]any{"type": "ToolSmoke", "message": "9 tool(s) failed the smoke, no model ran"},
+		},
+	}}
+	if out := renderResults(t, smoke); out != "\nFailure: 9 tool(s) failed the smoke, no model ran\n" {
+		t.Errorf("tool smoke failure = %q", out)
+	}
+	for _, phase := range []string{"Error", "Failed"} {
+		obj := map[string]any{"status": map[string]any{"phase": phase, "error": "invalid spec"}}
+		if out := renderResults(t, obj); out != "\nFailure: invalid spec\n" {
+			t.Errorf("%s = %q", phase, out)
+		}
+	}
+	for _, obj := range []map[string]any{
+		{"status": map[string]any{"phase": "ToolSmokeFailed"}},
+		{"status": map[string]any{"phase": "Error"}},
+		{"status": map[string]any{"phase": "Completed", "error": "stale"}},
+	} {
+		if out := renderResults(t, obj); out != "" {
+			t.Errorf("no reason to show for %v, got %q", obj, out)
+		}
 	}
 }
