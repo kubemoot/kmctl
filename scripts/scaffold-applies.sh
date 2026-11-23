@@ -16,8 +16,12 @@ if [ "$#" -gt 0 ]; then
   crds="$1"
   echo "Testing against the CRDs in ${crds}" >&2
 else
+  # A fresh runner has not downloaded the module yet, and go list then reports no Dir.
+  go mod download github.com/kubemoot/kubemoot/operator
   pin="$(go list -m -f '{{.Path}} {{.Version}}' github.com/kubemoot/kubemoot/operator)"
-  crds="$(go list -m -f '{{.Dir}}' github.com/kubemoot/kubemoot/operator)/config/crd/bases"
+  dir="$(go list -m -f '{{.Dir}}' github.com/kubemoot/kubemoot/operator)"
+  [ -n "${dir}" ] || { echo "ERROR: the operator module ${pin} could not be downloaded" >&2; exit 1; }
+  crds="${dir}/config/crd/bases"
   echo "Testing against the CRDs of the pinned operator module: ${pin}" >&2
 fi
 [ -d "${crds}" ] || { echo "ERROR: no CRD directory at ${crds}" >&2; exit 1; }
