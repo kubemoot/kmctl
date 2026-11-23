@@ -312,7 +312,8 @@ func TestErrors_UnknownKind(t *testing.T) {
 }
 
 func TestErrors_MissingManifest(t *testing.T) {
-	got, code := runKmctl(t, runOpts{}, "apply", "-f", "no-such-file.yaml")
+	s := newFakeAPIServer(t)
+	got, code := s.run(t, "apply", "-f", "no-such-file.yaml")
 	wantStderr(t, "apply -f missing", got, code, "Error: file \"no-such-file.yaml\" does not exist\nHint: Check the path\n")
 }
 

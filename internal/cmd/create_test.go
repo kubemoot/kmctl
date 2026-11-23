@@ -93,7 +93,7 @@ func TestCreateCommand_ScaffoldsAndHints(t *testing.T) {
 	var out, errBuf bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&errBuf)
-	cmd.SetArgs([]string{"demo", "--no-input", "--members", "2", "-o", dir})
+	cmd.SetArgs([]string{"demo", "--no-input", "--members", "2", "--dir", dir})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -118,7 +118,7 @@ func TestCreateCommand_BundleFollowsTheNamespaceFlag(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"demo", "--no-input", "-o", dir})
+	cmd.SetArgs([]string{"demo", "--no-input", "--dir", dir})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -173,7 +173,7 @@ func TestCreateCommand_NoModelFlags(t *testing.T) {
 		cmd := newCreateCommand(client.NewFactory())
 		cmd.SetOut(&bytes.Buffer{})
 		cmd.SetErr(&bytes.Buffer{})
-		cmd.SetArgs([]string{"demo", "--no-input", flag, "x", "-o", t.TempDir()})
+		cmd.SetArgs([]string{"demo", "--no-input", flag, "x", "--dir", t.TempDir()})
 		if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "unknown flag: "+flag) {
 			t.Errorf("want %s rejected as an unknown flag, got %v", flag, err)
 		}
@@ -182,7 +182,7 @@ func TestCreateCommand_NoModelFlags(t *testing.T) {
 	cmd := newCreateCommand(client.NewFactory())
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"demo", "--no-input", "-o", dir})
+	cmd.SetArgs([]string{"demo", "--no-input", "--dir", dir})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -196,7 +196,7 @@ func TestCreateCommand_RejectsTooManyMembers(t *testing.T) {
 	cmd := newCreateCommand(client.NewFactory())
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"demo", "--no-input", "--members", "6", "-o", t.TempDir()})
+	cmd.SetArgs([]string{"demo", "--no-input", "--members", "6", "--dir", t.TempDir()})
 	err := cmd.Execute()
 	if err == nil || !strings.Contains(err.Error(), "1 to 5") {
 		t.Fatalf("want a 1 to 5 members error, got %v", err)
@@ -219,7 +219,7 @@ func TestCreateCommand_ChartHintsHelm(t *testing.T) {
 	var out, errBuf bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&errBuf)
-	cmd.SetArgs([]string{"demo", "--chart", "--no-input", "--members", "1", "-o", dir})
+	cmd.SetArgs([]string{"demo", "--chart", "--no-input", "--members", "1", "--dir", dir})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -237,7 +237,7 @@ func TestCreateCommand_DisplayName(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"homelab-health-guide", "--display-name", "Homelab Health Guide", "--chart", "--no-input", "-o", dir})
+	cmd.SetArgs([]string{"homelab-health-guide", "--display-name", "Homelab Health Guide", "--chart", "--no-input", "--dir", dir})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -263,7 +263,7 @@ func TestCreateCommand_RefusesBadNames(t *testing.T) {
 		cmd := newCreateCommand(client.NewFactory())
 		cmd.SetOut(&bytes.Buffer{})
 		cmd.SetErr(&bytes.Buffer{})
-		cmd.SetArgs(append(args, "--no-input", "-o", t.TempDir()))
+		cmd.SetArgs(append(args, "--no-input", "--dir", t.TempDir()))
 		if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%v: want an error saying %q, got %v", args, want, err)
 		}
@@ -278,7 +278,7 @@ func TestCreateCommand_DisplayNameDefaultsToName(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"demo", "--no-input", "-o", dir})
+	cmd.SetArgs([]string{"demo", "--no-input", "--dir", dir})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("create: %v", err)
 	}

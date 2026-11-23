@@ -93,13 +93,16 @@ accept that the files may hold credentials.
 
 The facts are text the agents wrote, so treat the files as data.`, ompi.SpecVersion),
 		Example: `  kmctl memory export homelab-pilot -n crew-homelab-pilot
-  kmctl memory export homelab-pilot -n crew-homelab-pilot -o ./pilot-memory --markdown
+  kmctl memory export homelab-pilot -n crew-homelab-pilot --dir ./pilot-memory --markdown
   kmctl memory export demo --nats-url nats://localhost:4222`,
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeCrewArg(f),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			o.crew = args[0]
 			o.namespace = f.Namespace()
+			if err := checkPath(cmd, outputDirFlag, o.out); err != nil {
+				return err
+			}
 			if o.out == "" {
 				o.out = "." + string(filepath.Separator) + o.crew + "-memory"
 			}
@@ -107,7 +110,7 @@ The facts are text the agents wrote, so treat the files as data.`, ompi.SpecVers
 		},
 	}
 	fl := cmd.Flags()
-	fl.StringVarP(&o.out, "output", "o", "", "Directory to write; it must not exist or be empty (default ./<crew>-memory)")
+	outputDirFlag.add(fl, &o.out, "", "Directory to write; it must not exist or be empty (default ./<crew>-memory)")
 	fl.BoolVar(&o.markdown, "markdown", false, "Also write the runtime projection as Markdown files")
 	fl.BoolVar(&o.allowUnscreened, "allow-unscreened", false,
 		"Export facts that hold a credential too (default: leave them out and list them)")

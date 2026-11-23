@@ -59,10 +59,13 @@ namespace given by -n, or crew-NAME.`,
 		Example: `  kmctl create demo
   kmctl create demo --chart --members 5 --no-input
   kmctl create homelab-health-guide --display-name "Homelab Health Guide"
-  kmctl create demo -o ./crews
+  kmctl create demo --dir ./crews
   kmctl create demo --members 2 --no-input -n team-a`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := checkPath(cmd, outputDirFlag, outputDir); err != nil {
+				return err
+			}
 			opts := scaffold.Options{
 				Name:        args[0],
 				DisplayName: displayName,
@@ -97,7 +100,7 @@ namespace given by -n, or crew-NAME.`,
 	cmd.Flags().StringVar(&displayName, "display-name", "", "The name people read, any one line of text (default NAME; prompted if unset)")
 	cmd.Flags().IntVar(&members, "members", 1, fmt.Sprintf("Specialists beside the coordinator, 1 to %d (prompted if unset)", scaffold.MaxMembers))
 	cmd.Flags().BoolVar(&noInput, "no-input", false, "Never prompt; unset inputs take their defaults")
-	cmd.Flags().StringVarP(&outputDir, "output", "o", ".", "Directory to write the scaffold into")
+	outputDirFlag.add(cmd.Flags(), &outputDir, ".", "Directory to write the scaffold into")
 	cmd.Flags().BoolVar(&chart, "chart", false, "Lay the crew out as a Helm chart (Chart.yaml, templates/, fitness/)")
 	return cmd
 }

@@ -75,13 +75,16 @@ kmctl port-forwards to the operator's report Service with your kubeconfig token,
 dashboard does for you; you need get on the Crew, and the operator checks it. Pass the full
 conversation IDs that "kmctl conversation list" prints, or a unique prefix of each.`, conversationexport.MaxBundle),
 		Example: `  kmctl conversation export homelab-pilot 6733c361-aa0c-4bde-85c6-e143af23b251 -n crew-homelab-pilot
-  kmctl conv export homelab-pilot 6733c361 9f1e22a0 -o review.zip
+  kmctl conv export homelab-pilot 6733c361 9f1e22a0 --output-file review.zip
   kmctl conv export homelab-pilot 6733c361 9f1e22a0 --report
   kmctl conv export homelab-pilot 6733c361 --report --json`,
 		Args:              cobra.MinimumNArgs(2),
 		ValidArgsFunction: completeCrewThenConversation(f),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			o.crew, o.ids, o.namespace = args[0], args[1:], f.Namespace()
+			if err := checkPath(cmd, outputFileFlag, o.out); err != nil {
+				return err
+			}
 			if o.asJSON && !o.report {
 				return usageError{errors.New("--json is for --report; the zip carries its own manifest.json")}
 			}
@@ -89,7 +92,7 @@ conversation IDs that "kmctl conversation list" prints, or a unique prefix of ea
 		},
 	}
 	fl := cmd.Flags()
-	fl.StringVarP(&o.out, "output", "o", "", "File to write (default ./<crew>-conversation-<id>.zip, or ./<crew>-conversations.zip for several)")
+	outputFileFlag.add(fl, &o.out, "", "File to write (default ./<crew>-conversation-<id>.zip, or ./<crew>-conversations.zip for several)")
 	fl.BoolVar(&o.report, "report", false, "Print what the export would include and leave out, and write no zip")
 	fl.BoolVar(&o.asJSON, "json", false, "With --report, print the manifest as JSON")
 	fl.StringVar(&o.timeZone, "time-zone", discussion.LocalZoneName(), "IANA time zone the times in the export are written in (default: this machine's)")

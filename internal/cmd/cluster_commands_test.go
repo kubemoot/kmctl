@@ -221,7 +221,7 @@ func TestApply_RejectsBadInput(t *testing.T) {
 func TestDelete_AgainstCluster(t *testing.T) {
 	s := newFakeAPIServer(t)
 	s.add("crews", "team-a", "demo", nil)
-	out, _, err := s.kmctl(t, "delete", "crew", "demo")
+	out, _, err := s.kmctl(t, "delete", "crew", "demo", "--yes")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,7 +231,7 @@ func TestDelete_AgainstCluster(t *testing.T) {
 	}
 
 	s.add("crews", "team-a", "demo", nil)
-	out, _, err = s.kmctl(t, "delete", "-f", writeManifest(t, crewManifest))
+	out, _, err = s.kmctl(t, "delete", "-f", writeManifest(t, crewManifest), "-y")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,8 +240,56 @@ func TestDelete_AgainstCluster(t *testing.T) {
 		t.Error("delete -f leaves the crew")
 	}
 
-	if _, _, err = s.kmctl(t, "delete", "crew", "demo"); err == nil || !strings.Contains(err.Error(), "not found") {
+	if _, _, err = s.kmctl(t, "delete", "crew", "demo", "--yes"); err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Errorf("deleting a crew that is gone is a not-found error, got %v", err)
+	}
+}
+
+func TestDelete_AsksFirst(t *testing.T) {
+	cases := []struct {
+		name, stdin string
+		args        []string
+		gone        bool
+		wantErr     string
+	}{
+		{"no answer aborts", "", nil, false, "aborted: nothing was changed"},
+		{"n aborts", "n\n", nil, false, "aborted: nothing was changed"},
+		{"junk aborts", "maybe\n", nil, false, "aborted: nothing was changed"},
+		{"y deletes", "y\n", nil, true, ""},
+		{"yes deletes", "YES\n", nil, true, ""},
+		{"--yes skips the question", "", []string{"--yes"}, true, ""},
+		{"--dry-run changes nothing and asks nothing", "", []string{"--dry-run"}, false, ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			s := newFakeAPIServer(t)
+			s.add("crews", contextNS, "demo", nil)
+			out, errOut, err := s.kmctlWithInput(t, c.stdin, append([]string{"delete", "crew", "demo"}, c.args...)...)
+			if c.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), c.wantErr) {
+					t.Fatalf("want error %q, got %v", c.wantErr, err)
+				}
+				assertContains(t, "question", errOut, "Delete crew/demo in namespace "+contextNS)
+			} else if err != nil {
+				t.Fatal(err)
+			}
+			if gone := s.get("crews", "demo") == nil; gone != c.gone {
+				t.Errorf("crew gone = %v, want %v (stdout %q)", gone, c.gone, out)
+			}
+		})
+	}
+}
+
+func TestDelete_DryRunSaysSo(t *testing.T) {
+	s := newFakeAPIServer(t)
+	s.add("crews", contextNS, "demo", nil)
+	out, _, err := s.kmctl(t, "delete", "-f", writeManifest(t, crewManifest), "--dry-run")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertContains(t, "dry run", out, "crew/demo deleted (dry run)")
+	if s.get("crews", "demo") == nil {
+		t.Error("--dry-run deleted the crew")
 	}
 }
 
@@ -395,7 +443,7 @@ func TestFitnessDownload_AgainstCluster(t *testing.T) {
 		_, _ = io.WriteString(w, "xlsx-bytes")
 	}
 	file := filepath.Join(t.TempDir(), "results.xlsx")
-	out, _, err := s.kmctl(t, "fitness", "download", "starter", "-o", file)
+	out, _, err := s.kmctl(t, "fitness", "download", "starter", "--output-file", file)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -404,7 +452,7 @@ func TestFitnessDownload_AgainstCluster(t *testing.T) {
 		t.Errorf("downloaded file: %q, %v", data, err)
 	}
 
-	_, _, err = s.kmctl(t, "fitness", "download", "missing", "-o", file)
+	_, _, err = s.kmctl(t, "fitness", "download", "missing", "--output-file", file)
 	if err == nil || !strings.Contains(err.Error(), `download artifact for suite "missing"`) {
 		t.Errorf("a suite without an artifact is an error naming it, got %v", err)
 	}

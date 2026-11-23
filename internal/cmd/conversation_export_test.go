@@ -47,7 +47,7 @@ func TestConversationExport_OneConversation(t *testing.T) {
 	seen := serveExport(s, zipWith(t, manifest))
 	dir := t.TempDir()
 	out := filepath.Join(dir, "one.zip")
-	stdout, _, err := s.kmctl(t, "conversation", "export", "demo", exportID1, "-o", out, "--time-zone", "America/New_York")
+	stdout, _, err := s.kmctl(t, "conversation", "export", "demo", exportID1, "--output-file", out, "--time-zone", "America/New_York")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +97,7 @@ func TestConversationExport_BundleListsRefusedAndExpired(t *testing.T) {
 	})
 	serveExport(s, zipWith(t, string(m)))
 	out := filepath.Join(t.TempDir(), "b.zip")
-	stdout, _, err := s.kmctl(t, "conversation", "export", "demo", exportID1, exportID2, exportID3, "-o", out)
+	stdout, _, err := s.kmctl(t, "conversation", "export", "demo", exportID1, exportID2, exportID3, "--output-file", out)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +162,7 @@ func TestConversationExport_Errors(t *testing.T) {
 			s := newFakeAPIServer(t)
 			refuseExport(s, c.code, c.text)
 			out := filepath.Join(t.TempDir(), "x.zip")
-			_, _, err := s.kmctl(t, "conversation", "export", "demo", exportID1, "-o", out)
+			_, _, err := s.kmctl(t, "conversation", "export", "demo", exportID1, "--output-file", out)
 			if err == nil {
 				t.Fatal("want an error")
 			}
@@ -181,7 +181,7 @@ func TestConversationExport_RefusesToOverwriteAndBadFlags(t *testing.T) {
 	if err := os.WriteFile(out, []byte("keep"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, _, err := s.kmctl(t, "conversation", "export", "demo", exportID1, "-o", out)
+	_, _, err := s.kmctl(t, "conversation", "export", "demo", exportID1, "--output-file", out)
 	if err == nil || !strings.Contains(errorText(err), "already exists") {
 		t.Fatalf("err = %v", err)
 	}
@@ -214,7 +214,7 @@ func TestConversationExport_ResolvesPrefixesThroughTheGateway(t *testing.T) {
 	}
 	seen := serveExport(s, zipWith(t, `{"kind":"kubemoot.conversation-export"}`))
 	out := filepath.Join(t.TempDir(), "p.zip")
-	if _, _, err := s.kmctl(t, "conversation", "export", "demo", "1111", exportID2, "-o", out); err != nil {
+	if _, _, err := s.kmctl(t, "conversation", "export", "demo", "1111", exportID2, "--output-file", out); err != nil {
 		t.Fatal(err)
 	}
 	if got := strings.Join(seen.query["id"], ","); got != exportID1+","+exportID2 {
@@ -238,7 +238,7 @@ func TestConversationExport_StreamCutShort(t *testing.T) {
 		_, _ = w.Write([]byte("PK partial"))
 	}
 	dir := t.TempDir()
-	_, _, err := s.kmctl(t, "conversation", "export", "demo", exportID1, "-o", filepath.Join(dir, "cut.zip"))
+	_, _, err := s.kmctl(t, "conversation", "export", "demo", exportID1, "--output-file", filepath.Join(dir, "cut.zip"))
 	if err == nil {
 		t.Fatal("a cut transfer is an error")
 	}
@@ -248,7 +248,7 @@ func TestConversationExport_StreamCutShort(t *testing.T) {
 func TestConversationExport_OutputInMissingDirectory(t *testing.T) {
 	s := newFakeAPIServer(t)
 	seen := serveExport(s, zipWith(t, `{}`))
-	_, _, err := s.kmctl(t, "conversation", "export", "demo", exportID1, "-o", filepath.Join(t.TempDir(), "missing", "x.zip"))
+	_, _, err := s.kmctl(t, "conversation", "export", "demo", exportID1, "--output-file", filepath.Join(t.TempDir(), "missing", "x.zip"))
 	if err == nil || !strings.Contains(errorText(err), "cannot write") {
 		t.Fatalf("err = %v", err)
 	}
@@ -302,7 +302,7 @@ func TestConversationExport_UnreadableManifestIsANoteNotAFailure(t *testing.T) {
 			s := newFakeAPIServer(t)
 			serveExport(s, c.body)
 			out := filepath.Join(t.TempDir(), "x.zip")
-			stdout, _, err := s.kmctl(t, "conversation", "export", "demo", exportID1, "-o", out)
+			stdout, _, err := s.kmctl(t, "conversation", "export", "demo", exportID1, "--output-file", out)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -351,7 +351,7 @@ func TestConversationExport_DoesNotOverwriteWhenTheFileAppearsMidTransfer(t *tes
 		_ = os.WriteFile(out, []byte("theirs"), 0o600)
 		_, _ = w.Write(body)
 	}
-	_, _, err := s.kmctl(t, "conversation", "export", "demo", exportID1, "-o", out)
+	_, _, err := s.kmctl(t, "conversation", "export", "demo", exportID1, "--output-file", out)
 	if err == nil || !strings.Contains(errorText(err), "already exists") {
 		t.Fatalf("err = %v", err)
 	}

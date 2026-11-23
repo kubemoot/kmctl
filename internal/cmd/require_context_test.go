@@ -19,7 +19,7 @@ import (
 // that pass its own argument checks, so the context check is what stops it.
 var stateCommands = map[string][]string{
 	"kmctl apply":               {"apply", "-f", "-"},
-	"kmctl delete":              {"delete", "crew", "demo"},
+	"kmctl delete":              {"delete", "crew", "demo", "--yes"},
 	"kmctl conversation ask":    {"conversation", "ask", "demo", "hi"},
 	"kmctl conversation replay": {"conversation", "replay", "demo", "abc"},
 	"kmctl conversation stop":   {"conversation", "stop", "demo", "abc"},
@@ -45,7 +45,7 @@ var readOrLocalCommands = []string{
 	"kmctl agent get", "kmctl agent list", "kmctl conversation artifact", "kmctl conversation export",
 	"kmctl conversation list", "kmctl conversation placements",
 	"kmctl conversation watch", "kmctl conversation workspace", "kmctl create", "kmctl crew get",
-	"kmctl crew list", "kmctl crew wait", "kmctl fitness download", "kmctl fitness get", "kmctl fitness list",
+	"kmctl crew list", "kmctl crew wait", "kmctl dashboard token", "kmctl fitness download", "kmctl fitness get", "kmctl fitness list",
 	"kmctl fitness scenarios", "kmctl info", "kmctl mcp report get", "kmctl mcp report list",
 	"kmctl memory export", "kmctl model footprint", "kmctl model list", "kmctl model server get",
 	"kmctl model server list", "kmctl prompt get", "kmctl prompt list", "kmctl status", "kmctl version",
@@ -53,7 +53,7 @@ var readOrLocalCommands = []string{
 
 func runnableCommands(c *cobra.Command) []*cobra.Command {
 	var all []*cobra.Command
-	if c.Runnable() {
+	if c.Runnable() && !isGroup(c) {
 		all = append(all, c)
 	}
 	for _, s := range c.Commands() {
@@ -216,7 +216,7 @@ func TestStateChangingCommandsRefuseADirectNATSURL(t *testing.T) {
 func TestStateChangingCommandWithAUsableContextProceeds(t *testing.T) {
 	s := newFakeAPIServer(t)
 	s.add("crews", contextNS, "demo", nil)
-	if _, stderr, err := s.kmctl(t, "delete", "crew", "demo"); err != nil {
+	if _, stderr, err := s.kmctl(t, "delete", "crew", "demo", "--yes"); err != nil {
 		t.Fatalf("delete with a good context: %v (%s)", err, stderr)
 	}
 }
@@ -228,7 +228,7 @@ func TestLocalCommandsWorkWithoutAKubeconfig(t *testing.T) {
 	for _, args := range [][]string{
 		{"version", "--client"},
 		{"completion", "bash"},
-		{"create", "demo", "--no-input", "-o", dir},
+		{"create", "demo", "--no-input", "--dir", dir},
 	} {
 		f := client.NewFactory()
 		root := newRootCommand(f)

@@ -151,7 +151,7 @@ func checkInvocation(inv invocation) error {
 	if cmd == root {
 		return fmt.Errorf("no such command")
 	}
-	if !cmd.Runnable() {
+	if !cmd.Runnable() || isGroup(cmd) {
 		return fmt.Errorf("%q is a command group, not a command", cmd.CommandPath())
 	}
 	if err := cmd.ParseFlags(rest); err != nil {

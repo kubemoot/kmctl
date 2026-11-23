@@ -144,7 +144,7 @@ func TestNATSEndpointWithoutAUsableKubeconfigIsAnError(t *testing.T) {
 // the Service and how to get past it.
 func TestMemoryExportNamesTheNATSServiceItCouldNotReach(t *testing.T) {
 	s := newFakeAPIServer(t)
-	_, _, err := s.kmctl(t, "memory", "export", "demo", "-o", filepath.Join(t.TempDir(), "out"),
+	_, _, err := s.kmctl(t, "memory", "export", "demo", "--dir", filepath.Join(t.TempDir(), "out"),
 		"--nats-namespace", "queues", "--nats-service", "bus")
 	if err == nil || !strings.Contains(err.Error(), "queues/bus") {
 		t.Fatalf("error = %v, want service queues/bus named", err)
