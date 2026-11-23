@@ -346,17 +346,38 @@ func TestFitnessScenarios_AgainstCluster(t *testing.T) {
 func TestFitnessRun_Suite(t *testing.T) {
 	s := newFakeAPIServer(t)
 	s.add("crewfitnesssuites", "team-a", "starter", starterSuite(map[string]any{
-		"phase": "Completed", "iterationsCompleted": 2, "iterationsTotal": 2, "passed": 1, "failed": 1,
+		"phase": "Completed", "iterationsCompleted": 2, "iterationsTotal": 2, "passed": 2,
 		"judge": map[string]any{"phase": "Judging"},
 	}))
 	out, _, err := s.kmctl(t, "fitness", "run", "starter")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("a suite whose gates all passed exits 0, got %v", err)
 	}
-	assertContains(t, "suite run", out, "Completed  2/2 done  (passed 1, failed 1)", "The judge is still scoring this run (judge Judging)")
+	assertContains(t, "suite run", out, "Completed  2/2 done  (gates passed 2, failed 0)", "The judge is still scoring this run (judge Judging)")
 
 	if _, _, err = s.kmctl(t, "fitness", "run", "missing"); err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Errorf("running a missing suite is a not-found error, got %v", err)
+	}
+}
+
+func TestFitnessRun_FailedSuiteExitsNonZero(t *testing.T) {
+	s := newFakeAPIServer(t)
+	s.add("crewfitnesssuites", "team-a", "starter", starterSuite(map[string]any{
+		"phase": "Completed", "iterationsCompleted": 2, "iterationsTotal": 2, "passed": 1, "failed": 1,
+		"scenarios": []any{
+			map[string]any{"name": "smoke", "iterations": 1, "passed": 1},
+			map[string]any{"name": "pods", "iterations": 1, "failed": 1, "failureReason": "agree floor not met"},
+		},
+		"judge": map[string]any{"phase": "Complete", "judged": 2, "total": 2, "mean": 95},
+	}))
+	out, _, err := s.kmctl(t, "fitness", "run", "starter")
+	if err == nil {
+		t.Fatal("a suite with a failed gate must fail the command, even with a high judge score")
+	}
+	assertContains(t, "failed suite", out, "gates passed 1, failed 1")
+	assertContains(t, "failed suite error", err.Error(), "fitness suite starter failed", "1 of 2 iterations failed their gates", "pods: agree floor not met")
+	if strings.Contains(err.Error(), "smoke:") {
+		t.Errorf("a scenario that passed is not listed: %v", err)
 	}
 }
 
@@ -369,6 +390,13 @@ func TestFitnessRun_OneScenario(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertContains(t, "scenario run", out, `running scenario "pods" as crewfitness/starter-pods-kmctl-x7k2p`, "Passed")
+	s.react = func(obj map[string]any) {
+		obj["status"] = map[string]any{"phase": "Failed", "assertions": []any{map[string]any{"passed": false, "message": "agree floor not met"}}}
+	}
+	if _, _, err = s.kmctl(t, "fitness", "run", "starter", "--scenario", "pods"); err == nil || !strings.Contains(err.Error(), "agree floor not met") {
+		t.Errorf("a failed scenario fails the command with its reason, got %v", err)
+	}
+	s.react = func(obj map[string]any) { obj["status"] = map[string]any{"phase": "Passed"} }
 	cf := s.get("crewfitnesses", "starter-pods-kmctl-x7k2p")
 	if spec, _ := cf["spec"].(map[string]any); spec["crewRef"] != "demo" || spec["testContent"] != "ask: list pods" {
 		t.Errorf("the CrewFitness runs the suite's crew on the scenario's script, got %v", cf)

@@ -120,7 +120,11 @@ func newRunCommand(f *client.Factory) *cobra.Command {
 Cancelled when the suite is stopped), printing progress. The deferred judge scores
 the run after that: when run returns while the judge is still scoring, it says so,
 and kmctl fitness get shows the judge's progress and scores from the suite's status.
-The exit code reflects timeouts and API errors only, not the suite's result. Name an
+The exit code is 0 when every iteration passed its gates (the deterministic
+assertions), and 1 when the suite failed: an iteration failed or could not run, the
+tool smoke failed, or the suite was stopped. The reason is printed. It is also 1 on
+a timeout or an API error. The judge's score is separate and does not change the
+exit code. Name an
 existing suite, or apply one from a manifest with -f; run then waits in the
 namespace the manifest was applied to (its own, else -n, else the kubeconfig default).
 With --scenario NAME, only that one scenario runs: a single CrewFitness is created
@@ -166,7 +170,10 @@ func (r fitnessRun) suite(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
-	return printJudgeHint(r.w, done)
+	if err := printJudgeHint(r.w, done); err != nil {
+		return err
+	}
+	return suiteVerdict(done)
 }
 
 // scenario runs one of the suite's scripts as a single CrewFitness and waits for it.
@@ -188,8 +195,11 @@ func (r fitnessRun) scenario(ctx context.Context, suiteName, scenario string) er
 	if _, err := fmt.Fprintf(r.w, "running scenario %q as crewfitness/%s\n", scenario, created.GetName()); err != nil {
 		return err
 	}
-	_, err = pollPhase(ctx, r.dc, resource.CrewFitness, r.ns, created.GetName(), r.w, r.timeout)
-	return err
+	done, err := pollPhase(ctx, r.dc, resource.CrewFitness, r.ns, created.GetName(), r.w, r.timeout)
+	if err != nil {
+		return err
+	}
+	return scenarioVerdict(done, scenario)
 }
 
 // resolveRunSuite returns the suite name and namespace to run: from -f (apply the
@@ -285,7 +295,7 @@ func buildCrewFitness(suite, scenario, crewRef, testContent string) *unstructure
 
 func isTerminalPhase(phase string) bool {
 	switch phase {
-	case "Completed", "Cancelled", "Passed", "Failed", "Error":
+	case "Completed", "Cancelled", "Passed", "Failed", "Error", "ToolSmokeFailed":
 		return true
 	default:
 		return false
@@ -345,7 +355,7 @@ func progressLine(obj *unstructured.Unstructured, phase string) string {
 	if ok1 && ok2 && total > 0 {
 		passed, _, _ := unstructured.NestedInt64(obj.Object, "status", "passed")
 		failed, _, _ := unstructured.NestedInt64(obj.Object, "status", "failed")
-		return fmt.Sprintf("%-10s %d/%d done  (passed %d, failed %d)", phase, done, total, passed, failed)
+		return fmt.Sprintf("%-10s %d/%d done  (gates passed %d, failed %d)", phase, done, total, passed, failed)
 	}
 	return phase
 }

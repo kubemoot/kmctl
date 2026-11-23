@@ -30,6 +30,7 @@ var SuiteResultPaths = []string{
 	"status.scenarios.passed",
 	"status.scenarios.failed",
 	"status.scenarios.errored",
+	"status.scenarios.failureReason",
 	"status.scenarios.meanDurationMs",
 }
 
@@ -44,31 +45,83 @@ type suiteRow struct {
 	name                             string
 	iterations, passed, failed, errs string
 	meanDuration                     string
+	failureReason                    string
 	judgeScore
 }
 
 // RenderSuiteResults writes what the operator records on a CrewFitnessSuite's
-// status after the summary row: a judge summary line, then one row per
-// scenario joining status.scenarios and status.judge.scores. It writes nothing
-// when the status carries neither.
+// status after the summary row: why the suite failed when it did, a judge summary
+// line, then one row per scenario joining status.scenarios (the gates) and
+// status.judge.scores (the judge), the gate failure of each scenario that has
+// one, and a line saying what the two kinds of column mean. It writes nothing
+// when the status carries none of these.
 func RenderSuiteResults(w io.Writer, obj map[string]any) error {
 	judge, hasJudge, _ := unstructured.NestedMap(obj, "status", "judge")
 	rows := suiteRows(obj)
-	if !hasJudge && len(rows) == 0 {
+	reason := suiteFailureReason(obj)
+	if !hasJudge && len(rows) == 0 && reason == "" {
 		return nil
 	}
 	out := output.NewWriter(w)
+	if reason != "" {
+		out.Printf("\nFailure: %s\n", reason)
+	}
 	if hasJudge {
 		out.Printf("\nJudge: %s\n", judgeSummary(judge))
 	}
 	if out.Err() != nil || len(rows) == 0 {
 		return out.Err()
 	}
-	out.Printf("\n")
-	if out.Err() != nil {
-		return out.Err()
+	if err := renderGateNotes(w, rows); err != nil {
+		return err
 	}
 	return renderSuiteRows(w, rows)
+}
+
+// suiteFailureReason is the one-line reason a suite did not run to a result:
+// status.error for an Error or Failed suite, the ToolSmoke condition message for
+// a ToolSmokeFailed one. Empty for every other phase.
+func suiteFailureReason(obj map[string]any) string {
+	phase := stringField(mapAt(obj, "status"), "phase")
+	switch phase {
+	case "Error", "Failed":
+		return stringField(mapAt(obj, "status"), "error")
+	case "ToolSmokeFailed":
+		conds, _, _ := unstructured.NestedSlice(obj, "status", "conditions")
+		for _, c := range conds {
+			if m, ok := c.(map[string]any); ok && m["type"] == "ToolSmoke" {
+				return stringField(m, "message")
+			}
+		}
+	}
+	return ""
+}
+
+func mapAt(obj map[string]any, field string) map[string]any {
+	m, _, _ := unstructured.NestedMap(obj, field)
+	return m
+}
+
+// renderGateNotes lists why each scenario failed its gates, then says what the
+// gate and judge columns of the table that follows mean, so the two cannot be
+// read as one result.
+func renderGateNotes(w io.Writer, rows []suiteRow) error {
+	out := output.NewWriter(w)
+	header := false
+	for _, r := range rows {
+		if r.failureReason == "" {
+			continue
+		}
+		if !header {
+			out.Printf("\nGate failures:\n")
+			header = true
+		}
+		out.Printf("  %s: %s\n", r.name, r.failureReason)
+	}
+	out.Printf("\nGATES are the scenario's deterministic assertions, checked as each iteration ran.\n" +
+		"JUDGE SCORE is the judge's 0-100 rating of the answer against the reference.\n" +
+		"They are independent: an iteration can pass its gates and score low, or fail a gate and score high.\n\n")
+	return out.Err()
 }
 
 // judgeSummary is the one-line judge state: phase, progress, mean, zeros and
@@ -139,6 +192,8 @@ func scenarioRow(m map[string]any) suiteRow {
 		passed:     orZero(intField(m, "passed")),
 		failed:     orZero(intField(m, "failed")),
 		errs:       orZero(intField(m, "errored")),
+
+		failureReason: stringField(m, "failureReason"),
 	}
 	if ms, ok := positiveInt(m, "meanDurationMs"); ok {
 		row.meanDuration = formatMillis(ms, time.Second)
@@ -152,7 +207,7 @@ func renderSuiteRows(w io.Writer, rows []suiteRow) error {
 		cells = append(cells, []string{r.name, orNone(r.iterations), orNone(r.passed), orNone(r.failed),
 			orNone(r.errs), orNone(r.meanDuration), orNone(r.score), r.reason})
 	}
-	return writeTable(w, []string{"SCENARIO", "ITERATIONS", "PASSED", "FAILED", "ERRORED", "MEAN DURATION", "SCORE", "REASON"}, cells)
+	return writeTable(w, []string{"SCENARIO", "ITERATIONS", "GATES PASSED", "GATES FAILED", "ERRORED", "MEAN DURATION", "JUDGE SCORE", "JUDGE REASON"}, cells)
 }
 
 // orZero renders an absent count or score as 0, so a field the operator left out

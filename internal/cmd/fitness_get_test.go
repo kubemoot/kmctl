@@ -66,7 +66,7 @@ func TestFitnessGetPrintsJudgeResultsFromStatus(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("fitness get: %v\n%s", err, out.String())
 	}
-	for _, want := range []string{"JUDGE", "QUALITY", "Complete", "Judge: Complete, 1 of 1 scenarios judged, mean 87", "matches the reference"} {
+	for _, want := range []string{"JUDGE", "JUDGE SCORE", "GATES PASSED", "Complete", "Judge: Complete, 1 of 1 scenarios judged, mean 87", "matches the reference"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("output lacks %q:\n%s", want, out.String())
 		}
