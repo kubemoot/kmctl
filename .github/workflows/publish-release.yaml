@@ -59,7 +59,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up the release helpers
-        uses: kubemoot/release-actions/setup@46be10555367466d5add34c0f37dc2ae86c40af6 # v0.12.0
+        uses: kubemoot/release-actions/setup@899dec57c20fafcccae4120d20bfd88e454f0a0f # v0.12.2
 
       # Before anything is tagged: the candidate this run would release must make a crew
       # the Kubemoot it pins accepts. kmctl create's bundle and chart, every size, apply
