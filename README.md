@@ -191,9 +191,12 @@ kmctl conversation export homelab-pilot 6733c361 9f1e22a0 --output-file review.z
 kmctl conversation export homelab-pilot 6733c361 9f1e22a0 --report  # the manifest only, no zip
 ```
 
-The operator's report service builds the zip on request and keeps no copy. kmctl port-forwards
-to it (`kubemoot/kubemoot-operator-report`; `--operator-namespace` and `--operator-service`
-name another) with your kubeconfig token, and you need `get` on the Crew. After a download of
+The operator builds the zip on request and keeps no copy. When the operator serves its
+aggregated report API (`reports.kubemoot.ai`), kmctl reaches it through the API server with your
+own kubeconfig, whatever it signs in with (a client certificate, OIDC or a token). Otherwise, or
+with `--operator-namespace`, `--operator-service` or `--token-service-account`, kmctl
+port-forwards to the report service (`kubemoot/kubemoot-operator-report`) with your kubeconfig
+token. Either way you need `get` on the Crew. After a download of
 several conversations, kmctl prints each ID the manifest lists as refused, expired or failed.
 The file is written whole or not at all and never overwrites an existing one.
 

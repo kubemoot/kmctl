@@ -123,10 +123,15 @@ func (f *Factory) authenticateAsCaller(ctx context.Context, cfg *rest.Config) er
 		cfg.BearerToken, cfg.BearerTokenFile = kube.BearerToken, kube.BearerTokenFile
 		cfg.ExecProvider, cfg.AuthProvider = kube.ExecProvider, kube.AuthProvider
 	}
+	f.addReason(cfg)
+	return nil
+}
+
+// addReason sends the caller's access reason, when there is one, on every request of cfg.
+func (f *Factory) addReason(cfg *rest.Config) {
 	if reason := strings.TrimSpace(f.Caller.Reason); reason != "" {
 		cfg.Wrap(func(rt http.RoundTripper) http.RoundTripper { return headerAdder{rt, reason} })
 	}
-	return nil
 }
 
 // headerAdder sets the access reason on every request.

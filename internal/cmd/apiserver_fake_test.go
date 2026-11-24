@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/kubemoot/kmctl/internal/client"
 )
 
 // fakeAPIServer is an in-memory stand-in for the Kubernetes API server: discovery
@@ -33,6 +35,12 @@ type fakeAPIServer struct {
 	// refuse, when set, answers a request with an error Status instead of
 	// serving it: it returns the HTTP code and message, or 0 to serve the request.
 	refuse func(r *http.Request) (code int, message string)
+
+	// reports, when set, serves the operator's aggregated report API through the API server
+	// (its discovery document is served for it).
+	reports http.HandlerFunc
+	// reportsProbes counts the discovery requests the aggregated report API answered.
+	reportsProbes int
 
 	// openErr, when set, fails every port-forward to a Service.
 	openErr error
@@ -63,7 +71,10 @@ var kubemootKinds = map[string]string{
 	"kubemootconfigs":   "KubemootConfig",
 }
 
-const kubemootAPIPath = "/apis/kubemoot.ai/v1alpha1"
+const (
+	kubemootAPIPath = "/apis/kubemoot.ai/v1alpha1"
+	reportsAPIPath  = client.ReportsAPIPath
+)
 
 // contextNS is the namespace of the kubeconfig's current context.
 const contextNS = "team-a"
@@ -151,6 +162,8 @@ func (s *fakeAPIServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch {
+	case s.reports != nil && strings.HasPrefix(p, reportsAPIPath):
+		s.serveReports(w, r)
 	case strings.HasPrefix(p, kubemootAPIPath+"/") && !s.noKubemoot:
 		s.serveKubemoot(w, r, strings.TrimPrefix(p, kubemootAPIPath+"/"))
 	case strings.HasPrefix(p, "/api/v1/namespaces/"):
@@ -158,6 +171,16 @@ func (s *fakeAPIServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeStatus(w, http.StatusNotFound, "NotFound", "no route for "+p)
 	}
+}
+
+// serveReports serves the aggregated report API: its discovery document, and the reports.
+func (s *fakeAPIServer) serveReports(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == reportsAPIPath {
+		s.reportsProbes++
+		writeJSON(w, http.StatusOK, map[string]any{"kind": "APIResourceList", "groupVersion": "reports.kubemoot.ai/v1alpha1", "resources": []any{}})
+		return
+	}
+	s.reports(w, r)
 }
 
 // discovery returns the discovery documents by path: the server version, the
