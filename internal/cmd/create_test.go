@@ -106,6 +106,36 @@ func TestCreateCommand_ScaffoldsAndHints(t *testing.T) {
 	}
 }
 
+// The editor files point at the schema the flag names, and a URL an editor cannot
+// fetch is refused before anything is written.
+func TestCreateCommand_SchemaURL(t *testing.T) {
+	t.Setenv("KUBECONFIG", t.TempDir()+"/absent-kubeconfig")
+	const mirror = "https://mirror.example.com/kubemoot_v1alpha1.json"
+	dir := t.TempDir()
+	cmd := newCreateCommand(client.NewFactory())
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"demo", "--no-input", "--dir", dir, "--schema-url", mirror})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	settings, err := os.ReadFile(filepath.Join(dir, "demo", ".vscode", "settings.json"))
+	if err != nil || !strings.Contains(string(settings), mirror) || strings.Contains(string(settings), "github.com") {
+		t.Errorf("settings.json does not point only at the mirror (%v): %s", err, settings)
+	}
+
+	bad := newCreateCommand(client.NewFactory())
+	bad.SetOut(&bytes.Buffer{})
+	bad.SetErr(&bytes.Buffer{})
+	bad.SetArgs([]string{"other", "--no-input", "--dir", dir, "--schema-url", "not a url"})
+	if err := bad.Execute(); err == nil || !strings.Contains(err.Error(), "--schema-url") {
+		t.Fatalf("a bad --schema-url was accepted: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "other")); !os.IsNotExist(err) {
+		t.Errorf("a refused scaffold wrote files: %v", err)
+	}
+}
+
 // The bundle binds its RBAC and names its namespace in the prompts, so -n
 // decides both, and the hint applies to the same namespace.
 func TestCreateCommand_BundleFollowsTheNamespaceFlag(t *testing.T) {

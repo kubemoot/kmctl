@@ -673,13 +673,13 @@ func TestWrite_ChartCreatesItsFolders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Write: %v", err)
 	}
-	if len(written) != 10 {
-		t.Errorf("want 10 files, got %d: %v", len(written), written)
+	if len(written) != 13 {
+		t.Errorf("want 13 files, got %d: %v", len(written), written)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "demo", "templates", "models.yaml")); !os.IsNotExist(err) {
 		t.Errorf("a crew ships no models.yaml: %v", err)
 	}
-	for _, rel := range []string{"Chart.yaml", "templates/agents.yaml", "templates/rbac.yaml", "templates/fitness-scenarios.yaml", "fitness/fitness.yaml"} {
+	for _, rel := range []string{"Chart.yaml", "templates/agents.yaml", "templates/rbac.yaml", "templates/fitness-scenarios.yaml", "fitness/fitness.yaml", ".vscode/settings.json", ".vscode/extensions.json"} {
 		if _, err := os.Stat(filepath.Join(dir, "demo", filepath.FromSlash(rel))); err != nil {
 			t.Errorf("expected %s written: %v", rel, err)
 		}

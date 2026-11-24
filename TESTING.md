@@ -47,6 +47,14 @@ API accepts. It runs on every push against Kubemoot `main`'s CRDs and in Publish
 `KMCTL_REQUIRE_SCAFFOLD_APPLIES`, so a missing prerequisite (helm, CRDs, API server
 binaries) fails the gate instead of skipping it.
 
+The scaffold's editor files have a second gate, `scripts/scaffold-in-editor.sh OPERATOR_DIR`.
+It runs Red Hat's yaml-language-server (the engine of the Red Hat YAML extension) over a
+bundle and a chart with the settings kmctl wrote, against the JSON Schemas generated from a
+Kubemoot checkout's CRDs, and requires zero Problems. Two controls must show Problems (a
+misspelled field, and a chart's templates read as plain YAML), so a clean result is not
+vacuous. The schema is served from 127.0.0.1 and nothing else leaves the machine. It runs on
+every push against Kubemoot `main`.
+
 ## Tier 3 - e2e dogfood (manual; lives in Kubemoot's e2e)
 
 The real "does kmctl still work against real Kubemoot" check belongs in **Kubemoot's own

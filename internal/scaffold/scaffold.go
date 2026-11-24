@@ -25,6 +25,7 @@ type Options struct {
 	Namespace   string // bundle only: the namespace the RBAC binds and the prompts name; default crew-<Name>
 	OutputDir   string // directory to write into
 	Chart       bool   // lay the crew out as a Helm chart (Chart.yaml, templates/, fitness/)
+	SchemaURL   string // the JSON Schema the editor checks manifests against; "" means DefaultSchemaURL
 }
 
 // Validate checks the options before generation.
@@ -33,6 +34,9 @@ func (o Options) Validate() error {
 		return err
 	}
 	if err := checkDisplayName(o.DisplayName); err != nil {
+		return err
+	}
+	if err := validateSchemaURL(o.SchemaURL); err != nil {
 		return err
 	}
 	if o.Members < 1 || o.Members > MaxMembers {
@@ -154,6 +158,16 @@ func Generate(o Options) (map[string]string, error) {
 			return nil, fmt.Errorf("render %s: %w", name, err)
 		}
 		out[name] = rendered
+	}
+	editor, err := editorFiles(o)
+	if err != nil {
+		return nil, err
+	}
+	for name, content := range editor {
+		if _, taken := out[name]; taken {
+			return nil, fmt.Errorf("the editor file %s is also a crew file", name)
+		}
+		out[name] = content
 	}
 	return out, nil
 }
