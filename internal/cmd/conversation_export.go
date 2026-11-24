@@ -40,16 +40,42 @@ type conversationExportOptions struct {
 	timeZone        string
 	opNamespace     string
 	opService       string
+	// viaService is set when the flags name the report Service, so the aggregated API is not tried.
+	viaService bool
 }
 
-// openReport opens a client to the operator's report Service as the caller. Tests
-// reach it through the factory's OpenService.
-func openReport(ctx context.Context, f *client.Factory, o conversationExportOptions) (rest.Interface, func(), error) {
+// reportRoutes names the operator's report endpoints for the way they are reached: the
+// aggregated API through the API server, or the report Service.
+type reportRoutes struct{ aggregated bool }
+
+// conversationExport is the path segments of the conversation export of a crew.
+func (r reportRoutes) conversationExport(namespace, crew string) []string {
+	if r.aggregated {
+		return []string{"namespaces", namespace, "crews", crew, "conversation-export"}
+	}
+	return []string{"conversation-export", namespace, crew}
+}
+
+// openReport opens a client to the operator's reports as the caller. It prefers the
+// aggregated report API through the API server, which takes any kubeconfig; it uses the
+// report Service when that API is not installed, or when the flags name the Service or
+// ask for a minted ServiceAccount token. Tests reach the Service through the factory's
+// OpenService.
+func openReport(ctx context.Context, f *client.Factory, o conversationExportOptions) (rest.Interface, reportRoutes, func(), error) {
+	if !o.viaService && f.Caller.ServiceAccount == "" {
+		rc, ok, err := f.ReportsClient(ctx)
+		switch {
+		case err != nil:
+			return nil, reportRoutes{}, nil, explainReportsAPI(f, err)
+		case ok:
+			return rc, reportRoutes{aggregated: true}, func() {}, nil
+		}
+	}
 	rc, stop, err := f.GatewayClient(ctx, o.opNamespace, o.opService, reportPort)
 	if err != nil {
-		return nil, nil, explainReportOpen(f, err, o)
+		return nil, reportRoutes{}, nil, explainReportOpen(f, err, o)
 	}
-	return rc, stop, nil
+	return rc, reportRoutes{}, stop, nil
 }
 
 func newConversationExportCommand(f *client.Factory) *cobra.Command {
@@ -71,8 +97,11 @@ file is never overwritten.
 
 --report asks for the manifest only, with no zip: what would be included and what left out.
 
-kmctl port-forwards to the operator's report Service with your kubeconfig token, as the
-dashboard does for you; you need get on the Crew, and the operator checks it. Pass the full
+When the operator serves its aggregated report API (reports.kubemoot.ai), kmctl reaches it
+through the API server with your own kubeconfig, whatever it signs in with. Otherwise, or
+with --operator-namespace, --operator-service or --token-service-account, kmctl port-forwards
+to the operator's report Service with your kubeconfig token, as the dashboard does for you.
+You need get on the Crew, and the operator checks it. Pass the full
 conversation IDs that "kmctl conversation list" prints, or a unique prefix of each.`, conversationexport.MaxBundle),
 		Example: `  kmctl conversation export homelab-pilot 6733c361-aa0c-4bde-85c6-e143af23b251 -n crew-homelab-pilot
   kmctl conv export homelab-pilot 6733c361 9f1e22a0 --output-file review.zip
@@ -82,6 +111,7 @@ conversation IDs that "kmctl conversation list" prints, or a unique prefix of ea
 		ValidArgsFunction: completeCrewThenConversation(f),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			o.crew, o.ids, o.namespace = args[0], args[1:], f.Namespace()
+			o.viaService = cmd.Flags().Changed("operator-namespace") || cmd.Flags().Changed("operator-service")
 			if err := checkPath(cmd, outputFileFlag, o.out); err != nil {
 				return err
 			}
@@ -118,15 +148,15 @@ func runConversationExport(cmd *cobra.Command, f *client.Factory, o conversation
 	if o.ids, err = resolveExportIDs(ctx, f, o); err != nil {
 		return err
 	}
-	rc, stop, err := openReport(ctx, f, o)
+	rc, routes, stop, err := openReport(ctx, f, o)
 	if err != nil {
 		return err
 	}
 	defer stop()
 	if o.report {
-		return runExportReport(ctx, cmd.OutOrStdout(), rc, o)
+		return runExportReport(ctx, cmd.OutOrStdout(), rc, routes, o)
 	}
-	return runExportZip(ctx, cmd.OutOrStdout(), rc, o, scope)
+	return runExportZip(ctx, cmd.OutOrStdout(), rc, routes, o, scope)
 }
 
 // validateExport checks what the flags and arguments say before anything is asked of the cluster.
@@ -187,8 +217,8 @@ func resolveExportIDs(ctx context.Context, f *client.Factory, o conversationExpo
 }
 
 // exportRequest builds the report Service request for the export.
-func exportRequest(rc rest.Interface, o conversationExportOptions) *rest.Request {
-	req := rc.Get().Suffix("conversation-export", o.namespace, o.crew)
+func exportRequest(rc rest.Interface, routes reportRoutes, o conversationExportOptions) *rest.Request {
+	req := rc.Get().Suffix(routes.conversationExport(o.namespace, o.crew)...)
 	for _, id := range o.ids {
 		req = req.Param("id", id)
 	}
@@ -198,10 +228,12 @@ func exportRequest(rc rest.Interface, o conversationExportOptions) *rest.Request
 	return req
 }
 
-func runExportZip(ctx context.Context, stdout io.Writer, rc rest.Interface, o conversationExportOptions, scope crewscope.Scope) error {
-	body, err := exportRequest(rc, o).Stream(ctx)
+func runExportZip(
+	ctx context.Context, stdout io.Writer, rc rest.Interface, routes reportRoutes, o conversationExportOptions, scope crewscope.Scope,
+) error {
+	body, err := exportRequest(rc, routes, o).Stream(ctx)
 	if err != nil {
-		return explainReport(err, o)
+		return explainReport(err, routes, o)
 	}
 	defer func() { _ = body.Close() }()
 	if err := writeDownload(o.out, body, downloadOptions{mode: 0o600}); err != nil {
@@ -309,10 +341,12 @@ func printEntries(w io.Writer, m conversationexport.BundleManifest) error {
 }
 
 // runExportReport asks for the manifest only and prints it.
-func runExportReport(ctx context.Context, stdout io.Writer, rc rest.Interface, o conversationExportOptions) error {
-	raw, err := exportRequest(rc, o).Param("report", "true").Do(ctx).Raw()
+func runExportReport(
+	ctx context.Context, stdout io.Writer, rc rest.Interface, routes reportRoutes, o conversationExportOptions,
+) error {
+	raw, err := exportRequest(rc, routes, o).Param("report", "true").Do(ctx).Raw()
 	if err != nil {
-		return explainReport(err, o)
+		return explainReport(err, routes, o)
 	}
 	m, err := decodeManifest(raw)
 	if err != nil {
@@ -374,8 +408,38 @@ func explainReportOpen(f *client.Factory, err error, o conversationExportOptions
 		"Check that Kubemoot is installed there, or name its report Service with --operator-namespace and --operator-service.", err)
 }
 
-// explainReport explains a failed answer of the report Service by its HTTP status.
-func explainReport(err error, o conversationExportOptions) error {
+// unauthorized explains a 401 of the way the reports were reached.
+func (r reportRoutes) unauthorized(err error) error {
+	if r.aggregated {
+		return clierr.New("the API server did not accept your credentials for the operator's report API",
+			"Check that your kubeconfig works with: kubectl auth whoami", err)
+	}
+	return clierr.New("the operator did not accept your Kubernetes token",
+		"The export needs a bearer token: a kubeconfig that signs in with a client certificate has none; use --token-service-account NAMESPACE/NAME", err)
+}
+
+// forbiddenHint says what a refused export needs, of the way the reports were reached.
+func (r reportRoutes) forbiddenHint(o conversationExportOptions) string {
+	hint := "An export needs get on the Crew; check yours with: kubectl auth can-i get crews.kubemoot.ai/" + o.crew + " -n " + o.namespace
+	if r.aggregated {
+		hint += ". Through the report API it also needs get on crews/conversation-export in the reports.kubemoot.ai group, " +
+			"which the operator chart's reports-api ClusterRole grants; check with: kubectl auth can-i get crews.reports.kubemoot.ai/" + o.crew + "/conversation-export -n " + o.namespace
+	}
+	return hint
+}
+
+// explainReportsAPI explains why the aggregated report API could not be asked about.
+func explainReportsAPI(f *client.Factory, err error) error {
+	var caller *client.CallerError
+	if errors.As(err, &caller) {
+		return explainCaller(f, caller)
+	}
+	return clierr.New("could not ask the API server whether the operator's report API is installed",
+		"Check that your kubeconfig works with: kubectl auth whoami. To skip this check and use the operator's report Service, name it with --operator-service.", err)
+}
+
+// explainReport explains a failed answer of the operator's reports by its HTTP status.
+func explainReport(err error, routes reportRoutes, o conversationExportOptions) error {
 	var se *apierrors.StatusError
 	if !errors.As(err, &se) {
 		return err
@@ -383,11 +447,9 @@ func explainReport(err error, o conversationExportOptions) error {
 	text := clean(statusText(se))
 	switch int(se.Status().Code) {
 	case http.StatusUnauthorized:
-		return clierr.New("the operator did not accept your Kubernetes token",
-			"The export needs a bearer token: a kubeconfig that signs in with a client certificate has none; use --token-service-account NAMESPACE/NAME", err)
+		return routes.unauthorized(err)
 	case http.StatusForbidden:
-		return clierr.New(fmt.Sprintf("the operator refused the export of crew %q in namespace %q: %s", o.crew, o.namespace, text),
-			"An export needs get on the Crew; check yours with: kubectl auth can-i get crews.kubemoot.ai/"+o.crew+" -n "+o.namespace, err)
+		return clierr.New(fmt.Sprintf("the operator refused the export of crew %q in namespace %q: %s", o.crew, o.namespace, text), routes.forbiddenHint(o), err)
 	case http.StatusNotFound:
 		return clierr.New(fmt.Sprintf("Kubemoot holds no such conversation of crew %q: %s", o.crew, text),
 			"It does not exist or has expired. List the crew's conversations with: kmctl conversation list "+o.crew+" -n "+o.namespace, err)
