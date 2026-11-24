@@ -386,25 +386,33 @@ func TestTargetNamespace(t *testing.T) {
 	}
 }
 
-// A bundle names its namespace in the prompts and the RoleBinding; the chart
-// leaves both to Helm.
+// No prompt names the crew's namespace: Kubemoot tells each agent where it runs. The
+// bundle's RoleBinding is the one manifest that names it; the chart leaves that to Helm.
 func TestGenerate_NamespaceByForm(t *testing.T) {
-	o := bundle(1)
+	o := bundle(MaxMembers)
 	o.Namespace = "team-a"
 	flat, err := Generate(o)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(flat["promptmodules.yaml"], `namespace "team-a"`) || !strings.Contains(flat["access/rbac.yaml"], "namespace: team-a") {
-		t.Error("the bundle must name team-a in its prompts and RoleBinding")
+	if !strings.Contains(flat["access/rbac.yaml"], "namespace: team-a") {
+		t.Error("the bundle's RoleBinding must name team-a")
 	}
 	o.Chart = true
 	chart, err := Generate(o)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(chart["templates/promptmodules.yaml"], `namespace "{{ .Release.Namespace }}"`) || strings.Contains(chart["templates/promptmodules.yaml"], "team-a") {
-		t.Error("the chart's prompts must take the namespace from Helm")
+	for form, files := range map[string]map[string]string{"bundle": flat, "chart": chart} {
+		for _, name := range filesNamingNamespace(files, "team-a") {
+			t.Errorf("%s %s names the namespace; the runtime supplies it", form, name)
+		}
+	}
+	if strings.Contains(chart["templates/promptmodules.yaml"], ".Release.Namespace") {
+		t.Error("the chart's prompts take the namespace from Helm; they carry none")
+	}
+	if strings.Contains(chart["templates/rbac.yaml"], "team-a") {
+		t.Error("the chart's RBAC must take the namespace from Helm")
 	}
 }
 
@@ -469,14 +477,14 @@ func TestGenerate_ChartPromptsSwitchOnClusterWide(t *testing.T) {
 	_, chart := flatAndChart(t, 1)
 	prompts := chart["templates/promptmodules.yaml"]
 	wide := strings.Index(prompts, "{{- if .Values.access.clusterWide }}\n    ASSERT this crew reads the whole cluster")
-	if wide < 0 || !strings.Contains(prompts[wide:], "{{- else }}\n    ASSERT this crew reads only the namespace {{ .Release.Namespace }}") {
+	if wide < 0 || !strings.Contains(prompts[wide:], "{{- else }}\n    ASSERT this crew reads only its own namespace") {
 		t.Error("synthesis-prompt must hold the cluster-wide and the namespaced scope rules in the access switch")
 	}
 	if !strings.Contains(prompts, "{{- if not .Values.access.clusterWide }}\n    WHEN the question asks about other namespaces") {
 		t.Error("the out-of-scope rule must render only when clusterWide is false")
 	}
 	protocol := strings.Index(prompts, "{{- if .Values.access.clusterWide }}\n    ASSERT this crew reads every namespace in the cluster")
-	if protocol < 0 || !strings.Contains(prompts[protocol:], "{{- else }}\n    ASSERT this crew reads ONE Kubernetes namespace, its own: {{ .Release.Namespace }}") {
+	if protocol < 0 || !strings.Contains(prompts[protocol:], "{{- else }}\n    ASSERT this crew reads ONE Kubernetes namespace, its own: the namespace your context line says you are in") {
 		t.Error("discussion-protocol must hold the cluster-wide and the namespaced scope rules in the access switch")
 	}
 	ifs := strings.Count(prompts, "{{- if .Values.access.clusterWide }}") + strings.Count(prompts, "{{- if not .Values.access.clusterWide }}")
@@ -576,8 +584,8 @@ func TestAgentPrompt_NoSwitchWithoutClusterWideRules(t *testing.T) {
 func chartData() templateData  { o := bundle(1); o.Chart = true; return o.data() }
 func bundleData() templateData { return bundle(1).data() }
 
-// The chart holds the same manifests as the bundle. Only the namespace in the
-// prompts and the RBAC differ: Helm supplies both.
+// The chart holds the same manifests as the bundle. Only the RBAC's namespace differs,
+// which Helm supplies.
 func TestGenerate_ChartLayoutKeepsTheManifests(t *testing.T) {
 	flat, chart := flatAndChart(t, MaxMembers)
 	for _, name := range []string{"crew.yaml", "agents.yaml"} {
@@ -591,10 +599,9 @@ func TestGenerate_ChartLayoutKeepsTheManifests(t *testing.T) {
 	if chartTools != flat["tools.yaml"] {
 		t.Error("templates/tools.yaml differs from the bundle's tools.yaml beyond the NATS address")
 	}
-	chartPrompts := strings.ReplaceAll(namespacedBranch(chart["templates/promptmodules.yaml"]), helmNamespace, "crew-demo")
-	chartPrompts = strings.ReplaceAll(chartPrompts, chartData().Widen, bundleData().Widen)
+	chartPrompts := strings.ReplaceAll(namespacedBranch(chart["templates/promptmodules.yaml"]), chartData().Widen, bundleData().Widen)
 	if chartPrompts != flat["promptmodules.yaml"] {
-		t.Error("the chart's namespaced prompt modules may differ from the bundle's only in the namespace and how to widen access")
+		t.Error("the chart's namespaced prompt modules may differ from the bundle's only in how to widen access")
 	}
 	if chart["fitness/fitness.yaml"] != flat["fitness/fitness.yaml"] {
 		t.Error("the fitness suite differs between the forms")
@@ -902,4 +909,16 @@ func TestGenerate_WorkspaceServerNATSAddress(t *testing.T) {
 	if strings.Contains(one["values.yaml"], "nats") {
 		t.Error("a crew without the reviewer has no workspace server and so no nats value")
 	}
+}
+
+// filesNamingNamespace lists the generated files, other than the RoleBinding and the
+// README's install commands, whose text holds the namespace.
+func filesNamingNamespace(files map[string]string, ns string) []string {
+	var named []string
+	for name, text := range files {
+		if name != "access/rbac.yaml" && name != "README.md" && strings.Contains(text, ns) {
+			named = append(named, name)
+		}
+	}
+	return named
 }

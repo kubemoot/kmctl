@@ -62,10 +62,6 @@ func (o Options) TargetNamespace() string {
 	return "crew-" + o.Name
 }
 
-// helmNamespace is what the chart's templates write wherever they need the
-// crew's namespace; Helm fills it in at install.
-const helmNamespace = "{{ .Release.Namespace }}"
-
 // kubernetesMCPImage is the Kubernetes MCP server the starter crew reads its
 // namespace with, the release the reference crews run. Bump it here.
 const kubernetesMCPImage = "quay.io/containers/kubernetes_mcp_server:v0.0.63"
@@ -84,7 +80,6 @@ type templateData struct {
 	Agents             []agent
 	HasReviewer        bool
 	Has                map[string]bool // specialist key -> in this crew
-	NS                 string          // the crew's namespace as the manifests write it
 	TargetNS           string          // the namespace the README installs into
 	Rules              string          // the read-only RBAC rules
 	KubernetesMCPImage string          // the tool server image
@@ -109,12 +104,10 @@ func (o Options) data() templateData {
 		KubernetesMCPImage: kubernetesMCPImage,
 		Agents:             o.agents(),
 	}
-	d.NS = d.TargetNS
 	d.NATSURL = quoted(defaultNATSURL, false)
 	d.NATSNote = "Change it if your cluster runs NATS elsewhere."
 	d.Widen = "scaffolding the crew again as a Helm chart (kmctl create --chart) with access.clusterWide: true"
 	if o.Chart {
-		d.NS = helmNamespace
 		d.NATSURL = "{{ .Values.nats.url | quote }}"
 		d.NATSNote = "Set nats.url in values.yaml for another server."
 		d.Widen = "setting access.clusterWide: true in the crew's values.yaml and redeploying"

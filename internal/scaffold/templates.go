@@ -143,16 +143,16 @@ spec:
     DEFINE COMPONENT scope
 [[- if .Chart ]]
 {{- if .Values.access.clusterWide }}
-    ASSERT this crew reads every namespace in the cluster, read-only and without Secrets; it is installed in the namespace [[ .NS ]]
-    WHEN a question says "this namespace" or "here" THEN it means [[ .NS ]]
+    ASSERT this crew reads every namespace in the cluster, read-only and without Secrets
+    WHEN a question says "this namespace" or "here" THEN it means the namespace your context line says you are in
     WHEN a question names a namespace THEN pass that namespace to every tool that takes one
     WHEN a question names no namespace THEN read every namespace: leave the namespace out of resources_list and events_list
     ALWAYS report the namespace of every resource
 {{- else }}
 [[- end ]]
-    ASSERT this crew reads ONE Kubernetes namespace, its own: [[ .NS ]]
-    WHEN a question says "this namespace" or "here", or names no namespace THEN it means [[ .NS ]]
-    ALWAYS pass namespace "[[ .NS ]]" to every tool that takes a namespace
+    ASSERT this crew reads ONE Kubernetes namespace, its own: the namespace your context line says you are in
+    WHEN a question says "this namespace" or "here", or names no namespace THEN it means that namespace
+    ALWAYS pass that namespace to every tool that takes a namespace
     WHEN a question names another namespace AND the tool reports access denied THEN say this crew can read only its own namespace; NEVER guess what is there
 [[- if .Chart ]]
 {{- end }}
@@ -227,7 +227,7 @@ spec:
 [[- if .Chart ]]
 {{- if not .Values.access.clusterWide }}
 [[- end ]]
-    WHEN the question asks about other namespaces or the whole cluster AND this crew reads only [[ .NS ]] THEN say plainly that access is limited to [[ .NS ]], that [[ .Widen ]] widens it to read-only cluster-wide access, and answer only what [[ .NS ]] shows
+    WHEN the question asks about other namespaces or the whole cluster AND this crew reads only its own namespace THEN say plainly that access is limited to that namespace (name it), that [[ .Widen ]] widens it to read-only cluster-wide access, and answer only what that namespace shows
     NEVER suggest naming another namespace as a way to read it
 [[- if .Chart ]]
 {{- end }}
@@ -258,13 +258,13 @@ spec:
     DEFINE COMPONENT scope
 [[- if .Chart ]]
 {{- if .Values.access.clusterWide }}
-    ASSERT this crew reads the whole cluster, read-only and without Secrets; it is installed in the namespace {{ .Release.Namespace }}
+    ASSERT this crew reads the whole cluster, read-only and without Secrets
     ALWAYS name the namespace of each resource the answer reports
     NEVER present resources from several namespaces as the state of one namespace
 {{- else }}
 [[- end ]]
-    ASSERT this crew reads only the namespace [[ .NS ]]; it cannot see the rest of the cluster
-    ALWAYS name that scope when the answer describes state, for example "in namespace [[ .NS ]]"
+    ASSERT this crew reads only its own namespace, the one your context line says you are in; it cannot see the rest of the cluster
+    ALWAYS name that namespace when the answer describes state, for example "in namespace <its name>"
     NEVER describe the answer as the state of "your cluster" or imply a cluster-wide view
     NEVER suggest naming another namespace as a way to read it
 [[- if .Chart ]]
@@ -491,7 +491,7 @@ roleRef:
 
 const bundleRBACTemplate = rbacHeader + `# kmctl apply takes only kubemoot.ai kinds, so apply this file with kubectl:
 #
-#   kubectl apply -n [[ .NS ]] -f access/
+#   kubectl apply -n [[ .TargetNS ]] -f access/
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -516,7 +516,7 @@ metadata:
 subjects:
   - kind: ServiceAccount
     name: [[ .Name ]]-kubernetes-mcp
-    namespace: [[ .NS ]]
+    namespace: [[ .TargetNS ]]
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -715,8 +715,9 @@ networking, config, and a reviewer.
 **1. Install it.**
 [[- if not .Chart ]]
 
-This bundle is written for the namespace ` + mdTargetNS + `: its prompts and its RoleBinding name it.
-For another namespace, scaffold again with ` + "`kmctl create [[ .Name ]] -n <namespace>`" + `.
+The crew's prompts name no namespace: Kubemoot tells each agent the namespace it runs in. Only
+the RoleBinding in ` + "`access/rbac.yaml`" + ` names one, ` + mdTargetNS + `. For another namespace, change
+its ` + "`subjects[0].namespace`" + ` or scaffold again with ` + "`kmctl create [[ .Name ]] -n <namespace>`" + `.
 [[- end ]]
 
 ` + fenceBash + `
@@ -810,9 +811,9 @@ widen both: a ClusterRole lets the tool server read every namespace, still read-
 without Secrets, and the prompts switch with it: the specialists read every namespace
 unless a question names one, and the crew names the namespace of each resource it reports.
 [[ else ]]
-This bundle reads only the namespace ` + mdTargetNS + `: its Role binds there, and its prompts say so.
-Every answer names ` + mdTargetNS + `, and a question about other namespaces or the whole cluster
-gets a plain "this crew reads only ` + mdTargetNS + `". For read-only access to the whole cluster,
+This bundle reads only the namespace ` + mdTargetNS + `: its Role binds there, and the crew is told
+it runs in it. Every answer names that namespace, and a question about other namespaces or the
+whole cluster gets a plain statement that this crew reads only that namespace. For read-only access to the whole cluster,
 scaffold the crew as a Helm chart (` + "`kmctl create [[ .Name ]] --chart`" + `) and set ` + mdClusterWide + `.
 [[ end ]]
 ## Read-only by design

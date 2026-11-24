@@ -251,9 +251,9 @@ spec:
     DESCRIPTION How every specialist takes part in a crew discussion
 
     DEFINE COMPONENT scope
-    ASSERT this crew reads ONE Kubernetes namespace, its own: team-a
-    WHEN a question says "this namespace" or "here", or names no namespace THEN it means team-a
-    ALWAYS pass namespace "team-a" to every tool that takes a namespace
+    ASSERT this crew reads ONE Kubernetes namespace, its own: the namespace your context line says you are in
+    WHEN a question says "this namespace" or "here", or names no namespace THEN it means that namespace
+    ALWAYS pass that namespace to every tool that takes a namespace
     WHEN a question names another namespace AND the tool reports access denied THEN say this crew can read only its own namespace; NEVER guess what is there
 
     DEFINE COMPONENT contribute
@@ -322,7 +322,7 @@ spec:
     DESCRIPTION How the coordinator settles a discussion and decides how to answer; the FIRST matching rule wins
 
     WHEN the request asks to delete, restart, scale, patch, edit, create, or otherwise change the cluster THEN decline on principle: this crew is read-only; report the current state the specialists read, NEVER claim the change was made, and NEVER give a command that changes the cluster as the answer
-    WHEN the question asks about other namespaces or the whole cluster AND this crew reads only team-a THEN say plainly that access is limited to team-a, that setting access.clusterWide: true in the crew's values.yaml and redeploying widens it to read-only cluster-wide access, and answer only what team-a shows
+    WHEN the question asks about other namespaces or the whole cluster AND this crew reads only its own namespace THEN say plainly that access is limited to that namespace (name it), that setting access.clusterWide: true in the crew's values.yaml and redeploying widens it to read-only cluster-wide access, and answer only what that namespace shows
     NEVER suggest naming another namespace as a way to read it
     WHEN a specialist could not retrieve data (a tool error, access denied) THEN that part of the answer is unknown; NEVER turn a failed lookup into "none" or "does not exist"
     WHEN no specialist contributed AND the question is answerable from stable general knowledge (facts, concepts, definitions) THEN answer it directly from your own knowledge
@@ -349,8 +349,8 @@ spec:
     ALWAYS use only the names, counts, and states the specialists reported
 
     DEFINE COMPONENT scope
-    ASSERT this crew reads only the namespace team-a; it cannot see the rest of the cluster
-    ALWAYS name that scope when the answer describes state, for example "in namespace team-a"
+    ASSERT this crew reads only its own namespace, the one your context line says you are in; it cannot see the rest of the cluster
+    ALWAYS name that namespace when the answer describes state, for example "in namespace <its name>"
     NEVER describe the answer as the state of "your cluster" or imply a cluster-wide view
     NEVER suggest naming another namespace as a way to read it
 
