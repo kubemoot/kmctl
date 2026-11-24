@@ -20,14 +20,14 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const args = process.argv.slice(2);
-const flags = args.filter((a) => a.startsWith('--'));
+const flags = new Set(args.filter((a) => a.startsWith('--')));
 const [crewDir, schemaDir] = args.filter((a) => !a.startsWith('--'));
 if (!crewDir || !schemaDir) {
   console.error('usage: node check.mjs CREW_DIR SCHEMA_DIR [--expect-clean | --expect-errors] [--no-helm-association]');
   process.exit(2);
 }
-const expectErrors = flags.includes('--expect-errors');
-const useHelmAssociation = !flags.includes('--no-helm-association');
+const expectErrors = flags.has('--expect-errors');
+const useHelmAssociation = !flags.has('--no-helm-association');
 
 const walk = (dir) =>
   fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(dir, e.name)) : [path.join(dir, e.name)]));
@@ -131,10 +131,11 @@ const deadline = Date.now() + 60_000;
 while (diagnostics.size < files.length && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
 // A schema loads asynchronously and republishes; settle until a quiet moment.
 let last = -1;
-for (let quiet = 0; quiet < 6 && Date.now() < deadline; quiet++) {
+let quiet = 0;
+while (quiet < 6 && Date.now() < deadline) {
   await new Promise((r) => setTimeout(r, 250));
   const total = [...diagnostics.values()].reduce((n, d) => n + d.length, 0);
-  quiet = total === last ? quiet : 0;
+  quiet = total === last ? quiet + 1 : 1;
   last = total;
 }
 

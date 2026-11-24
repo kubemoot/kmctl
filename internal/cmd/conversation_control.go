@@ -237,26 +237,39 @@ func runConversationDelete(cmd *cobra.Command, f *client.Factory, o deleteOption
 		}
 		var code int
 		raw, err := req.Do(ctx).StatusCode(&code).Raw()
-		return finishDelete(ctx, cmd.OutOrStdout(), f, raw, err, code, crew, f.Namespace(), act)
+		return finishDelete(ctx, cmd.OutOrStdout(), f, deleteReply{raw: raw, err: err, code: code}, erasureTarget{crew: crew, ns: f.Namespace()}, act)
 	})
+}
+
+// deleteReply is the gateway's answer to a delete request.
+type deleteReply struct {
+	raw  []byte
+	err  error
+	code int
+}
+
+// erasureTarget names the conversation's crew and namespace for an explanation.
+type erasureTarget struct {
+	crew string
+	ns   string
 }
 
 // finishDelete prints the erasure report of a delete, and explains a refusal. A 500 carries
 // the report too: it says which stores could not be cleared.
-func finishDelete(ctx context.Context, w io.Writer, f *client.Factory, raw []byte, err error, code int, crew, ns string, act gatewayAction) error {
-	if err == nil {
-		return printErasure(w, raw)
+func finishDelete(ctx context.Context, w io.Writer, f *client.Factory, r deleteReply, t erasureTarget, act gatewayAction) error {
+	if r.err == nil {
+		return printErasure(w, r.raw)
 	}
-	if code == http.StatusInternalServerError {
-		if report, ok := parseErasure(raw); ok && len(report.Failed) > 0 {
+	if r.code == http.StatusInternalServerError {
+		if report, ok := parseErasure(r.raw); ok && len(report.Failed) > 0 {
 			if perr := writeErasure(w, report); perr != nil {
 				return perr
 			}
 			return clierr.New(fmt.Sprintf("the gateway could not clear every store: %s", strings.Join(cleanAll(report.Failed), ", ")),
-				"What was removed is above. Repeat the delete; it removes what is left.", err)
+				"What was removed is above. Repeat the delete; it removes what is left.", r.err)
 		}
 	}
-	return explainControl(ctx, f, err, crew, ns, act)
+	return explainControl(ctx, f, r.err, t.crew, t.ns, act)
 }
 
 func cleanAll(values []string) []string {

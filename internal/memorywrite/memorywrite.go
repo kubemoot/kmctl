@@ -110,11 +110,16 @@ func firstLearned(raw []byte, now time.Time) string {
 	return s.LearnedAt
 }
 
+// keyed names the fact a store error is about.
+func keyed(key string, err error) error {
+	return fmt.Errorf("%s: %w", key, err)
+}
+
 // Add stores a new fact. It fails with ErrExists when the key holds one.
 func Add(ctx context.Context, st Store, f Fact, now time.Time, dryRun bool) (Result, error) {
 	key := f.StoreKey()
 	if _, err := st.Get(ctx, key); err == nil {
-		return Result{}, fmt.Errorf("%s: %w", key, ErrExists)
+		return Result{}, keyed(key, ErrExists)
 	} else if !errors.Is(err, ErrNotFound) {
 		return Result{}, err
 	}
@@ -136,7 +141,7 @@ func Edit(ctx context.Context, st Store, f Fact, now time.Time, dryRun bool) (Re
 	key := f.StoreKey()
 	cur, err := st.Get(ctx, key)
 	if err != nil {
-		return Result{}, fmt.Errorf("%s: %w", key, err)
+		return Result{}, keyed(key, err)
 	}
 	body, err := encode(f.Value, firstLearned(cur.Value, now), now)
 	if err != nil {
@@ -154,7 +159,7 @@ func Edit(ctx context.Context, st Store, f Fact, now time.Time, dryRun bool) (Re
 func Delete(ctx context.Context, st Store, f Fact, dryRun bool) (Result, error) {
 	key := f.StoreKey()
 	if _, err := st.Get(ctx, key); err != nil {
-		return Result{}, fmt.Errorf("%s: %w", key, err)
+		return Result{}, keyed(key, err)
 	}
 	if !dryRun {
 		if err := st.Delete(ctx, key); err != nil {

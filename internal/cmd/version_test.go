@@ -233,16 +233,22 @@ func TestServerReleaseFrom(t *testing.T) {
 				return tc.getErr != nil, nil, tc.getErr
 			})
 			got, note, _ := serverReleaseFrom(context.Background(), dc, clierr.Env{Context: "fake"}, false)
-			if tc.wantRelease != "" {
-				if got == nil || got.Release != tc.wantRelease || note != "" {
-					t.Fatalf("got (%v, %q), want release %q", got, note, tc.wantRelease)
-				}
-				return
-			}
-			if got != nil || !strings.Contains(note, tc.wantNote) {
-				t.Fatalf("got (%v, %q), want a note containing %q", got, note, tc.wantNote)
-			}
+			checkServerRelease(t, got, note, tc.wantRelease, tc.wantNote)
 		})
+	}
+}
+
+// checkServerRelease asserts the release when one is wanted, else a note and no release.
+func checkServerRelease(t *testing.T, got *serverVersion, note, wantRelease, wantNote string) {
+	t.Helper()
+	if wantRelease != "" {
+		if got == nil || got.Release != wantRelease || note != "" {
+			t.Fatalf("got (%v, %q), want release %q", got, note, wantRelease)
+		}
+		return
+	}
+	if got != nil || !strings.Contains(note, wantNote) {
+		t.Fatalf("got (%v, %q), want a note containing %q", got, note, wantNote)
 	}
 }
 
