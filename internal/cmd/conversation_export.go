@@ -68,7 +68,7 @@ func openReport(ctx context.Context, f *client.Factory, o conversationExportOpti
 		case err != nil:
 			return nil, reportRoutes{}, nil, explainReportsAPI(f, err)
 		case ok:
-			return rc, reportRoutes{aggregated: true}, func() {}, nil
+			return rc, reportRoutes{aggregated: true}, noStop, nil
 		}
 	}
 	rc, stop, err := f.GatewayClient(ctx, o.opNamespace, o.opService, reportPort)

@@ -60,15 +60,19 @@ var (
 // message.
 func Write(w io.Writer, e *Error, f Format) error {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s %s\n", label(styleError, "Error:", f.Styled), e.Message)
+	writeLine(&b, label(styleError, "Error:", f.Styled), e.Message)
 	if e.Hint != "" {
-		fmt.Fprintf(&b, "%s %s\n", label(styleHint, "Hint:", f.Styled), e.Hint)
+		writeLine(&b, label(styleHint, "Hint:", f.Styled), e.Hint)
 	}
 	if f.Verbose && e.Cause != nil && e.Cause.Error() != e.Message {
-		fmt.Fprintf(&b, "%s %s\n", label(styleCause, "Cause:", f.Styled), e.Cause.Error())
+		writeLine(&b, label(styleCause, "Cause:", f.Styled), e.Cause.Error())
 	}
 	_, err := io.WriteString(w, b.String())
 	return err
+}
+
+func writeLine(b *strings.Builder, label, text string) {
+	fmt.Fprintf(b, "%s %s\n", label, text)
 }
 
 func label(s lipgloss.Style, text string, styled bool) string {

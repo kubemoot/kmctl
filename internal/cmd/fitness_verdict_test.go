@@ -47,25 +47,30 @@ func TestSuiteVerdict(t *testing.T) {
 			[]string{"stopped after 5 of 32 iterations"}},
 	}
 	for _, c := range cases {
-		err := suiteVerdict(suiteAt("s", c.status))
-		if len(c.want) == 0 {
-			if err != nil {
-				t.Errorf("%s: want exit 0, got %v", c.name, err)
-			}
-			continue
+		checkVerdict(t, c.name, c.want, suiteVerdict(suiteAt("s", c.status)))
+	}
+}
+
+// checkVerdict asserts err is nil when want is empty, else a failure carrying every want and the hint.
+func checkVerdict(t *testing.T, name string, want []string, err error) {
+	t.Helper()
+	if len(want) == 0 {
+		if err != nil {
+			t.Errorf("%s: want exit 0, got %v", name, err)
 		}
-		if err == nil {
-			t.Errorf("%s: want a failure", c.name)
-			continue
+		return
+	}
+	if err == nil {
+		t.Errorf("%s: want a failure", name)
+		return
+	}
+	for _, w := range want {
+		if !strings.Contains(err.Error(), w) {
+			t.Errorf("%s: %q lacks %q", name, err.Error(), w)
 		}
-		for _, w := range c.want {
-			if !strings.Contains(err.Error(), w) {
-				t.Errorf("%s: %q lacks %q", c.name, err.Error(), w)
-			}
-		}
-		if ce, ok := clierr.As(err); !ok || !strings.Contains(ce.Hint, "kmctl fitness get s") {
-			t.Errorf("%s: the hint names kmctl fitness get: %v", c.name, err)
-		}
+	}
+	if ce, ok := clierr.As(err); !ok || !strings.Contains(ce.Hint, "kmctl fitness get s") {
+		t.Errorf("%s: the hint names kmctl fitness get: %v", name, err)
 	}
 }
 

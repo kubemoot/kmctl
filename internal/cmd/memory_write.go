@@ -253,32 +253,41 @@ given, and removes nothing with --dry-run.`,
 		Args:              cobra.ExactArgs(3),
 		ValidArgsFunction: completeCrewArg(f),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			scope, err := memoryScope(f, args[0])
-			if err != nil {
-				return err
-			}
-			fact := memorywrite.Fact{Scope: scope, Topic: args[1], Key: args[2]}
-			return withMemory(cmd, f, open, o.memoryOptions, func(conn memoryConn) error {
-				if !o.dryRun {
-					if _, err := conn.store.Get(cmd.Context(), fact.StoreKey()); err != nil {
-						return explainMemoryWrite(err, scope, fact)
-					}
-					if err := confirmChange(cmd, o.yes, "Delete fact "+fact.StoreKey()+"?"); err != nil {
-						return err
-					}
-				}
-				res, err := memorywrite.Delete(cmd.Context(), conn.store, fact, o.dryRun)
-				if err != nil {
-					return explainMemoryWrite(err, scope, fact)
-				}
-				return reportFact(cmd.OutOrStdout(), res, "deleted", fact)
-			})
+			return runMemoryDelete(cmd, f, open, o, args)
 		},
 	}
 	addDryRunFlag(cmd, &o.dryRun)
 	addYesFlag(cmd, &o.yes)
 	o.addNATSFlags(cmd.Flags(), refusedNATSURL)
 	return cmd
+}
+
+func runMemoryDelete(cmd *cobra.Command, f *client.Factory, open memoryStoreOpener, o memoryWriteOptions, args []string) error {
+	scope, err := memoryScope(f, args[0])
+	if err != nil {
+		return err
+	}
+	fact := memorywrite.Fact{Scope: scope, Topic: args[1], Key: args[2]}
+	return withMemory(cmd, f, open, o.memoryOptions, func(conn memoryConn) error {
+		if !o.dryRun {
+			if err := confirmDelete(cmd, conn, o, scope, fact); err != nil {
+				return err
+			}
+		}
+		res, err := memorywrite.Delete(cmd.Context(), conn.store, fact, o.dryRun)
+		if err != nil {
+			return explainMemoryWrite(err, scope, fact)
+		}
+		return reportFact(cmd.OutOrStdout(), res, "deleted", fact)
+	})
+}
+
+// confirmDelete checks the fact exists, then asks before it is deleted.
+func confirmDelete(cmd *cobra.Command, conn memoryConn, o memoryWriteOptions, scope crewscope.Scope, fact memorywrite.Fact) error {
+	if _, err := conn.store.Get(cmd.Context(), fact.StoreKey()); err != nil {
+		return explainMemoryWrite(err, scope, fact)
+	}
+	return confirmChange(cmd, o.yes, "Delete fact "+fact.StoreKey()+"?")
 }
 
 func newMemoryClearCommand(f *client.Factory, open memoryStoreOpener) *cobra.Command {

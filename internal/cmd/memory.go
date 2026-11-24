@@ -199,9 +199,14 @@ func bucketError(err error) error {
 		"The bucket kubemoot_crew_memory is created by the Kubemoot operator; check that Kubemoot is installed and its streams job has run.", err)
 }
 
+// noStop is the stop function of a connection that has nothing to close.
+func noStop() {
+	// Nothing was opened, so there is nothing to stop.
+}
+
 func natsEndpoint(ctx context.Context, f *client.Factory, o memoryOptions) (string, func(), error) {
 	if o.natsURL != "" {
-		return o.natsURL, func() {}, nil
+		return o.natsURL, noStop, nil
 	}
 	cfg, err := f.RESTConfig()
 	if err != nil {

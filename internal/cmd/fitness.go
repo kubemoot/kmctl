@@ -152,7 +152,7 @@ in the suite's status (kmctl fitness get SUITE -o yaml).`,
 				return fmt.Errorf("--dry-run applies to --tier only")
 			}
 			if tier.tier != "" {
-				return runTier(cmd, f, dc, tier, args, filename, scenario, timeout)
+				return runTier(cmd, f, dc, tier, tierContext{args: args, filename: filename, scenario: scenario, timeout: timeout})
 			}
 			suiteName, ns, err := resolveRunSuite(cmd, f, dc, args, filename)
 			if err != nil {
@@ -177,9 +177,17 @@ in the suite's status (kmctl fitness get SUITE -o yaml).`,
 	return cmd
 }
 
+// tierContext is what a tier run takes from the command line besides the tier flags.
+type tierContext struct {
+	args     []string
+	filename string
+	scenario string
+	timeout  time.Duration
+}
+
 // runTier creates a suite for the tier and waits for it like a named suite.
-func runTier(cmd *cobra.Command, f *client.Factory, dc dynamic.Interface, tier tierRun, args []string, filename, scenario string, timeout time.Duration) error {
-	if err := tier.validate(args, filename, scenario); err != nil {
+func runTier(cmd *cobra.Command, f *client.Factory, dc dynamic.Interface, tier tierRun, tc tierContext) error {
+	if err := tier.validate(tc.args, tc.filename, tc.scenario); err != nil {
 		return err
 	}
 	ns := f.Namespace()
@@ -187,7 +195,7 @@ func runTier(cmd *cobra.Command, f *client.Factory, dc dynamic.Interface, tier t
 	if err != nil || tier.dryRun {
 		return err
 	}
-	return fitnessRun{dc: dc, ns: ns, w: cmd.OutOrStdout(), timeout: timeout}.suite(cmd.Context(), name)
+	return fitnessRun{dc: dc, ns: ns, w: cmd.OutOrStdout(), timeout: tc.timeout}.suite(cmd.Context(), name)
 }
 
 // fitnessRun waits on a fitness run in one namespace, printing its progress to w.
