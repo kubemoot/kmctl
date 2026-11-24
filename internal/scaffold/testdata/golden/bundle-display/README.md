@@ -21,8 +21,9 @@ networking, config, and a reviewer.
 
 **1. Install it.**
 
-This bundle is written for the namespace `crew-lab-ops-crew-2`: its prompts and its RoleBinding name it.
-For another namespace, scaffold again with `kmctl create lab-ops-crew-2 -n <namespace>`.
+The crew's prompts name no namespace: Kubemoot tells each agent the namespace it runs in. Only
+the RoleBinding in `access/rbac.yaml` names one, `crew-lab-ops-crew-2`. For another namespace, change
+its `subjects[0].namespace` or scaffold again with `kmctl create lab-ops-crew-2 -n <namespace>`.
 
 ```bash
 kubectl create namespace crew-lab-ops-crew-2
@@ -88,9 +89,9 @@ kmctl model list
 
 ## What it can read
 
-This bundle reads only the namespace `crew-lab-ops-crew-2`: its Role binds there, and its prompts say so.
-Every answer names `crew-lab-ops-crew-2`, and a question about other namespaces or the whole cluster
-gets a plain "this crew reads only `crew-lab-ops-crew-2`". For read-only access to the whole cluster,
+This bundle reads only the namespace `crew-lab-ops-crew-2`: its Role binds there, and the crew is told
+it runs in it. Every answer names that namespace, and a question about other namespaces or the
+whole cluster gets a plain statement that this crew reads only that namespace. For read-only access to the whole cluster,
 scaffold the crew as a Helm chart (`kmctl create lab-ops-crew-2 --chart`) and set `access.clusterWide: true`.
 
 ## Read-only by design

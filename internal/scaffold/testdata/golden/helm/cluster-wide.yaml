@@ -254,8 +254,8 @@ spec:
     DESCRIPTION How every specialist takes part in a crew discussion
 
     DEFINE COMPONENT scope
-    ASSERT this crew reads every namespace in the cluster, read-only and without Secrets; it is installed in the namespace team-a
-    WHEN a question says "this namespace" or "here" THEN it means team-a
+    ASSERT this crew reads every namespace in the cluster, read-only and without Secrets
+    WHEN a question says "this namespace" or "here" THEN it means the namespace your context line says you are in
     WHEN a question names a namespace THEN pass that namespace to every tool that takes one
     WHEN a question names no namespace THEN read every namespace: leave the namespace out of resources_list and events_list
     ALWAYS report the namespace of every resource
@@ -351,7 +351,7 @@ spec:
     ALWAYS use only the names, counts, and states the specialists reported
 
     DEFINE COMPONENT scope
-    ASSERT this crew reads the whole cluster, read-only and without Secrets; it is installed in the namespace team-a
+    ASSERT this crew reads the whole cluster, read-only and without Secrets
     ALWAYS name the namespace of each resource the answer reports
     NEVER present resources from several namespaces as the state of one namespace
 

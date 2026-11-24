@@ -113,7 +113,7 @@ func TestChart_HelmRenderedGolden(t *testing.T) {
 }
 
 // The chart renders with the real helm when it is installed: a Role by default,
-// a ClusterRole with access.clusterWide, and the release namespace in the prompts.
+// a ClusterRole with access.clusterWide, and the release namespace in the binding only; the prompts name none.
 func TestChart_HelmRenders(t *testing.T) {
 	helm, err := exec.LookPath("helm")
 	if err != nil {
@@ -127,8 +127,8 @@ func TestChart_HelmRenders(t *testing.T) {
 		extra  []string
 		prompt string // how the prompts name the release namespace
 	}{
-		"Role":        {nil, `pass namespace "team-a"`},
-		"ClusterRole": {[]string{"--set", "access.clusterWide=true"}, "it is installed in the namespace team-a"},
+		"Role":        {nil, "ALWAYS pass that namespace to every tool that takes a namespace"},
+		"ClusterRole": {[]string{"--set", "access.clusterWide=true"}, "ASSERT this crew reads every namespace in the cluster"},
 	}
 	for kind, c := range cases {
 		extra := c.extra
@@ -138,7 +138,10 @@ func TestChart_HelmRenders(t *testing.T) {
 			t.Errorf("%v: want one %s and its binding, got %v", extra, kind, kinds)
 		}
 		if !strings.Contains(out, c.prompt) || !strings.Contains(out, "namespace: team-a") {
-			t.Errorf("%v: the release namespace must reach the prompts and the binding", extra)
+			t.Errorf("%v: the scope rule must render and the release namespace must reach the binding", extra)
+		}
+		if strings.Contains(out, "the namespace team-a") || strings.Contains(out, `namespace "team-a"`) {
+			t.Errorf("%v: the prompts must not name the release namespace", extra)
 		}
 	}
 }

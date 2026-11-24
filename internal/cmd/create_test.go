@@ -136,8 +136,8 @@ func TestCreateCommand_SchemaURL(t *testing.T) {
 	}
 }
 
-// The bundle binds its RBAC and names its namespace in the prompts, so -n
-// decides both, and the hint applies to the same namespace.
+// The bundle binds its RBAC to a namespace, so -n decides it,
+// and the hint applies to the same namespace.
 func TestCreateCommand_BundleFollowsTheNamespaceFlag(t *testing.T) {
 	t.Setenv("KUBECONFIG", t.TempDir()+"/absent-kubeconfig")
 	dir := t.TempDir()
