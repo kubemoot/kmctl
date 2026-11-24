@@ -1,0 +1,10 @@
+{
+  "files.associations": {
+    "**/templates/**/*.yaml": "helm"
+  },
+  "yaml.schemas": {
+    "https://github.com/kubemoot/kubemoot/releases/latest/download/kubemoot_v1alpha1.json": [
+      "**/*.yaml"
+    ]
+  }
+}

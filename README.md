@@ -79,6 +79,10 @@ kmctl version                # kmctl's version and the cluster's Kubemoot releas
 kmctl create demo            # scaffold a starter crew in ./demo
 ```
 
+The scaffold also writes `.vscode/settings.json` and `.vscode/extensions.json`, so the crew
+opens in VS Code with its manifests checked against the Kubemoot JSON Schemas (a Kubemoot
+release asset) and no Problems; `--schema-url` points them at a mirror.
+
 Shell completion for bash, zsh, fish, and PowerShell comes from `kmctl completion <shell>`;
 the [user guide](https://kubemoot.org/docs/user-guides/kmctl/#shell-completion) shows how
 to install it for each shell.

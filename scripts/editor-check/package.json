@@ -1,0 +1,10 @@
+{
+  "name": "kmctl-editor-check",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Runs Red Hat's YAML language server over a scaffolded crew (scripts/scaffold-in-editor.sh)",
+  "type": "module",
+  "dependencies": {
+    "yaml-language-server": "2.0.0"
+  }
+}

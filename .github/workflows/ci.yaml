@@ -80,3 +80,40 @@ jobs:
 
       - name: Scaffold applies to the Kubemoot API (envtest, Kubemoot main CRDs)
         run: scripts/scaffold-applies.sh "${GITHUB_WORKSPACE}/_kubemoot/operator/config/crd/bases"
+
+  # A fresh scaffold opens in VS Code with no Problems: Red Hat's YAML language server
+  # runs over a bundle and a chart with the settings kmctl wrote, against the JSON Schemas
+  # generated from Kubemoot main's CRDs (scripts/scaffold-in-editor.sh). Offline: the
+  # schema is served from 127.0.0.1.
+  scaffold-in-editor:
+    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || 'homelab-runners' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Go
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: scripts/editor-check/.nvmrc
+          cache: npm
+          cache-dependency-path: scripts/editor-check/package-lock.json
+
+      # The same checkout as the scaffold-applies job, but the whole operator module: the
+      # schema generator is Go source there, not a CRD file.
+      - name: Fetch the Kubemoot operator from main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: kubemoot/kubemoot
+          token: ${{ secrets.KUBEMOOT_READ_TOKEN || github.token }}
+          path: _kubemoot
+          sparse-checkout: operator
+          sparse-checkout-cone-mode: false
+
+      - name: A fresh scaffold has no Problems in the editor
+        run: scripts/scaffold-in-editor.sh "${GITHUB_WORKSPACE}/_kubemoot/operator"

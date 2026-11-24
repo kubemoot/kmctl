@@ -8,3 +8,6 @@
 # Test/coverage output
 cover.out
 *.out
+
+# The editor check installs its language server here
+node_modules/

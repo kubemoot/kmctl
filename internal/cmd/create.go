@@ -27,6 +27,7 @@ func newCreateCommand(f *client.Factory) *cobra.Command {
 		noInput     bool
 		outputDir   string
 		chart       bool
+		schemaURL   string
 	)
 	cmd := &cobra.Command{
 		Use:   "create NAME",
@@ -55,12 +56,18 @@ the Crew (and on a chart's Chart.yaml) and defaults to NAME.
 
 Inputs not given as flags are prompted for interactively. With --no-input nothing
 is prompted, and --members defaults to 1. A bundle (no --chart) is applied to the
-namespace given by -n, or crew-NAME.`,
+namespace given by -n, or crew-NAME.
+
+The scaffold also writes .vscode/settings.json and .vscode/extensions.json, so VS Code
+checks the crew's manifests against the Kubemoot JSON Schemas (a Kubemoot release
+asset) as you type and recommends the extensions that do it. --schema-url points the
+settings at a mirror of the schema, for a network that cannot reach GitHub.`,
 		Example: `  kmctl create demo
   kmctl create demo --chart --members 5 --no-input
   kmctl create homelab-health-guide --display-name "Homelab Health Guide"
   kmctl create demo --dir ./crews
-  kmctl create demo --members 2 --no-input -n team-a`,
+  kmctl create demo --members 2 --no-input -n team-a
+  kmctl create demo --schema-url https://mirror.example.com/kubemoot_v1alpha1.json`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := checkPath(cmd, outputDirFlag, outputDir); err != nil {
@@ -73,6 +80,7 @@ namespace given by -n, or crew-NAME.`,
 				OutputDir:   outputDir,
 				Chart:       chart,
 				Namespace:   explicitNamespace(f),
+				SchemaURL:   schemaURL,
 			}
 			if err := gather(&opts, cmd.Flags().Changed, noInput, &huhPrompter{}); err != nil {
 				return err
@@ -102,6 +110,7 @@ namespace given by -n, or crew-NAME.`,
 	cmd.Flags().BoolVar(&noInput, "no-input", false, "Never prompt; unset inputs take their defaults")
 	outputDirFlag.add(cmd.Flags(), &outputDir, ".", "Directory to write the scaffold into")
 	cmd.Flags().BoolVar(&chart, "chart", false, "Lay the crew out as a Helm chart (Chart.yaml, templates/, fitness/)")
+	cmd.Flags().StringVar(&schemaURL, "schema-url", "", "JSON Schema the editor checks the manifests against, for a mirror (default: the newest Kubemoot release's)")
 	return cmd
 }
 
