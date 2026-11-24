@@ -97,7 +97,7 @@ func TestConversationControls_Errors(t *testing.T) {
 		"401":        {"stop", 401, "unauthorized", []string{"did not accept your Kubernetes token"}},
 		"403":        {"stop", 403, "forbidden", []string{"refused your identity"}},
 		"404":        {"pause", 404, "conversation not found", []string{"conversation not found on crew", "update on crews/conversations", "can pause it with --reason", "kubemoot-conversation-controller"}},
-		"409 stop":   {"stop", 409, "the conversation has no running discussion", []string{"nothing to stop", "no running discussion", "kmctl conversation list demo"}},
+		"409 stop":   {"stop", 409, "the crew has just taken the question", []string{"no turn to stop yet", "just taken the question", "Stop again in a moment"}},
 		"409 pause":  {"pause", 409, "the conversation has no running discussion", []string{"nothing to pause"}},
 		"409 resume": {"resume", 409, "the conversation has no running discussion", []string{"nothing to resume"}},
 		"400 reason": {"stop", 400, "acting on another caller's conversations needs a reason of 1 to 200 characters in the Kubemoot-Access-Reason header", []string{"wants a reason to stop", "--reason"}},

@@ -29,7 +29,7 @@ type controlVerb struct {
 }
 
 var controlVerbs = []controlVerb{
-	{"stop", "stopped", "Stop a conversation's running discussion", "Stop the discussion that is running in a conversation. The crew ends its work on the question without an answer."},
+	{"stop", "stopped", "Stop a conversation's running discussion", "Stop the turn that is running in a conversation, or remove a question that still waits in the crew's queue. A stopped turn closes with a text that says you stopped it; it has no answer."},
 	{"pause", "paused", "Pause a conversation's running discussion", "Pause the discussion that is running in a conversation. Resume it with kmctl conversation resume."},
 	{"resume", "resumed", "Resume a paused discussion", "Resume the discussion of a conversation that was paused."},
 }
@@ -53,8 +53,13 @@ func newControlCommand(f *client.Factory, v controlVerb) *cobra.Command {
 The request goes to the crew's discussion gateway, which checks who is asking: the
 conversation's owner may do it, and so may an operator with update on the crew's
 conversations (the ClusterRole ` + controlRole + `) who gives a reason with --reason;
-the gateway audits it. A conversation with no running discussion is refused. ID can be
-a unique prefix.`,
+the gateway audits it. ID can be a unique prefix, or the full ID of a question still
+waiting in the queue.
+
+stop says what happened and its exit code follows: stopped, cancelled (a question that
+was still queued, removed before the crew saw it) and nothing_to_stop (every turn had
+already finished) succeed; unconfirmed (the crew did not confirm in time, the work may
+still run) and a question the crew has just taken (stop again in a moment) fail.`,
 		Example: `  kmctl conversation ` + v.name + ` homelab-pilot 6733c361 -n crew-homelab-pilot
   kmctl conv ` + v.name + ` homelab-pilot 6733c361-aa0c-4bde-85c6-e143af23b251 --reason "ticket 1234: runaway question"`,
 		Args:              cobra.ExactArgs(2),
@@ -68,7 +73,8 @@ a unique prefix.`,
 func runControl(cmd *cobra.Command, f *client.Factory, v controlVerb, crew, id string) error {
 	act := controlAction(v.name)
 	return withResolvedConversation(cmd, f, crew, id, act, func(ctx context.Context, rc rest.Interface, id string) error {
-		raw, err := rc.Post().Suffix("api", "v1", "discussions", crew, id, v.name).Do(ctx).Raw()
+		var code int
+		raw, err := rc.Post().Suffix("api", "v1", "discussions", crew, id, v.name).Do(ctx).StatusCode(&code).Raw()
 		if err != nil {
 			return explainControl(ctx, f, err, crew, f.Namespace(), act)
 		}
@@ -76,10 +82,42 @@ func runControl(cmd *cobra.Command, f *client.Factory, v controlVerb, crew, id s
 		if err := json.Unmarshal(raw, &res); err != nil || res.ConversationID == "" {
 			return errors.New("the gateway's answer is not a control result; the request may still have been carried out")
 		}
+		if v.name == "stop" && res.Outcome != "" {
+			return reportStop(cmd.OutOrStdout(), res, crew, code)
+		}
 		_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s conversation %s of crew %s: %d thread(s)%s\n",
 			v.past, clean(res.ConversationID), crew, len(res.Threads), threadList(res.Threads))
 		return err
 	})
+}
+
+// stopHeadlines is the first line of each outcome of a stop.
+var stopHeadlines = map[bus.ConversationControlOutcome]string{
+	bus.ConversationControlOutcomeStopped:       "stopped conversation %s of crew %s",
+	bus.ConversationControlOutcomeCancelled:     "cancelled the queued question of conversation %s of crew %s",
+	bus.ConversationControlOutcomeNothingToStop: "nothing to stop in conversation %s of crew %s",
+	bus.ConversationControlOutcomeUnconfirmed:   "asked conversation %s of crew %s to stop; not confirmed",
+}
+
+// reportStop prints what a stop did, in the gateway's words, and fails for an outcome that is not
+// a stop: unconfirmed means the work may still be running.
+func reportStop(w io.Writer, res bus.ConversationControl, crew string, code int) error {
+	headline, ok := stopHeadlines[res.Outcome]
+	if !ok {
+		headline = "stop of conversation %s of crew %s: " + clean(string(res.Outcome))
+	}
+	text := fmt.Sprintf(headline, clean(res.ConversationID), crew) + threadList(res.Threads) + "\n"
+	if res.Message != "" {
+		text += clean(res.Message) + "\n"
+	}
+	if _, err := io.WriteString(w, text); err != nil {
+		return err
+	}
+	if res.Outcome == bus.ConversationControlOutcomeUnconfirmed || code == http.StatusAccepted {
+		return clierr.New("the crew did not confirm the stop; the work may still be running",
+			"See where the turn stands with: kmctl conversation get "+crew+" "+clean(res.ConversationID)+", and stop again if it still runs", nil)
+	}
+	return nil
 }
 
 // withResolvedConversation validates the crew, opens its gateway as the caller, turns the
@@ -128,6 +166,10 @@ func explainConflict(err error, text, crew, namespace string, act gatewayAction)
 	case act.verb == "delete":
 		return clierr.New(fmt.Sprintf("conversation on crew %q has a running discussion", crew),
 			"Stop it first with: kmctl conversation stop "+crew+" <id> -n "+namespace+", or delete it anyway with --force (it stops the discussion, then erases)", err)
+	}
+	if act.verb == "stop" {
+		return clierr.New("the crew has just taken the question and there is no turn to stop yet: "+text,
+			"Stop again in a moment; the turn begins as soon as the crew starts on it", err)
 	}
 	return clierr.New(fmt.Sprintf("nothing to %s: %s", act.verb, text),
 		"Only a conversation with a running discussion can be stopped, paused or resumed. See the crew's conversations with: kmctl conversation list "+crew+" -n "+namespace, err)

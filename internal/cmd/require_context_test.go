@@ -43,7 +43,7 @@ var stateCommands = map[string][]string{
 // reads the cluster, or works on this machine only.
 var readOrLocalCommands = []string{
 	"kmctl agent get", "kmctl agent list", "kmctl conversation artifact", "kmctl conversation export",
-	"kmctl conversation list", "kmctl conversation placements",
+	"kmctl conversation list", "kmctl conversation get", "kmctl conversation placements",
 	"kmctl conversation watch", "kmctl conversation workspace", "kmctl create", "kmctl crew get",
 	"kmctl crew list", "kmctl crew wait", "kmctl dashboard token", "kmctl fitness download", "kmctl fitness get", "kmctl fitness list",
 	"kmctl fitness scenarios", "kmctl info", "kmctl mcp report get", "kmctl mcp report list",

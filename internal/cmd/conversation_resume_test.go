@@ -25,6 +25,10 @@ func dropThenResume(resumes bool) (*httptest.Server, *[]string) {
 	var mu sync.Mutex
 	var ids []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/state") { // a gateway older than the state read
+			http.NotFound(w, r)
+			return
+		}
 		mu.Lock()
 		n := len(ids)
 		ids = append(ids, r.Header.Get("Last-Event-ID"))

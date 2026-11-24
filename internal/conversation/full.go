@@ -114,6 +114,9 @@ func (m liveModel) header() string {
 		where += " in " + m.o.Namespace
 	}
 	status := fmt.Sprintf("%s | %s", where, formatDuration(end.Sub(m.t.Start)))
+	if text := QueueText(m.o.Queue.Position()); text != "" && !m.finished && len(m.t.Agents()) == 0 {
+		status += " | " + text
+	}
 	if len(m.t.Busy) > 0 && !m.finished {
 		status += " | busy: " + busyText(m.t.Busy)
 	}
@@ -224,8 +227,10 @@ func runFull(w io.Writer, stream io.Reader, o Options, extra ...tea.ProgramOptio
 	if m.err != nil {
 		return m.err
 	}
-	_, err = lipgloss.Fprint(w, renderClosing(m.t, o, glamourStyle(w), terminalWidth(w)))
-	return err
+	if _, err = lipgloss.Fprint(w, renderClosing(m.t, o, glamourStyle(w), terminalWidth(w))); err != nil {
+		return err
+	}
+	return stoppedErr(m.t)
 }
 
 // renderClosing renders the answer and the summary as markdown in the given
@@ -234,6 +239,9 @@ func renderClosing(t *Tracker, o Options, style string, width int) string {
 	doc := o.summarize(t).Markdown()
 	if t.Answer != "" {
 		doc = strings.TrimRight(t.Answer, "\n") + "\n\n" + doc
+	}
+	if t.Stopped {
+		doc = "**" + StoppedNote + "**\n\n" + doc
 	}
 	out := doc
 	r, err := glamour.NewTermRenderer(closingStyle(style), glamour.WithWordWrap(width))

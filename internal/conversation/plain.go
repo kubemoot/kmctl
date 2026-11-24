@@ -34,8 +34,10 @@ func (p *plainSink) event(t *Tracker, e discussion.Event, c Change, at time.Time
 }
 
 func (p *plainSink) finish(t *Tracker) error {
-	_, err := io.WriteString(p.w, closing(t, p.o))
-	return err
+	if _, err := io.WriteString(p.w, closing(t, p.o)); err != nil {
+		return err
+	}
+	return stoppedErr(t)
 }
 
 // closing is the end of the plain output: the answer, the summary, and the
@@ -44,6 +46,9 @@ func closing(t *Tracker, o Options) string {
 	var b strings.Builder
 	if t.Answer != "" {
 		b.WriteString("\nANSWER:\n" + strings.TrimRight(t.Answer, "\n") + "\n")
+	}
+	if t.Stopped {
+		b.WriteString("\nSTOPPED: " + StoppedNote + "\n")
 	}
 	b.WriteString("\n" + o.summarize(t).Markdown())
 	b.WriteString("\nNext: " + FollowUp(o.Crew, o.Namespace, o.ConversationID) + "\n")
@@ -58,9 +63,24 @@ var plainLines = map[string]func(discussion.Event, Change) string{
 	"finding":      func(e discussion.Event, c Change) string { return agentLine(e.Agent, findingText(e, c)) },
 	"subcommittee": func(e discussion.Event, _ Change) string { return subcommitteeText(e.Subcommittee) },
 	"activity":     func(e discussion.Event, _ Change) string { return "busy: " + busyText(e.Agents) },
-	"synthesis":    func(discussion.Event, Change) string { return "answer ready" },
+	"synthesis":    synthesisLine,
 	"error":        func(e discussion.Event, _ Change) string { return "error: " + e.Error },
-	"done":         func(discussion.Event, Change) string { return "done" },
+	"done":         func(e discussion.Event, _ Change) string { return doneLine(e) },
+}
+
+// synthesisLine says the crew's answer is ready, or that the turn was stopped and has none.
+func synthesisLine(e discussion.Event, _ Change) string {
+	if e.Stopped() {
+		return "stopped by you"
+	}
+	return "answer ready"
+}
+
+func doneLine(e discussion.Event) string {
+	if e.Stopped() {
+		return "done (stopped)"
+	}
+	return "done"
 }
 
 func plainLine(e discussion.Event, c Change) string {

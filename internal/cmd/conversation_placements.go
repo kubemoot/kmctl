@@ -97,7 +97,7 @@ func fetchReceipt(ctx context.Context, f *client.Factory, sf streamFlags, crew, 
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	w := &streamWatch{idle: conversation.NewIdleClock(sf.idleTimeout, sf.after, cancel)}
+	w := newStreamWatch(conversation.NewIdleClock(sf.idleTimeout, sf.after, cancel))
 	defer w.idle.Stop()
 	closed, err := discussion.FetchReceipt(ctx, rc, crew, id, w.seen)
 	if err == nil {
