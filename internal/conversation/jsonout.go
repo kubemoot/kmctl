@@ -34,12 +34,16 @@ type jsonEvent struct {
 
 // jsonResult is the last line: the answer, the summary, and the follow-up command.
 type jsonResult struct {
-	SchemaVersion  int     `json:"schemaVersion"`
-	Type           string  `json:"type"`
-	ConversationID string  `json:"conversationId"`
-	Answer         string  `json:"answer"`
-	Summary        Summary `json:"summary"`
-	Next           string  `json:"next"`
+	SchemaVersion  int    `json:"schemaVersion"`
+	Type           string `json:"type"`
+	ConversationID string `json:"conversationId"`
+	Answer         string `json:"answer"`
+	// Outcome is "stopped" when the person stopped the turn: Answer is then empty and Message says
+	// so. It is absent for a turn that ended with an answer.
+	Outcome string  `json:"outcome,omitempty"`
+	Message string  `json:"message,omitempty"`
+	Summary Summary `json:"summary"`
+	Next    string  `json:"next"`
 }
 
 // jsonSink writes newline-delimited JSON: a conversation line, one line per
@@ -82,9 +86,16 @@ func (j *jsonSink) event(t *Tracker, e discussion.Event, c Change, at time.Time)
 }
 
 func (j *jsonSink) finish(t *Tracker) error {
-	return j.enc.Encode(jsonResult{
+	res := jsonResult{
 		SchemaVersion: SchemaVersion, Type: "result", ConversationID: j.o.ConversationID,
 		Answer: t.Answer, Summary: j.o.summarize(t),
 		Next: FollowUp(j.o.Crew, j.o.Namespace, j.o.ConversationID),
-	})
+	}
+	if t.Stopped {
+		res.Outcome, res.Message = discussion.OutcomeStopped, StoppedNote
+	}
+	if err := j.enc.Encode(res); err != nil {
+		return err
+	}
+	return stoppedErr(t)
 }

@@ -72,6 +72,10 @@ type Tracker struct {
 	FirstSignal time.Time
 	ThreadID    string
 	Answer      string
+	// Stopped is set when the person stopped the turn; StoppedText is the text the crew closed it
+	// with, which says so and is not an answer, so Answer stays empty.
+	Stopped     bool
+	StoppedText string
 	Errors      []string
 	// Busy is who the latest activity event said is working, until the answer.
 	Busy []discussion.Activity
@@ -120,9 +124,20 @@ var trackers = map[string]func(*Tracker, discussion.Event, time.Time) Change{
 	"finding":      (*Tracker).applyFinding,
 	"subcommittee": (*Tracker).applySubcommittee,
 	"synthesis": func(t *Tracker, e discussion.Event, at time.Time) Change {
-		t.Answer, t.Busy = e.Content, nil
+		t.Busy = nil
+		if e.Stopped() {
+			t.Stopped, t.StoppedText = true, e.Content
+			return Change{}
+		}
+		t.Answer = e.Content
 		if t.published {
 			t.AnswerAt = at
+		}
+		return Change{}
+	},
+	"done": func(t *Tracker, e discussion.Event, _ time.Time) Change {
+		if e.Stopped() {
+			t.Stopped, t.Busy = true, nil
 		}
 		return Change{}
 	},
@@ -219,7 +234,7 @@ func applyWaiting(_ *Tracker, a *Agent, e discussion.Event, _ time.Time) Change 
 // applyActivity records who is busy and fills in the accelerator and model of the
 // agents already shown. Once the answer is in, no one is shown as busy.
 func (t *Tracker) applyActivity(e discussion.Event, _ time.Time) Change {
-	if t.Answer != "" {
+	if t.Answer != "" || t.Stopped {
 		return Change{}
 	}
 	t.Busy = e.Agents

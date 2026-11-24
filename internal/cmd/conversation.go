@@ -50,7 +50,7 @@ the crew's gateway lists conversations ("kmctl conversation list").`,
 		Args: cobra.NoArgs,
 	}
 	registerCallerFlags(cmd, f)
-	cmd.AddCommand(newAskCommand(f), newWatchCommand(f), newConversationListCommand(f), newConversationPlacementsCommand(f), newConversationWorkspaceCommand(f), newConversationArtifactAliasCommand(f), newConversationExportCommand(f), newConversationDeleteCommand(f))
+	cmd.AddCommand(newAskCommand(f), newWatchCommand(f), newConversationListCommand(f), newConversationGetCommand(f), newConversationPlacementsCommand(f), newConversationWorkspaceCommand(f), newConversationArtifactAliasCommand(f), newConversationExportCommand(f), newConversationDeleteCommand(f))
 	cmd.AddCommand(newConversationControlCommands(f)...)
 	return cmd
 }
@@ -258,6 +258,8 @@ func (sf *streamFlags) overall(parent context.Context) (context.Context, context
 // followStream opens the conversation's discussion stream and renders it. The idle
 // clock ends the stream when the crew shows no activity for --idle-timeout.
 func followStream(ctx context.Context, cmd *cobra.Command, rc rest.Interface, opts conversation.Options, sf streamFlags, f *client.Factory) error {
+	var polling sync.WaitGroup
+	defer polling.Wait()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	stream, err := discussion.StreamResuming(ctx, rc, opts.Crew, opts.ConversationID)
@@ -265,9 +267,15 @@ func followStream(ctx context.Context, cmd *cobra.Command, rc rest.Interface, op
 		return explainGateway(ctx, f, err, opts.Crew, opts.Namespace)
 	}
 	defer func() { _ = stream.Close() }()
-	w := &streamWatch{idle: conversation.NewIdleClock(sf.idleTimeout, sf.after, cancel)}
+	w := newStreamWatch(conversation.NewIdleClock(sf.idleTimeout, sf.after, cancel))
 	defer w.idle.Stop()
 	opts.OnEvent = w.seen
+	opts.Queue = &conversation.QueueStatus{}
+	polling.Add(1)
+	go func() {
+		defer polling.Done()
+		pollQueue(ctx, rc, opts, w.started, queueNotes(cmd, opts))
+	}()
 	end := w.endErr(ctx, conversation.Render(cmd.OutOrStdout(), stream, opts), sf.timeout, opts)
 	return explainRefusedResume(ctx, f, end, opts)
 }
@@ -287,12 +295,23 @@ func explainRefusedResume(ctx context.Context, f *client.Factory, end error, o c
 type streamWatch struct {
 	idle *conversation.IdleClock
 
+	// started is closed when the crew first shows activity: the question has left the queue.
+	started     chan struct{}
+	startedOnce sync.Once
+
 	mu       sync.Mutex
 	threadID string
 }
 
+func newStreamWatch(idle *conversation.IdleClock) *streamWatch {
+	return &streamWatch{idle: idle, started: make(chan struct{})}
+}
+
 func (w *streamWatch) seen(e discussion.Event) {
 	w.idle.Seen(e)
+	if discussion.ShowsCrewActivity(e) {
+		w.startedOnce.Do(func() { close(w.started) })
+	}
 	if e.Type == "thread_found" {
 		w.mu.Lock()
 		w.threadID = e.ThreadID
@@ -304,8 +323,8 @@ func (w *streamWatch) seen(e discussion.Event) {
 // idle limit, or --timeout passed. Either way the discussion may still finish, so
 // the message names the conversation and thread and how to reattach.
 func (w *streamWatch) endErr(ctx context.Context, err error, timeout time.Duration, o conversation.Options) error {
-	if err == nil {
-		return nil
+	if err == nil || errors.Is(err, conversation.ErrStopped) {
+		return err
 	}
 	var why string
 	switch {

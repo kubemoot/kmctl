@@ -1,6 +1,7 @@
 package conversation
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -20,6 +21,8 @@ type Options struct {
 	Start time.Time
 	// Now is the clock; nil means time.Now.
 	Now func() time.Time
+	// Queue, when set, holds where the question waits in the crew's queue; the live view shows it.
+	Queue *QueueStatus
 	// OnEvent, when set, sees every event as it arrives, before it is shown.
 	OnEvent func(discussion.Event)
 }
@@ -79,20 +82,35 @@ func Render(w io.Writer, stream io.Reader, o Options) error {
 	}
 }
 
+// StoppedNote is how a turn the person stopped is shown where an answer would be.
+const StoppedNote = "Stopped by you. The crew did not answer this turn."
+
+// ErrStopped ends a render whose turn the person stopped: the turn has no answer, so the
+// command that showed it does not succeed.
+var ErrStopped = errors.New("the turn was stopped before the crew answered")
+
+// stoppedErr is ErrStopped for a turn the person stopped, else nil.
+func stoppedErr(t *Tracker) error {
+	if t.Stopped {
+		return ErrStopped
+	}
+	return nil
+}
+
 // quietSink prints only the answer, as soon as it arrives.
 type quietSink struct{ w io.Writer }
 
 func (quietSink) begin() error { return nil }
 
 func (q quietSink) event(_ *Tracker, e discussion.Event, _ Change, _ time.Time) error {
-	if e.Type != "synthesis" {
+	if e.Type != "synthesis" || e.Stopped() {
 		return nil
 	}
 	_, err := fmt.Fprintln(q.w, e.Content)
 	return err
 }
 
-func (quietSink) finish(*Tracker) error { return nil }
+func (quietSink) finish(t *Tracker) error { return stoppedErr(t) }
 
 // runSink feeds each event to s as it arrives and finishes once the stream ends.
 func runSink(stream io.Reader, o Options, s sink) error {

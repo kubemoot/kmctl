@@ -160,6 +160,19 @@ kmctl conversation delete homelab-pilot 6733c361     # asks, then erases and pri
 kmctl conversation delete homelab-pilot 6733c361 --force --yes --reason "erasure request 88"
 ```
 
+`stop` says what happened and its exit code follows. `stopped` (the turn confirmed it
+abandoned the work), `cancelled` (a question still waiting in the crew's queue, removed before
+the crew saw it) and `nothing_to_stop` (every turn had already finished) exit 0. `unconfirmed`
+(the crew did not confirm in time, the work may still be running) and the 409 for a question the
+crew has just taken (stop again in a moment) exit non-zero. A stopped turn closes with a text
+that says you stopped it; `ask` and `watch` show it as `STOPPED`, report `"outcome":"stopped"`
+with an empty `answer` in `-o json`, and exit non-zero because the crew gave no answer.
+
+`kmctl conversation get CREW ID` shows the conversation's state and each turn's (queued with its
+place in the crew's queue, running, paused, stopped, finished), read from the gateway, so it
+answers for a conversation another client started. While a question waits in the queue, `ask`
+and `watch` print its place on stderr (the live view shows it in its header).
+
 `delete` removes the conversation from every store that holds it and prints the gateway's
 report: what it removed per store, and what it cannot remove (logs and backups). A
 conversation with a running discussion is refused (409) unless you pass `--force`, which stops

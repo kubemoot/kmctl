@@ -16,6 +16,9 @@ import (
 	"k8s.io/client-go/rest"
 )
 
+// OutcomeStopped is the outcome of a turn the person stopped.
+const OutcomeStopped = "stopped"
+
 // GatewayPort is the port of the per-crew gateway Service, "<crew>-discussion" in
 // the crew's namespace (see the operator's Crew status.discussionEndpoint).
 const GatewayPort = "80"
@@ -39,6 +42,10 @@ type Event struct {
 	StoodAside bool   `json:"stood_aside,omitempty"`
 	Model      string `json:"model,omitempty"`
 	Reason     string `json:"reason,omitempty"`
+	// Outcome is how the turn ended, on a synthesis or done event: OutcomeStopped when the person
+	// stopped it, so its content is the text that says so and not an answer. Empty from a gateway
+	// older than the stop outcome.
+	Outcome string `json:"outcome,omitempty"`
 	// Agents are the busy agents of an activity event, and At when the gateway
 	// took that reading (RFC 3339).
 	Agents []Activity `json:"agents,omitempty"`
@@ -210,6 +217,9 @@ func ParseSSE(r io.Reader, handle func(Event) bool) error {
 // except the connection's own (connected, and the heartbeat that only keeps the
 // connection open).
 func ShowsCrewActivity(e Event) bool { return e.Type != "heartbeat" && e.Type != "connected" }
+
+// Stopped reports whether the event says the person stopped the turn.
+func (e Event) Stopped() bool { return e.Outcome == OutcomeStopped }
 
 // Terminal reports whether an event ends the stream.
 func Terminal(e Event) bool { return e.Type == "done" || e.Type == "error" }
