@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/kubemoot/kmctl/internal/client"
@@ -112,6 +113,7 @@ func newRunCommand(f *client.Factory) *cobra.Command {
 	var scenario string
 	var filename string
 	var timeout time.Duration
+	var tier tierRun
 	cmd := &cobra.Command{
 		Use:         "run [SUITE]",
 		Annotations: changesState(),
@@ -128,15 +130,29 @@ exit code. Name an
 existing suite, or apply one from a manifest with -f; run then waits in the
 namespace the manifest was applied to (its own, else -n, else the kubeconfig default).
 With --scenario NAME, only that one scenario runs: a single CrewFitness is created
-from the suite's matching script, useful for iterating on one scenario.`,
+from the suite's matching script, useful for iterating on one scenario.
+
+With --tier smoke|standard|full and --crew NAME, run creates a suite that runs that tier
+of the crew's own scenarios (the ConfigMap NAME-fitness in the namespace) and waits for
+it. Smoke takes every call path in a few scenarios, for a change to plumbing; standard is
+what a change to crew behavior is gated on; full is every scenario. The operator picks
+the scenarios when the suite starts and records them, with the paths the run exercised,
+in the suite's status (kmctl fitness get SUITE -o yaml).`,
 		Example: `  kmctl fitness run demo-starter
   kmctl fitness run -f suite.yaml
-  kmctl fitness run demo-starter --scenario smoke-hello --timeout 10m`,
+  kmctl fitness run demo-starter --scenario smoke-hello --timeout 10m
+  kmctl fitness run --tier smoke --crew demo -n crew-demo`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			dc, err := f.Dynamic()
 			if err != nil {
 				return err
+			}
+			if tier.tier == "" && tier.dryRun {
+				return fmt.Errorf("--dry-run applies to --tier only")
+			}
+			if tier.tier != "" {
+				return runTier(cmd, f, dc, tier, args, filename, scenario, timeout)
 			}
 			suiteName, ns, err := resolveRunSuite(cmd, f, dc, args, filename)
 			if err != nil {
@@ -152,7 +168,26 @@ from the suite's matching script, useful for iterating on one scenario.`,
 	cmd.Flags().StringVar(&scenario, "scenario", "", "Run only this scenario (by testRef) as a single CrewFitness")
 	cmd.Flags().StringVarP(&filename, "filename", "f", "", "Apply a CrewFitnessSuite manifest, then run it")
 	cmd.Flags().DurationVar(&timeout, "timeout", 30*time.Minute, "Max time to wait for completion")
+	cmd.Flags().StringVar(&tier.tier, "tier", "", "Run a tier of the crew's scenarios as a new suite: "+strings.Join(fitnessTiers, ", "))
+	cmd.Flags().StringVar(&tier.crew, "crew", "", "With --tier: the crew whose scenarios the tier selects")
+	cmd.Flags().StringVar(&tier.name, "name", "", "With --tier: the suite's name (default: generated from the crew and tier)")
+	cmd.Flags().IntVar(&tier.iterations, "iterations", 1, "With --tier: how many times each scenario runs")
+	addDryRunFlag(cmd, &tier.dryRun)
+	_ = cmd.RegisterFlagCompletionFunc("tier", cobra.FixedCompletions(fitnessTiers, cobra.ShellCompDirectiveNoFileComp))
 	return cmd
+}
+
+// runTier creates a suite for the tier and waits for it like a named suite.
+func runTier(cmd *cobra.Command, f *client.Factory, dc dynamic.Interface, tier tierRun, args []string, filename, scenario string, timeout time.Duration) error {
+	if err := tier.validate(args, filename, scenario); err != nil {
+		return err
+	}
+	ns := f.Namespace()
+	name, err := tier.start(cmd, dc, ns)
+	if err != nil || tier.dryRun {
+		return err
+	}
+	return fitnessRun{dc: dc, ns: ns, w: cmd.OutOrStdout(), timeout: timeout}.suite(cmd.Context(), name)
 }
 
 // fitnessRun waits on a fitness run in one namespace, printing its progress to w.
