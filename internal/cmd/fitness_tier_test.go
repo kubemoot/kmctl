@@ -101,3 +101,18 @@ func TestFitnessRun_TierDryRunCreatesNothingAndDoesNotWait(t *testing.T) {
 		t.Errorf("--dry-run without --tier is refused, got %v", err)
 	}
 }
+
+func TestFitnessGet_ShowsTierAndPathCoverage(t *testing.T) {
+	s := newFakeAPIServer(t)
+	s.add("crewfitnesssuites", "team-a", "smoky", map[string]any{
+		"spec": map[string]any{"crewRef": "demo", "tier": "smoke"},
+		"status": map[string]any{"phase": "Completed",
+			"tier":         map[string]any{"name": "smoke", "source": "demo-fitness", "available": 77, "scenarios": []any{"a", "b"}},
+			"pathCoverage": map[string]any{"calls": 9, "transcripts": 2, "gaps": []any{"no simple call"}}},
+	})
+	out, _, err := s.kmctl(t, "fitness", "get", "smoky")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertContains(t, "fitness get", out, "Tier: smoke, 2 of 77 scenarios from demo-fitness", "Path coverage: 9 calls in 2 transcripts", "no simple call")
+}

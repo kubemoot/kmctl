@@ -144,6 +144,7 @@ without a context).
 
 ```bash
 kmctl fitness run --tier smoke --crew demo -n crew-demo   # a few scenarios that take every call path
+kmctl fitness get demo-smoke-x7k2p                        # the tier, the path-coverage table and its gaps
 kmctl fitness stop demo-starter --dry-run            # the API server checks it and your access
 kmctl memory add demo hardware gpu0 "RTX 5090" -n crew-demo
 kmctl memory clear demo -n crew-demo                 # asks, then deletes every fact of the crew
