@@ -34,6 +34,8 @@ var SuiteResultPaths = []string{
 	"status.scenarios.meanDurationMs",
 }
 
+func init() { SuiteResultPaths = append(SuiteResultPaths, tierResultPaths...) }
+
 // judgeScore is one entry of status.judge.scores.
 type judgeScore struct {
 	score  string
@@ -59,13 +61,12 @@ func RenderSuiteResults(w io.Writer, obj map[string]any) error {
 	judge, hasJudge, _ := unstructured.NestedMap(obj, "status", "judge")
 	rows := suiteRows(obj)
 	reason := suiteFailureReason(obj)
-	if !hasJudge && len(rows) == 0 && reason == "" {
+	header := resultsHeader(obj, reason)
+	if !hasJudge && len(rows) == 0 && header == "" {
 		return nil
 	}
 	out := output.NewWriter(w)
-	if reason != "" {
-		out.Printf("\nFailure: %s\n", reason)
-	}
+	out.Printf("%s", header)
 	if hasJudge {
 		out.Printf("\nJudge: %s\n", judgeSummary(judge))
 	}
@@ -76,6 +77,22 @@ func RenderSuiteResults(w io.Writer, obj map[string]any) error {
 		return err
 	}
 	return renderSuiteRows(w, rows)
+}
+
+// resultsHeader is what precedes the judge line: why the suite failed, the tier it
+// ran, and its path-coverage table. Empty when status has none of them.
+func resultsHeader(obj map[string]any, reason string) string {
+	var b strings.Builder
+	if reason != "" {
+		fmt.Fprintf(&b, "\nFailure: %s\n", reason)
+	}
+	if tier := tierLine(obj); tier != "" {
+		fmt.Fprintf(&b, "\nTier: %s\n", tier)
+	}
+	if cov := pathCoverageLines(obj); len(cov) > 0 {
+		fmt.Fprintf(&b, "\n%s\n", strings.Join(cov, "\n"))
+	}
+	return b.String()
 }
 
 // suiteFailureReason is the one-line reason a suite did not run to a result:
