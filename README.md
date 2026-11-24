@@ -134,6 +134,7 @@ without a context).
 
 | To do this | Run | It writes through |
 |------------|-----|-------------------|
+| Run a tier of a crew's fitness scenarios | `kmctl fitness run --tier smoke\|standard\|full --crew CREW` | a create of a `CrewFitnessSuite` with `spec.tier` (you need `create` on `crewfitnesssuites`); the operator chooses the scenarios when it starts the suite |
 | Pause, resume or stop a fitness suite | `kmctl fitness pause\|resume\|stop SUITE` | a merge patch of the suite's spec (you need `patch` on `crewfitnesssuites`) |
 | Pin or remove an MCP server report verdict | `kmctl mcp report pin REPORT --verdict use\|caution\|avoid`, `kmctl mcp report unpin REPORT` | a merge patch of the report's spec (you need `patch` on `mcpserverreports`) |
 | Add, change, delete or clear crew memory | `kmctl memory add\|edit\|delete\|clear CREW ...` | the crew-memory NATS bucket, through a port-forward to the NATS Service (you need `create` on `pods/portforward` there) |
@@ -142,6 +143,7 @@ without a context).
 | Remove a crew or a suite run (asks first; `--yes`, `--dry-run`) | `kmctl delete crew NAME`, `kmctl delete crewfitnesssuite NAME` | a delete of the resource; the operator cleans up |
 
 ```bash
+kmctl fitness run --tier smoke --crew demo -n crew-demo   # a few scenarios that take every call path
 kmctl fitness stop demo-starter --dry-run            # the API server checks it and your access
 kmctl memory add demo hardware gpu0 "RTX 5090" -n crew-demo
 kmctl memory clear demo -n crew-demo                 # asks, then deletes every fact of the crew
