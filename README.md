@@ -236,7 +236,9 @@ kmctl requests a ten-minute token for that ServiceAccount (TokenRequest) and sen
 crew sees the ServiceAccount as the caller, and the Kubernetes audit log records who
 requested the token. When the crew declares `tokenAudiences`, add `--token-audience`.
 Without `--token-service-account`, kmctl sends no token, and a crew that requires one
-answers 401 with a message that names this flag.
+answers 401, and kmctl says the crew requires a Kubernetes token (not that the API server
+rejected your credentials) and names this flag. A kubeconfig user with a token or an OIDC
+login needs no flag.
 
 ## Documentation
 
