@@ -136,7 +136,7 @@ func TestConversationAsk_GatewayRefusals(t *testing.T) {
 		absent []string
 	}{
 		{"401 with a token", false, nil, 401, "no", []string{"did not accept your Kubernetes token"}, []string{"has none"}},
-		{"401 with a certificate", true, nil, 401, "no", []string{"requires a Kubernetes token", "has none", "--token-service-account NAMESPACE/NAME"}, nil},
+		{"401 with a certificate", true, nil, 401, "no", []string{"requires a Kubernetes token (HTTP 401)", "has none", "--token-service-account NAMESPACE/NAME", "OIDC login", "--token-audience"}, []string{"did not accept your credentials"}},
 		{"401 with a minted token", true, []string{"--token-service-account", "ops/op"}, 401, "no", []string{"minted for service account ops/op", "--token-audience"}, nil},
 		{"403", false, nil, 403, "no", []string{"refused your identity", "kubectl auth can-i get crews.kubemoot.ai/demo -n team-a"}, nil},
 		{"404 for a conversation", false, nil, 404, "conversation not found", []string{"conversation not found on crew", "belongs to another caller", "--reason", "kubemoot-conversation-reader"}, []string{"was not found in namespace"}},

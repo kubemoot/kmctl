@@ -77,8 +77,9 @@ func gatewayUnauthorized(f *client.Factory, crew, namespace string, err error) *
 		return clierr.New(fmt.Sprintf("the discussion gateway of crew %q did not accept your Kubernetes token", crew),
 			"The crew verifies who is asking (spec.discussion.access). A token that has expired or has the wrong audience is refused; a kubeconfig token cannot carry an audience, so for a crew with tokenAudiences use --token-service-account NAMESPACE/NAME with --token-audience", err)
 	}
-	return clierr.New(fmt.Sprintf("the crew %q requires a Kubernetes token, and your kubeconfig has none (it signs in with a client certificate)", crew),
-		"Name a ServiceAccount you may create tokens for: --token-service-account NAMESPACE/NAME (needs create on serviceaccounts/token)", err)
+	return clierr.New(fmt.Sprintf("the crew %q requires a Kubernetes token (HTTP 401), and your kubeconfig has none (it signs in with a client certificate)", crew),
+		"Get one by naming a ServiceAccount you may create tokens for: --token-service-account NAMESPACE/NAME (needs create on serviceaccounts/token), "+
+			"or sign in with a kubeconfig user that has a token or an OIDC login. Add --token-audience when the crew sets tokenAudiences", err)
 }
 
 // gatewayForbidden explains a 403: the caller is known and may not use the crew.
