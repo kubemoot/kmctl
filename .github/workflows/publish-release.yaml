@@ -59,7 +59,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up the release helpers
-        uses: kubemoot/release-actions/setup@46be10555367466d5add34c0f37dc2ae86c40af6 # v0.12.0
+        uses: kubemoot/release-actions/setup@2e4abc96ac64b259051eb467f4794d7408b7b9d2 # v0.12.6
 
       # Before anything is tagged: the candidate this run would release must make a crew
       # the Kubemoot it pins accepts. kmctl create's bundle and chart, every size, apply
@@ -154,7 +154,7 @@ jobs:
         run: git checkout --quiet "${COMMIT}"
 
       - name: Install cosign
-        uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+        uses: sigstore/cosign-installer@881c63bd87e38389154debd8331404ce7ca8a3ab # v4.1.4
 
       - name: Build a snapshot (dry run)
         if: inputs.dry_run
